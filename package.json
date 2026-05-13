@@ -1,0 +1,14 @@
+{
+  "name": "leetcode-tracker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first DSA anti-forgetting tracker for LeetCode practice.",
+  "scripts": {
+    "start": "node server.js",
+    "start:qa": "TRACKER_ENV=qa PORT=5174 node server.js",
+    "check": "node --check app.js && node --check server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
