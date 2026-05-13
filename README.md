@@ -72,6 +72,31 @@ data/backups/
 Those runtime files are intentionally ignored by Git because they may contain personal
 progress, notes, and solution references.
 
+## First Local Setup
+
+A fresh clone does not include personal tracker state. That is intentional.
+
+On first run, if `data/tracker-state.json` does not exist, the app starts with an empty
+state. The file is created automatically the first time you save data, import data, seed a
+study list, grade a problem, or edit a problem.
+
+To populate the app:
+
+1. Open `Data Management`.
+2. Choose one or more setup actions:
+   - `Seed Blind 75` to add the built-in Blind 75 list.
+   - `Seed NeetCode 150` to add the built-in NeetCode 150 list.
+   - `Import CSV once` if you already have historical tracker data.
+   - `Import JSON` if you are restoring from a previous app export.
+3. Return to `Dashboard`.
+
+You do not need to seed both lists. Seed only the study lists you want to track. If you seed
+both Blind 75 and NeetCode 150, overlapping problems are merged into one row with both
+badges and one shared review history.
+
+The Dashboard's `New problem source` selector controls whether the daily new-problem pick
+comes from Blind 75 or NeetCode 150.
+
 ## Run QA Mode
 
 QA mode uses fake fixture data so you can test without touching real progress:
