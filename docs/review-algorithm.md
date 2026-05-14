@@ -74,6 +74,10 @@ as hints and weaken the recall test. After grading, the app may prompt for a sho
 about the gotcha, pattern, edge case, or complexity reminder. Saving or skipping that note
 does not change stage movement or scheduling.
 
+The post-grade prompt may also include an `Undo grade` action. Undo is a safety control for
+the most recent accidental grade in the current session. It restores the problem and recent
+session state from before that grade, then saves the restored state.
+
 The edit dialog may store an optional optimal-solution reference with approach, time
 complexity, space complexity, and explanation. This is study/reference material and must
 not appear on Today cards before the attempt.
@@ -266,6 +270,10 @@ The default new-problem source is Blind 75, so the standard daily rhythm is:
 ```text
 1 due review + 1 new problem
 ```
+
+If a selected study-list pick matches an existing imported CSV row by title or LeetCode
+URL, grading that pick may attach the selected list membership to the existing row instead
+of creating a duplicate problem.
 
 If there are many overdue reviews, Diagnostics should use calm copy:
 

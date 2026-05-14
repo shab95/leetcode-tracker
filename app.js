@@ -116,6 +116,7 @@ const els = {
   topicInput: document.querySelector("#topicInput"),
   totalSolved: document.querySelector("#totalSolved"),
   timeComplexityInput: document.querySelector("#timeComplexityInput"),
+  undoGradeBtn: document.querySelector("#undoGradeBtn"),
   urlInput: document.querySelector("#urlInput"),
   viewAllTopicsBtn: document.querySelector("#viewAllTopicsBtn"),
   weeklySolved: document.querySelector("#weeklySolved"),
@@ -134,6 +135,7 @@ let lastServerSavedAt = "";
 let appEnv = { env: "prod", isQa: false };
 let diagnosticsTopicFilter = "";
 let pendingNoteProblemId = "";
+let lastGradeUndo = null;
 
 els.addProblemBtn.addEventListener("click", () => openDialog());
 els.cancelBtn.addEventListener("click", () => els.problemDialog.close());
@@ -156,6 +158,7 @@ els.savePostGradeNoteBtn.addEventListener("click", savePostGradeNote);
 els.skipNewBtn.addEventListener("click", () => skipDailyPick("new"));
 els.skipPostGradeNoteBtn.addEventListener("click", clearPostGradeNote);
 els.skipReviewBtn.addEventListener("click", () => skipDailyPick("review"));
+els.undoGradeBtn.addEventListener("click", undoLastGrade);
 els.viewAllTopicsBtn.addEventListener("click", openAttentionDialog);
 dialogTabButtons.forEach((button) => {
   button.addEventListener("click", () => setProblemDialogTab(button.dataset.dialogTab));
@@ -707,7 +710,7 @@ function renderRecommendationCard(type, item) {
 
   if (!item) {
     card.dataset.problemId = "";
-    title.textContent = type === "review" ? "No due review" : "No unattempted Blind 75";
+    title.textContent = type === "review" ? "No due review" : `No unattempted ${getSelectedStudyList().label}`;
     meta.textContent =
       type === "review"
         ? "Nothing is due today. New graded work will schedule future reviews."
@@ -1000,11 +1003,20 @@ function gradeDailyPick(cardType, grade) {
   if (!pick) return;
 
   const existing = pick.id ? problems.find((problem) => problem.id === pick.id) : findProblemBySlug(pick.titleSlug);
+  const problemSnapshot = existing ? cloneState(existing) : null;
+  const sessionsSnapshot = cloneState(sessions);
+  if (existing && cardType === "new") {
+    existing.listMemberships = mergeMemberships(existing.listMemberships, [getSelectedStudyList().membership]);
+  }
   const problem = existing || addProblemFromPlan(pick);
-  applyGrade(problem.id, grade);
+  applyGrade(problem.id, grade, {
+    createdProblemId: existing ? "" : problem.id,
+    problemSnapshot,
+    sessionsSnapshot,
+  });
 }
 
-function applyGrade(id, grade) {
+function applyGrade(id, grade, undoContext = {}) {
   const today = toIsoDate(new Date());
   const now = new Date().toISOString();
 
@@ -1054,6 +1066,13 @@ function applyGrade(id, grade) {
 
   const gradedProblem = problems.find((problem) => problem.id === id);
   if (gradedProblem) {
+    lastGradeUndo = {
+      problemId: id,
+      title: gradedProblem.title,
+      createdProblemId: undoContext.createdProblemId || "",
+      problemSnapshot: undoContext.problemSnapshot || null,
+      sessionsSnapshot: undoContext.sessionsSnapshot || cloneState(sessions),
+    };
     sessions = [
       {
         date: today,
@@ -1072,6 +1091,22 @@ function applyGrade(id, grade) {
   render();
   if (els.gradeResult) els.gradeResult.textContent = gradeMessage;
   showPostGradeNotePrompt(gradedProblem);
+}
+
+function undoLastGrade() {
+  if (!lastGradeUndo) return;
+
+  const { problemId, createdProblemId, problemSnapshot, sessionsSnapshot, title } = lastGradeUndo;
+  problems = createdProblemId
+    ? problems.filter((problem) => problem.id !== createdProblemId)
+    : problems.map((problem) => (problem.id === problemId ? normalizeProblem(problemSnapshot) : problem));
+  sessions = sessionsSnapshot;
+  lastGradeUndo = null;
+
+  persist();
+  clearPostGradeNote();
+  render();
+  if (els.gradeResult) els.gradeResult.textContent = `Undid last grade for ${title}.`;
 }
 
 function showPostGradeNotePrompt(problem) {
@@ -1939,6 +1974,10 @@ function normalizeTitle(title) {
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
+}
+
+function cloneState(value) {
+  return JSON.parse(JSON.stringify(value));
 }
 
 function escapeHtml(value) {
