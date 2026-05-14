@@ -13,6 +13,9 @@ const STUDY_LISTS = {
   blind75: { label: "Blind 75", membership: "blind75", problems: BLIND_75 },
   neetcode150: { label: "NeetCode 150", membership: "neetcode150", problems: NEETCODE_150 },
 };
+const SLUG_ALIASES = {
+  "generate-parenthesis": "generate-parentheses",
+};
 const DIFFICULTIES = ["Easy", "Medium", "Hard"];
 const STATUSES = ["todo", "solving", "solved", "review"];
 const STAGES = [
@@ -1661,7 +1664,7 @@ function getCsvValue(row, header) {
 function normalizeProblem(problem) {
   const title = String(problem.title || "Untitled").trim();
   const url = safeUrl(problem.url || "");
-  const titleSlug = problem.titleSlug || problem.slug || slugFromUrl(url) || slugifyTitle(title);
+  const titleSlug = canonicalSlug(slugFromUrl(url) || problem.titleSlug || problem.slug || slugifyTitle(title));
   const nextReview = normalizeDate(problem.nextReview || problem.reviewDate || "");
   const completionCount = Math.max(0, Number(problem.completionCount || 0));
   const listMemberships = mergeMemberships(problem.listMemberships || [], []);
@@ -1751,10 +1754,11 @@ function findProblemByPlan(planProblem) {
 }
 
 function findBuiltInPlan(slug, title) {
+  const canonical = canonicalSlug(slug);
   const normalizedTitle = normalizeTitle(title);
   for (const studyList of Object.values(STUDY_LISTS)) {
     const planProblem = studyList.problems.find(
-      (problem) => problem.slug === slug || normalizeTitle(problem.title) === normalizedTitle,
+      (problem) => (canonical && canonicalSlug(problem.slug) === canonical) || normalizeTitle(problem.title) === normalizedTitle,
     );
     if (planProblem) return planProblem;
   }
@@ -1762,17 +1766,21 @@ function findBuiltInPlan(slug, title) {
 }
 
 function getBuiltInMemberships(slug, title) {
+  const canonical = canonicalSlug(slug);
   const normalizedTitle = normalizeTitle(title);
   return Object.values(STUDY_LISTS)
     .filter((studyList) =>
-      studyList.problems.some((problem) => problem.slug === slug || normalizeTitle(problem.title) === normalizedTitle),
+      studyList.problems.some(
+        (problem) => (canonical && canonicalSlug(problem.slug) === canonical) || normalizeTitle(problem.title) === normalizedTitle,
+      ),
     )
     .map((studyList) => studyList.membership);
 }
 
 function findProblemBySlug(slug) {
-  if (!slug) return null;
-  return problems.find((problem) => problem.titleSlug === slug || slugFromUrl(problem.url) === slug) || null;
+  const canonical = canonicalSlug(slug);
+  if (!canonical) return null;
+  return problems.find((problem) => problemIdentitySlug(problem) === canonical) || null;
 }
 
 function findProblemByTitle(title) {
@@ -1949,7 +1957,7 @@ function toIsoDate(date) {
 
 function slugFromUrl(url) {
   const match = String(url || "").match(/leetcode\.com\/problems\/([^/]+)/);
-  return match?.[1] || "";
+  return canonicalSlug(match?.[1] || "");
 }
 
 function leetcodeUrl(slug) {
@@ -1957,10 +1965,21 @@ function leetcodeUrl(slug) {
 }
 
 function slugifyTitle(title) {
-  return normalizeTitle(title)
-    .replace(/&/g, "and")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+  return canonicalSlug(
+    normalizeTitle(title)
+      .replace(/&/g, "and")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, ""),
+  );
+}
+
+function problemIdentitySlug(problem) {
+  return canonicalSlug(slugFromUrl(problem.url) || problem.titleSlug || problem.slug || slugifyTitle(problem.title));
+}
+
+function canonicalSlug(slug) {
+  const normalized = String(slug || "").trim().toLowerCase().replace(/\/+$/g, "");
+  return SLUG_ALIASES[normalized] || normalized;
 }
 
 function normalizeTitle(title) {

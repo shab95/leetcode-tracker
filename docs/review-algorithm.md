@@ -308,3 +308,9 @@ reviewHistory
 ```
 
 Derive labels and intervals from the stage table instead of storing duplicate labels.
+
+Problem identity should use a canonical LeetCode slug when possible. Prefer the slug from
+the LeetCode URL, normalize known aliases such as `generate-parenthesis` to
+`generate-parentheses`, and compare canonical slugs during imports, study-list seeding,
+and new-pick grading. This prevents duplicate rows when a CSV title or older URL uses a
+slightly different slug than the built-in study-list data.
