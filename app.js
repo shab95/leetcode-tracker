@@ -1037,36 +1037,37 @@ function applyGrade(id, grade, undoContext = {}) {
     if (problem.id !== id) return problem;
 
     const previousCount = Number(problem.completionCount || 0);
-    const previousStage = clampStage(problem.stage);
-    const daysOverdue = getDaysOverdue(problem.nextReview);
-    const newStage = nextStageForGrade(grade, previousStage, daysOverdue);
-    const intervalDays = STAGES[newStage].intervalDays;
-    const nextReview = toIsoDate(addDays(dateOnly(new Date()), intervalDays));
-    const nextGreenStreak = grade === "green" ? Number(problem.greenStreak || 0) + 1 : 0;
-    const heldForOverdue = grade === "green" && newStage === previousStage && isExtremelyOverdue(previousStage, daysOverdue);
+    const transition = getGradeTransition({
+      grade,
+      currentStage: problem.stage,
+      currentGreenStreak: problem.greenStreak,
+      scheduledReview: problem.nextReview,
+      attemptDate: today,
+    });
     const reviewEntry = {
       date: today,
       grade,
-      previousStage,
-      newStage,
-      wasOverdue: daysOverdue > 0,
-      daysOverdue,
-      heldForOverdue,
-      intervalDays,
-      nextReview,
+      previousStage: transition.previousStage,
+      newStage: transition.newStage,
+      wasOverdue: transition.daysOverdue > 0,
+      daysOverdue: transition.daysOverdue,
+      heldForEarly: transition.heldForEarly,
+      heldForOverdue: transition.heldForOverdue,
+      intervalDays: transition.intervalDays,
+      nextReview: transition.nextReview,
     };
-    gradeMessage = buildGradeMessage(grade, previousStage, newStage, daysOverdue, nextReview, heldForOverdue);
+    gradeMessage = buildGradeMessage(grade, transition);
     const nextProblem = normalizeProblem({
       ...problem,
       status: "review",
       completionCount: previousCount + 1,
-      stage: newStage,
-      currentIntervalDays: intervalDays,
-      greenStreak: nextGreenStreak,
+      stage: transition.newStage,
+      currentIntervalDays: transition.intervalDays,
+      greenStreak: transition.greenStreak,
       lastGrade: grade,
       lastReviewedAt: today,
       firstAttemptAt: problem.firstAttemptAt || today,
-      nextReview,
+      nextReview: transition.nextReview,
       reviewHistory: [...(problem.reviewHistory || []), reviewEntry],
       solvedAt: grade === "green" ? problem.solvedAt || now : problem.solvedAt || "",
       updatedAt: now,
@@ -1162,24 +1163,71 @@ function savePostGradeNote() {
   if (els.gradeResult) els.gradeResult.textContent = note ? "Note saved." : "Note cleared.";
 }
 
-function buildGradeMessage(grade, previousStage, newStage, daysOverdue, nextReview, heldForOverdue) {
+function buildGradeMessage(grade, transition) {
   const gradeLabels = {
     red: "Could not solve",
     yellow: "Solved with hints / slow",
     green: "Solved cleanly",
   };
   const movement =
-    newStage > previousStage
-      ? `advanced to ${stageName(newStage)}`
-      : newStage < previousStage
-        ? `moved to ${stageName(newStage)}`
-        : `stayed at ${stageName(newStage)}`;
-  const overdueNote = heldForOverdue
-    ? ` Held because it was ${daysOverdue} days overdue.`
-    : daysOverdue > 0
-      ? ` It was ${daysOverdue} days overdue.`
-      : "";
-  return `${gradeLabels[grade]}: ${movement}. Next review ${formatDate(nextReview)}.${overdueNote}`;
+    transition.newStage > transition.previousStage
+      ? `advanced to ${stageName(transition.newStage)}`
+      : transition.newStage < transition.previousStage
+        ? `moved to ${stageName(transition.newStage)}`
+        : `stayed at ${stageName(transition.newStage)}`;
+  const holdNote = transition.heldForEarly
+    ? " Held because this was before the scheduled review date."
+    : transition.heldForOverdue
+      ? ` Held because it was ${transition.daysOverdue} days overdue.`
+      : transition.daysOverdue > 0
+        ? ` It was ${transition.daysOverdue} days overdue.`
+        : "";
+  return `${gradeLabels[grade]}: ${movement}. Next review ${formatDate(transition.nextReview)}.${holdNote}`;
+}
+
+function getGradeTransition({ grade, currentStage, currentGreenStreak = 0, scheduledReview = "", attemptDate }) {
+  const previousStage = clampStage(currentStage);
+  const attempt = normalizeDate(attemptDate);
+  const reviewDate = normalizeDate(scheduledReview);
+  const isEarlyClean =
+    grade === "green" && reviewDate && attempt && parseIsoDate(attempt) < parseIsoDate(reviewDate);
+
+  if (isEarlyClean) {
+    return {
+      previousStage,
+      newStage: previousStage,
+      intervalDays: STAGES[previousStage].intervalDays,
+      nextReview: reviewDate,
+      daysOverdue: 0,
+      heldForEarly: true,
+      heldForOverdue: false,
+      greenStreak: Number(currentGreenStreak || 0),
+    };
+  }
+
+  const daysOverdue = reviewDate ? getDaysOverdueOnDate(reviewDate, attempt) : 0;
+  const newStage = nextStageForGrade(grade, previousStage, daysOverdue);
+  const intervalDays = STAGES[newStage].intervalDays;
+  const nextReview = toIsoDate(addDays(parseIsoDate(attempt), intervalDays));
+  const heldForOverdue =
+    grade === "green" && newStage === previousStage && isExtremelyOverdue(previousStage, daysOverdue);
+
+  return {
+    previousStage,
+    newStage,
+    intervalDays,
+    nextReview,
+    daysOverdue,
+    heldForEarly: false,
+    heldForOverdue,
+    greenStreak: grade === "green" ? Number(currentGreenStreak || 0) + 1 : 0,
+  };
+}
+
+function heldReasonLabel(entry) {
+  if (entry.heldForEarly) return " · held early";
+  if (entry.heldForOverdue) return " · held overdue";
+  return "";
 }
 
 function historyGradeLabel(grade) {
@@ -1195,7 +1243,7 @@ function historyGradeLabel(grade) {
 function historyStageSummary(entry) {
   if (!isProperGrade(entry.grade)) return "Historical context";
   const nextReview = entry.nextReview ? ` · next ${formatDate(entry.nextReview)}` : "";
-  return `${stageName(entry.previousStage)} -> ${stageName(entry.newStage)}${nextReview}`;
+  return `${stageName(entry.previousStage)} -> ${stageName(entry.newStage)}${nextReview}${heldReasonLabel(entry)}`;
 }
 
 function isProperGrade(grade) {
@@ -1370,26 +1418,27 @@ function rebuildProblemFromHistory(problem) {
   const replayedHistory = sortedHistory.map((entry) => {
     if (!isProperGrade(entry.grade)) return entry;
 
-    const previousStage = stage;
-    const daysOverdue = scheduledReview ? getDaysOverdueOnDate(scheduledReview, entry.date) : 0;
-    const newStage = nextStageForGrade(entry.grade, previousStage, daysOverdue);
-    const intervalDays = STAGES[newStage].intervalDays;
-    const nextReview = toIsoDate(addDays(parseIsoDate(entry.date), intervalDays));
-    const heldForOverdue =
-      entry.grade === "green" && newStage === previousStage && isExtremelyOverdue(previousStage, daysOverdue);
+    const transition = getGradeTransition({
+      grade: entry.grade,
+      currentStage: stage,
+      currentGreenStreak: greenStreak,
+      scheduledReview,
+      attemptDate: entry.date,
+    });
 
-    stage = newStage;
-    greenStreak = entry.grade === "green" ? greenStreak + 1 : 0;
-    scheduledReview = nextReview;
+    stage = transition.newStage;
+    greenStreak = transition.greenStreak;
+    scheduledReview = transition.nextReview;
     lastProperEntry = {
       ...entry,
-      previousStage,
-      newStage,
-      wasOverdue: daysOverdue > 0,
-      daysOverdue,
-      heldForOverdue,
-      intervalDays,
-      nextReview,
+      previousStage: transition.previousStage,
+      newStage: transition.newStage,
+      wasOverdue: transition.daysOverdue > 0,
+      daysOverdue: transition.daysOverdue,
+      heldForEarly: transition.heldForEarly,
+      heldForOverdue: transition.heldForOverdue,
+      intervalDays: transition.intervalDays,
+      nextReview: transition.nextReview,
     };
     return lastProperEntry;
   });

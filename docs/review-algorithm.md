@@ -43,23 +43,26 @@ flowchart TD
   H -->|Yes| I["Keep current stage<br/>Green streak = 0<br/>Attempts + 1"]
   H -->|No| J["Drop one stage<br/>Green streak = 0<br/>Attempts + 1"]
 
-  F -->|Solved cleanly| K{"Extremely overdue?<br/>daysOverdue > stageInterval * 2"}
-  K -->|Yes| L["Hold current stage<br/>Green streak + 1<br/>Attempts + 1"]
-  K -->|No| M["Advance one stage<br/>Green streak + 1<br/>Attempts + 1"]
+  F -->|Solved cleanly| K{"Before scheduled review date?"}
+  K -->|Yes| L["Hold current stage<br/>Keep green streak<br/>Keep existing next review<br/>Attempts + 1"]
+  K -->|No| M{"Extremely overdue?<br/>daysOverdue > stageInterval * 2"}
+  M -->|Yes| N["Hold current stage<br/>Green streak + 1<br/>Attempts + 1"]
+  M -->|No| O["Advance one stage<br/>Green streak + 1<br/>Attempts + 1"]
 
-  I --> N["Schedule next review from resulting stage"]
-  J --> N
-  L --> N
-  M --> N
-  G --> O["Record review history"]
-  N --> O
+  I --> P["Schedule next review from resulting stage"]
+  J --> P
+  N --> P
+  O --> P
+  G --> Q["Record review history"]
+  L --> Q
+  P --> Q
 
-  O --> P{"Mastery rule passed?"}
-  P -->|No| Q["Status = Reviewing"]
-  P -->|Yes| R["Status = Mastered<br/>Continue maintenance reviews"]
+  Q --> R{"Mastery rule passed?"}
+  R -->|No| S["Status = Reviewing"]
+  R -->|Yes| T["Status = Mastered<br/>Continue maintenance reviews"]
 
-  Q --> A
-  R --> A
+  S --> A
+  T --> A
 ```
 
 The important product rule is that overdue reviews do not decay automatically.
@@ -97,12 +100,18 @@ Imported CSV rows remain historical context and can count as prior attempts, but
 proper grades should drive manual backfill scheduling. Backfilled attempts are problem
 history, not live app sessions, so they do not appear in the Recent Grades diagnostic.
 
+Clean solves only prove spaced recall when they happen on or after the scheduled review
+date. A clean solve before the scheduled review date is still recorded as history, but it
+holds the current stage, keeps the existing next review date, and does not increase the
+mastery green streak. Early weakness still matters: `Could not solve` and
+`Solved with hints / slow` reschedule from the attempt date.
+
 ### Could not solve
 
 - Stage becomes `Learning (Stage 0)`.
 - Green streak resets to `0`.
 - Attempts increase by `1`.
-- Next review is tomorrow.
+- Next review is `1 day` after the attempt date.
 
 ### Solved with hints / slow
 
@@ -115,9 +124,10 @@ history, not live app sessions, so they do not appear in the Recent Grades diagn
 ### Solved cleanly
 
 - Attempts increase by `1`.
-- Green streak increases by `1`.
-- Usually advance one stage.
-- Next review uses the resulting stage interval.
+- If the attempt is before the scheduled review date, hold the current stage, keep the existing next review date, and do not increase green streak.
+- If the attempt is on or after the scheduled review date, green streak increases by `1`.
+- Usually advance one stage when the attempt is on time or overdue.
+- Next review uses the resulting stage interval unless the clean solve was early.
 
 ## Overdue Reviews
 

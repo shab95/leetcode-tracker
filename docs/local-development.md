@@ -130,6 +130,12 @@ problem's `reviewHistory` with a real grade, then the frontend rebuilds that pro
 stage and next review from chronological graded history. Backfills do not add rows to
 `sessions`, because diagnostics use sessions for attempts made inside the app.
 
+The replay uses the same spaced-repetition transition as Today grading. Clean attempts
+before the scheduled review date are stored with `heldForEarly: true`, keep the existing
+`nextReview`, and do not increase `greenStreak`. Extremely overdue clean attempts are
+stored with `heldForOverdue: true`. Red and yellow attempts always reschedule from the
+attempt date.
+
 ## Routes
 
 The app has client-side routes served by the same `index.html` file:

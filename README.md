@@ -148,6 +148,11 @@ You can also backfill individual attempts from a problem's `Edit -> History` tab
 backfill is for attempts completed outside the app and uses real grades only, so the review
 schedule is rebuilt from the most recent graded attempt date.
 
+Early clean solves are recorded, but they do not advance the review stage until the
+scheduled review date arrives. This keeps the app honest about spaced recall: practicing
+early can help, but it does not prove durability. Early missed or slow solves still update
+the schedule immediately because they reveal weakness.
+
 ## Safety Notes
 
 This app is local-first. The current server trusts whoever can reach it. Do not expose
