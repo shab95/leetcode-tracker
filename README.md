@@ -12,6 +12,7 @@ database yet.
 
 - Tracks LeetCode/DSA problems, notes, review history, stages, and mastery.
 - Recommends exactly one due review and one new problem on the Dashboard.
+- Lets you backfill real graded attempts from the edit modal's History tab.
 - Supports Blind 75 and NeetCode 150 as selectable study lists.
 - Uses grading buttons after an attempt:
   - `Could not solve`
@@ -142,6 +143,10 @@ Open `Data Management` in the top navigation for rare/admin actions:
 - `Import JSON`: restores a previously exported state.
 
 Imported solved CSV rows count as prior attempts, not automatic mastery.
+
+You can also backfill individual attempts from a problem's `Edit -> History` tab. Manual
+backfill is for attempts completed outside the app and uses real grades only, so the review
+schedule is rebuilt from the most recent graded attempt date.
 
 ## Safety Notes
 

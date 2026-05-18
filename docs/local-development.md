@@ -125,6 +125,11 @@ storage model.
 The browser still writes a localStorage fallback. The server JSON file is the source of
 truth once the local server is running.
 
+Manual backfill uses the same JSON state file. A backfilled attempt is stored in the
+problem's `reviewHistory` with a real grade, then the frontend rebuilds that problem's
+stage and next review from chronological graded history. Backfills do not add rows to
+`sessions`, because diagnostics use sessions for attempts made inside the app.
+
 ## Routes
 
 The app has client-side routes served by the same `index.html` file:

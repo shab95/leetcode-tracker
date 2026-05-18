@@ -1211,6 +1211,78 @@ form {
   padding: 12px;
 }
 
+.history-section {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-strong);
+  padding: 12px;
+}
+
+.history-list {
+  display: grid;
+  gap: 8px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.history-row,
+.history-empty {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 253, 247, 0.78);
+  padding: 10px 11px;
+}
+
+.history-row div,
+.history-empty {
+  min-width: 0;
+}
+
+.history-row strong,
+.history-empty strong {
+  display: block;
+  color: var(--ink);
+  font-size: 0.84rem;
+}
+
+.history-row span,
+.history-empty span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.history-row p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.history-row small {
+  flex: 0 0 auto;
+  max-width: 210px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.3;
+  text-align: right;
+}
+
+.history-empty {
+  display: grid;
+}
+
+.backfill-panel {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
 .solution-section-head {
   display: flex;
   align-items: center;

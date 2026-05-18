@@ -82,6 +82,21 @@ The edit dialog may store an optional optimal-solution reference with approach, 
 complexity, space complexity, and explanation. This is study/reference material and must
 not appear on Today cards before the attempt.
 
+The edit dialog may also expose a History tab for manual backfill. Backfill is for attempts
+completed outside the app. Manual backfill accepts only real grades: `Could not solve`,
+`Solved with hints / slow`, or `Solved cleanly`. It should not create new `imported`
+entries.
+
+When backfilled grades are saved, replay proper graded history in chronological order and
+let the most recent graded attempt define the current stage, green streak, last review
+date, last grade, and next review date. Compute the next review from the backfilled attempt
+date, not from the date the user entered the backfill. If that next review date is already
+in the past, the problem is simply overdue.
+
+Imported CSV rows remain historical context and can count as prior attempts, but only
+proper grades should drive manual backfill scheduling. Backfilled attempts are problem
+history, not live app sessions, so they do not appear in the Recent Grades diagnostic.
+
 ### Could not solve
 
 - Stage becomes `Learning (Stage 0)`.

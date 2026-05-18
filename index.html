@@ -389,6 +389,7 @@
         <div class="modal-tabs" role="tablist" aria-label="Problem editor sections">
           <button class="modal-tab is-active" id="problemTabBtn" type="button" role="tab" aria-selected="true" aria-controls="problemTabPanel" data-dialog-tab="problem">Problem</button>
           <button class="modal-tab" id="solutionTabBtn" type="button" role="tab" aria-selected="false" aria-controls="solutionTabPanel" data-dialog-tab="solution">Optimal Solution</button>
+          <button class="modal-tab" id="historyTabBtn" type="button" role="tab" aria-selected="false" aria-controls="historyTabPanel" data-dialog-tab="history">History</button>
         </div>
 
         <section class="modal-tab-panel" id="problemTabPanel" role="tabpanel" aria-labelledby="problemTabBtn" data-dialog-panel="problem">
@@ -493,6 +494,48 @@
             <span>Explanation</span>
             <textarea id="solutionExplanationInput" rows="3" placeholder="Track seen values; duplicate means return true."></textarea>
           </label>
+        </section>
+
+        <section class="modal-tab-panel history-section" id="historyTabPanel" role="tabpanel" aria-labelledby="historyTabBtn" data-dialog-panel="history" hidden>
+          <div class="solution-section-head">
+            <span>Review History</span>
+            <small>Newest first</small>
+          </div>
+
+          <div class="history-list" id="historyList"></div>
+
+          <div class="backfill-panel">
+            <div class="solution-section-head">
+              <span>Backfill Attempt</span>
+              <small>Outside this app</small>
+            </div>
+            <p class="modal-copy" id="backfillHelp">Add a real graded attempt you completed elsewhere. Imported CSV rows stay visible above, but only real grades drive scheduling.</p>
+
+            <div class="form-grid">
+              <label class="field">
+                <span>Attempt date</span>
+                <input id="backfillDateInput" type="date" />
+              </label>
+
+              <label class="field">
+                <span>Grade</span>
+                <select id="backfillGradeInput">
+                  <option value="green">Solved cleanly</option>
+                  <option value="yellow">Solved with hints / slow</option>
+                  <option value="red">Could not solve</option>
+                </select>
+              </label>
+            </div>
+
+            <label class="field">
+              <span>Optional note</span>
+              <textarea id="backfillNoteInput" rows="2" placeholder="What happened on that attempt?"></textarea>
+            </label>
+
+            <div class="post-grade-actions">
+              <button class="ghost-btn" id="addBackfillBtn" type="button">Add backfill</button>
+            </div>
+          </div>
         </section>
 
         <div class="modal-actions">

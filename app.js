@@ -16,6 +16,7 @@ const STUDY_LISTS = {
 const SLUG_ALIASES = {
   "generate-parenthesis": "generate-parentheses",
 };
+const GRADED_ATTEMPT_GRADES = ["red", "yellow", "green"];
 const DIFFICULTIES = ["Easy", "Medium", "Hard"];
 const STATUSES = ["todo", "solving", "solved", "review"];
 const STAGES = [
@@ -34,7 +35,12 @@ const MASTERY_ATTEMPT_THRESHOLDS = {
 
 const els = {
   addProblemBtn: document.querySelector("#addProblemBtn"),
+  addBackfillBtn: document.querySelector("#addBackfillBtn"),
   attentionDialog: document.querySelector("#attentionDialog"),
+  backfillDateInput: document.querySelector("#backfillDateInput"),
+  backfillGradeInput: document.querySelector("#backfillGradeInput"),
+  backfillHelp: document.querySelector("#backfillHelp"),
+  backfillNoteInput: document.querySelector("#backfillNoteInput"),
   blindAttempted: document.querySelector("#blindAttempted"),
   blindMastered: document.querySelector("#blindMastered"),
   attentionTopics: document.querySelector("#attentionTopics"),
@@ -66,6 +72,7 @@ const els = {
   filterBannerText: document.querySelector("#filterBannerText"),
   importMeta: document.querySelector("#importMeta"),
   gradeResult: document.querySelector("#gradeResult"),
+  historyList: document.querySelector("#historyList"),
   jsonImportInput: document.querySelector("#jsonImportInput"),
   listFilter: document.querySelector("#listFilter"),
   newCard: document.querySelector("#newCard"),
@@ -141,6 +148,7 @@ let pendingNoteProblemId = "";
 let lastGradeUndo = null;
 
 els.addProblemBtn.addEventListener("click", () => openDialog());
+els.addBackfillBtn.addEventListener("click", addBackfillAttempt);
 els.cancelBtn.addEventListener("click", () => els.problemDialog.close());
 els.closeAttentionDialogBtn.addEventListener("click", () => els.attentionDialog.close());
 els.clearFilterBtn.addEventListener("click", clearDiagnosticsTopicFilter);
@@ -1174,6 +1182,26 @@ function buildGradeMessage(grade, previousStage, newStage, daysOverdue, nextRevi
   return `${gradeLabels[grade]}: ${movement}. Next review ${formatDate(nextReview)}.${overdueNote}`;
 }
 
+function historyGradeLabel(grade) {
+  const labels = {
+    red: "Could not solve",
+    yellow: "Solved with hints / slow",
+    green: "Solved cleanly",
+    imported: "Imported prior attempt",
+  };
+  return labels[grade] || "Prior attempt";
+}
+
+function historyStageSummary(entry) {
+  if (!isProperGrade(entry.grade)) return "Historical context";
+  const nextReview = entry.nextReview ? ` · next ${formatDate(entry.nextReview)}` : "";
+  return `${stageName(entry.previousStage)} -> ${stageName(entry.newStage)}${nextReview}`;
+}
+
+function isProperGrade(grade) {
+  return GRADED_ATTEMPT_GRADES.includes(grade);
+}
+
 function nextStageForGrade(grade, currentStage, daysOverdue = 0) {
   const stage = clampStage(currentStage);
   if (grade === "red") return 0;
@@ -1184,6 +1212,12 @@ function nextStageForGrade(grade, currentStage, daysOverdue = 0) {
 
 function isExtremelyOverdue(stage, daysOverdue) {
   return daysOverdue > STAGES[clampStage(stage)].intervalDays * 2;
+}
+
+function getDaysOverdueOnDate(nextReview, attemptDate) {
+  if (!nextReview || !attemptDate) return 0;
+  const diff = Math.floor((parseIsoDate(attemptDate) - parseIsoDate(nextReview)) / 86400000);
+  return Math.max(0, diff);
 }
 
 function openDialog(id = "") {
@@ -1204,6 +1238,10 @@ function openDialog(id = "") {
   els.completionInput.value = problem?.completionCount ?? 0;
   els.complexityInput.checked = Boolean(problem?.complexityKnown);
   els.notesInput.value = problem?.notes || "";
+  els.backfillDateInput.value = toIsoDate(new Date());
+  els.backfillGradeInput.value = "green";
+  els.backfillNoteInput.value = "";
+  renderHistoryTab(problem);
   els.solutionApproachInput.value = problem?.solution?.approach || "";
   els.timeComplexityInput.value = problem?.solution?.timeComplexity || "";
   els.spaceComplexityInput.value = problem?.solution?.spaceComplexity || "";
@@ -1212,7 +1250,7 @@ function openDialog(id = "") {
 }
 
 function setProblemDialogTab(tabName) {
-  const activeTab = tabName === "solution" ? "solution" : "problem";
+  const activeTab = ["problem", "solution", "history"].includes(tabName) ? tabName : "problem";
 
   dialogTabButtons.forEach((button) => {
     const isActive = button.dataset.dialogTab === activeTab;
@@ -1223,6 +1261,156 @@ function setProblemDialogTab(tabName) {
   dialogTabPanels.forEach((panel) => {
     panel.hidden = panel.dataset.dialogPanel !== activeTab;
   });
+}
+
+function renderHistoryTab(problem) {
+  if (!problem) {
+    els.historyList.innerHTML = `
+      <div class="history-empty">
+        <strong>Save this problem first</strong>
+        <span>Backfill is available after the problem exists in the tracker.</span>
+      </div>
+    `;
+    els.addBackfillBtn.disabled = true;
+    els.backfillHelp.textContent = "Save this problem before adding backfilled attempts.";
+    return;
+  }
+
+  const history = [...(problem.reviewHistory || [])].sort((a, b) => dateValue(b.date) - dateValue(a.date));
+  els.addBackfillBtn.disabled = false;
+  els.backfillHelp.textContent =
+    "Add a real graded attempt you completed elsewhere. Imported CSV rows stay visible above, but only real grades drive scheduling.";
+
+  if (history.length === 0) {
+    els.historyList.innerHTML = `
+      <div class="history-empty">
+        <strong>No review history yet</strong>
+        <span>Backfilled attempts will appear here after you add them.</span>
+      </div>
+    `;
+    return;
+  }
+
+  els.historyList.innerHTML = history
+    .map((entry) => `
+      <div class="history-row">
+        <div>
+          <strong>${escapeHtml(formatDate(entry.date))}</strong>
+          <span>${escapeHtml(historyGradeLabel(entry.grade))}</span>
+          ${entry.note ? `<p>${escapeHtml(entry.note)}</p>` : ""}
+        </div>
+        <small>${escapeHtml(historyStageSummary(entry))}</small>
+      </div>
+    `)
+    .join("");
+}
+
+function addBackfillAttempt() {
+  const id = els.problemId.value;
+  const problem = problems.find((item) => item.id === id);
+  if (!problem) return;
+
+  const date = normalizeDate(els.backfillDateInput.value);
+  const grade = els.backfillGradeInput.value;
+  const note = els.backfillNoteInput.value.trim();
+
+  if (!date) {
+    alert("Choose a valid attempt date.");
+    return;
+  }
+
+  if (parseIsoDate(date) > dateOnly(new Date())) {
+    alert("Backfilled attempts cannot be in the future.");
+    return;
+  }
+
+  if (!isProperGrade(grade)) {
+    alert("Choose a real grade for the backfilled attempt.");
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const entry = {
+    date,
+    grade,
+    backfilled: true,
+    note,
+  };
+
+  const nextProblem = rebuildProblemFromHistory({
+    ...problem,
+    reviewHistory: [...(problem.reviewHistory || []), entry],
+    updatedAt: now,
+  });
+
+  problems = problems.map((item) => (item.id === id ? nextProblem : item));
+  lastGradeUndo = null;
+  clearPostGradeNote();
+
+  persist();
+  render();
+  renderReviewSummary(nextProblem);
+  els.statusInput.value = nextProblem.status;
+  els.reviewInput.value = nextProblem.nextReview;
+  els.completionInput.value = nextProblem.completionCount;
+  renderHistoryTab(nextProblem);
+  els.backfillNoteInput.value = "";
+  els.gradeResult.textContent = `Backfilled ${historyGradeLabel(grade).toLowerCase()} for ${nextProblem.title}.`;
+}
+
+function rebuildProblemFromHistory(problem) {
+  const sortedHistory = [...(problem.reviewHistory || [])].sort((a, b) => dateValue(a.date) - dateValue(b.date));
+  const importedCount = sortedHistory.filter((entry) => !isProperGrade(entry.grade)).length;
+  const firstAttemptAt = sortedHistory[0]?.date || problem.firstAttemptAt || "";
+  let stage = inferStageFromCount(importedCount);
+  let greenStreak = 0;
+  let scheduledReview = "";
+  let lastProperEntry = null;
+
+  const replayedHistory = sortedHistory.map((entry) => {
+    if (!isProperGrade(entry.grade)) return entry;
+
+    const previousStage = stage;
+    const daysOverdue = scheduledReview ? getDaysOverdueOnDate(scheduledReview, entry.date) : 0;
+    const newStage = nextStageForGrade(entry.grade, previousStage, daysOverdue);
+    const intervalDays = STAGES[newStage].intervalDays;
+    const nextReview = toIsoDate(addDays(parseIsoDate(entry.date), intervalDays));
+    const heldForOverdue =
+      entry.grade === "green" && newStage === previousStage && isExtremelyOverdue(previousStage, daysOverdue);
+
+    stage = newStage;
+    greenStreak = entry.grade === "green" ? greenStreak + 1 : 0;
+    scheduledReview = nextReview;
+    lastProperEntry = {
+      ...entry,
+      previousStage,
+      newStage,
+      wasOverdue: daysOverdue > 0,
+      daysOverdue,
+      heldForOverdue,
+      intervalDays,
+      nextReview,
+    };
+    return lastProperEntry;
+  });
+
+  const normalized = normalizeProblem({
+    ...problem,
+    status: lastProperEntry ? "review" : problem.status,
+    firstAttemptAt,
+    reviewHistory: replayedHistory,
+    completionCount: replayedHistory.length,
+    stage,
+    greenStreak,
+    lastReviewedAt: lastProperEntry?.date || problem.lastReviewedAt,
+    lastGrade: lastProperEntry?.grade || problem.lastGrade,
+    nextReview: lastProperEntry?.nextReview || problem.nextReview,
+    currentIntervalDays: STAGES[stage].intervalDays,
+    solvedAt: problem.solvedAt || replayedHistory.find((entry) => entry.grade === "green")?.date || "",
+    updatedAt: new Date().toISOString(),
+  });
+
+  return applyMasteryStatus(normalized);
 }
 
 function renderReviewSummary(problem) {
