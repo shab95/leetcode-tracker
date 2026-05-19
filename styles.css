@@ -984,6 +984,42 @@ th {
   text-transform: uppercase;
 }
 
+.sort-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  font: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.sort-header::after {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  opacity: 0.34;
+}
+
+.sort-header[data-direction="asc"]::after {
+  border-bottom: 6px solid currentColor;
+  opacity: 1;
+}
+
+.sort-header[data-direction="desc"]::after {
+  border-top: 6px solid currentColor;
+  opacity: 1;
+}
+
+.sort-header.is-active {
+  color: var(--ink);
+}
+
 td {
   font-size: 0.94rem;
 }

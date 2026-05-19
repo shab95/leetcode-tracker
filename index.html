@@ -216,6 +216,7 @@
               </div>
               <select id="sortSelect" aria-label="Sort problems">
                 <option value="due">Due first</option>
+                <option value="dueDesc">Due last</option>
                 <option value="updated">Recently updated</option>
                 <option value="difficulty">Difficulty</option>
                 <option value="topic">Topic</option>
@@ -226,13 +227,13 @@
               <table>
                 <thead>
                   <tr>
-                    <th>Problem</th>
-                    <th>Status</th>
-                    <th>Stage</th>
-                    <th>Difficulty</th>
-                    <th>Topic</th>
-                    <th>Attempts</th>
-                    <th>Next Review</th>
+                    <th data-sort-column="title"><button class="sort-header" type="button" data-table-sort="title">Problem</button></th>
+                    <th data-sort-column="status"><button class="sort-header" type="button" data-table-sort="status">Status</button></th>
+                    <th data-sort-column="stage"><button class="sort-header" type="button" data-table-sort="stage">Stage</button></th>
+                    <th data-sort-column="difficulty"><button class="sort-header" type="button" data-table-sort="difficulty">Difficulty</button></th>
+                    <th data-sort-column="topic"><button class="sort-header" type="button" data-table-sort="topic">Topic</button></th>
+                    <th data-sort-column="attempts"><button class="sort-header" type="button" data-table-sort="attempts">Attempts</button></th>
+                    <th data-sort-column="nextReview"><button class="sort-header" type="button" data-table-sort="nextReview">Next Review</button></th>
                     <th></th>
                   </tr>
                 </thead>

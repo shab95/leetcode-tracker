@@ -135,6 +135,8 @@ const els = {
 const routeLinks = document.querySelectorAll("[data-route]");
 const dialogTabButtons = document.querySelectorAll("[data-dialog-tab]");
 const dialogTabPanels = document.querySelectorAll("[data-dialog-panel]");
+const tableSortButtons = document.querySelectorAll("[data-table-sort]");
+const tableSortHeaders = document.querySelectorAll("[data-sort-column]");
 
 let problems = [];
 let importMeta = null;
@@ -146,6 +148,7 @@ let appEnv = { env: "prod", isQa: false };
 let diagnosticsTopicFilter = "";
 let pendingNoteProblemId = "";
 let lastGradeUndo = null;
+let tableSort = { column: "nextReview", direction: "asc" };
 
 els.addProblemBtn.addEventListener("click", () => openDialog());
 els.addBackfillBtn.addEventListener("click", addBackfillAttempt);
@@ -201,8 +204,22 @@ document.querySelectorAll(".grade-actions").forEach((group) => {
   els.difficultyFilter,
   els.topicFilter,
   els.listFilter,
-  els.sortSelect,
 ].forEach((control) => control.addEventListener("input", render));
+els.sortSelect.addEventListener("input", () => {
+  tableSort = sortSelectValueToTableSort(els.sortSelect.value);
+  render();
+});
+tableSortButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const column = button.dataset.tableSort;
+    tableSort = {
+      column,
+      direction: tableSort.column === column && tableSort.direction === "asc" ? "desc" : "asc",
+    };
+    syncSortSelect();
+    render();
+  });
+});
 els.topicFilter.addEventListener("input", () => {
   if (els.topicFilter.value !== diagnosticsTopicFilter) diagnosticsTopicFilter = "";
 });
@@ -774,6 +791,7 @@ function explainReviewPick(item) {
 
 function renderRows(rows) {
   renderFilterBanner();
+  renderSortHeaders();
   els.problemRows.innerHTML = "";
   els.resultCount.textContent = `${rows.length} ${rows.length === 1 ? "problem" : "problems"}`;
   els.emptyState.style.display = problems.length === 0 ? "block" : "none";
@@ -906,22 +924,78 @@ function getFilteredProblems() {
 }
 
 function sortProblems(a, b) {
-  const sort = els.sortSelect.value;
   const difficultyRank = { Easy: 1, Medium: 2, Hard: 3 };
+  const statusRank = { todo: 1, solving: 2, review: 3, solved: 4 };
+  const direction = tableSort.direction === "desc" ? -1 : 1;
 
-  if (sort === "due") {
-    return dateValue(a.nextReview) - dateValue(b.nextReview) || a.title.localeCompare(b.title);
+  let result = 0;
+
+  if (tableSort.column === "nextReview") {
+    result = compareReviewDates(a.nextReview, b.nextReview, tableSort.direction);
+  } else if (tableSort.column === "updated") {
+    result = new Date(a.updatedAt || 0) - new Date(b.updatedAt || 0);
+  } else if (tableSort.column === "difficulty") {
+    result = difficultyRank[a.difficulty] - difficultyRank[b.difficulty];
+  } else if (tableSort.column === "topic") {
+    result = (a.topic || "").localeCompare(b.topic || "");
+  } else if (tableSort.column === "title") {
+    result = a.title.localeCompare(b.title);
+  } else if (tableSort.column === "status") {
+    result = (statusRank[a.status] || 0) - (statusRank[b.status] || 0);
+  } else if (tableSort.column === "stage") {
+    result = clampStage(a.stage) - clampStage(b.stage);
+  } else if (tableSort.column === "attempts") {
+    result = Number(a.completionCount || 0) - Number(b.completionCount || 0);
   }
 
-  if (sort === "difficulty") {
-    return difficultyRank[b.difficulty] - difficultyRank[a.difficulty] || a.title.localeCompare(b.title);
-  }
+  return (tableSort.column === "nextReview" ? result : result * direction) || a.title.localeCompare(b.title);
+}
 
-  if (sort === "topic") {
-    return (a.topic || "").localeCompare(b.topic || "") || a.title.localeCompare(b.title);
-  }
+function compareReviewDates(aDate, bDate, direction) {
+  const aMissing = !aDate;
+  const bMissing = !bDate;
+  if (aMissing && bMissing) return 0;
+  if (aMissing) return 1;
+  if (bMissing) return -1;
 
-  return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
+  const comparison = dateValue(aDate) - dateValue(bDate);
+  return direction === "desc" ? -comparison : comparison;
+}
+
+function sortSelectValueToTableSort(value) {
+  const mappings = {
+    due: { column: "nextReview", direction: "asc" },
+    dueDesc: { column: "nextReview", direction: "desc" },
+    updated: { column: "updated", direction: "desc" },
+    difficulty: { column: "difficulty", direction: "desc" },
+    topic: { column: "topic", direction: "asc" },
+  };
+  return mappings[value] || mappings.due;
+}
+
+function syncSortSelect() {
+  const valueBySort = {
+    "nextReview:asc": "due",
+    "nextReview:desc": "dueDesc",
+    "updated:desc": "updated",
+    "difficulty:desc": "difficulty",
+    "topic:asc": "topic",
+  };
+  const value = valueBySort[`${tableSort.column}:${tableSort.direction}`] || "";
+  if (value) els.sortSelect.value = value;
+}
+
+function renderSortHeaders() {
+  tableSortHeaders.forEach((header) => {
+    const isActive = header.dataset.sortColumn === tableSort.column;
+    header.setAttribute("aria-sort", isActive ? (tableSort.direction === "asc" ? "ascending" : "descending") : "none");
+  });
+
+  tableSortButtons.forEach((button) => {
+    const isActive = button.dataset.tableSort === tableSort.column;
+    button.classList.toggle("is-active", isActive);
+    button.dataset.direction = isActive ? tableSort.direction : "";
+  });
 }
 
 function getDailyPicks(options = {}) {
