@@ -8,7 +8,21 @@
   </head>
   <body>
     <main class="app-shell">
-      <section class="topbar">
+      <section class="auth-view" id="authView" hidden>
+        <p class="eyebrow">Private beta</p>
+        <h1>DSA Tracker</h1>
+        <p>Sign in to your private DSA tracker. Your progress is saved to your account.</p>
+        <a class="primary-btn auth-link" href="/auth/google">Continue with Google</a>
+      </section>
+
+      <section class="auth-view" id="notInvitedView" hidden>
+        <p class="eyebrow">Private beta</p>
+        <h1>This tracker is in private beta.</h1>
+        <p id="notInvitedCopy">This Google account is not invited yet.</p>
+        <button class="ghost-btn" id="logoutDeniedBtn" type="button">Sign out</button>
+      </section>
+
+      <section class="topbar" id="appTopbar">
         <div>
           <p class="eyebrow">Anti-forgetting dashboard</p>
           <h1>DSA Tracker</h1>
@@ -23,6 +37,23 @@
             <span aria-hidden="true">+</span>
             Add Problem
           </button>
+          <div class="account-menu" id="accountMenu" hidden>
+            <span id="accountLabel"></span>
+            <button class="ghost-btn small-btn" id="logoutBtn" type="button">Logout</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel hosted-setup" id="hostedSetup" hidden>
+        <div>
+          <p class="eyebrow">Cloud setup</p>
+          <h2>Your cloud tracker is empty.</h2>
+          <p>Import a JSON backup from your local tracker, or seed a study list to start fresh. Your local tracker and hosted tracker are separate.</p>
+        </div>
+        <div class="data-actions">
+          <button class="primary-btn" id="setupImportJsonBtn" type="button">Import JSON backup</button>
+          <button class="ghost-btn" id="setupSeedBlindBtn" type="button">Seed Blind 75</button>
+          <button class="ghost-btn" id="setupSeedNeetcodeBtn" type="button">Seed NeetCode 150</button>
         </div>
       </section>
 

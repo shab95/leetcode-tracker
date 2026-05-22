@@ -4,9 +4,9 @@ A local-first DSA anti-forgetting tracker. The app is designed around a simple d
 do one due review, do one new problem, grade honestly, and let spaced repetition handle
 the next review date.
 
-The project intentionally starts small: static HTML/CSS/JavaScript plus a tiny Node
-server that saves tracker state to a local JSON file. There is no build system and no
-database yet.
+The project intentionally stays small: static HTML/CSS/JavaScript plus a Node server.
+By default it saves tracker state to a local JSON file. It can also run in a private-beta
+hosted mode with Google OAuth and per-user SQLite storage.
 
 ## What It Does
 
@@ -23,12 +23,13 @@ database yet.
   recent grade quality.
 - Provides a Data Management page for CSV import, JSON backup/restore, and list seeding.
 - Includes QA mode with disposable fixture data.
+- Supports an optional private-beta cloud mode for invited Google accounts.
 
 The review algorithm is documented in [docs/review-algorithm.md](docs/review-algorithm.md).
 
 ## Requirements
 
-- Node.js 18 or newer
+- Node.js 22 or newer
 - A modern browser
 
 Install Node from [nodejs.org](https://nodejs.org/) or with Homebrew:
@@ -155,8 +156,8 @@ the schedule immediately because they reveal weakness.
 
 ## Safety Notes
 
-This app is local-first. The current server trusts whoever can reach it. Do not expose
-`server.js` directly to the public internet.
+This app is local-first by default. Local mode trusts whoever can reach it, so do not expose
+local mode directly to the public internet.
 
 Git ignores real runtime data:
 
@@ -165,9 +166,53 @@ data/tracker-state.json
 data/qa-tracker-state.json
 data/backups/
 data/qa-backups/
+data/*.sqlite
+.env
 ```
 
 Commit only source files, built-in study lists, docs, and safe fixtures.
+
+## Private Beta Hosted Mode
+
+Hosted mode is for a small invite-only deployment. It keeps local mode working, but changes
+storage and access control:
+
+- Google OAuth is required.
+- Only emails in `ALLOWED_EMAILS` can use the app.
+- Each user gets a separate SQLite-backed tracker state.
+- Local JSON files are not read or written in hosted mode.
+- Saves include a `revision`; stale saves return a conflict instead of overwriting newer data.
+- Imports and normal saves create rolling server-side backups.
+
+Required environment variables:
+
+```text
+NODE_ENV=production
+AUTH_REQUIRED=true
+GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_SECRET
+GOOGLE_CALLBACK_URL
+SESSION_SECRET
+ALLOWED_EMAILS
+SQLITE_PATH
+```
+
+Optional:
+
+```text
+MAX_STATE_BYTES=5000000
+BACKUP_RETENTION=20
+```
+
+Run hosted mode locally for smoke testing:
+
+```bash
+npm run start:hosted
+```
+
+That command needs the hosted environment variables above. For Railway deployment,
+store `SQLITE_PATH` on a persistent volume and run one app replica while using SQLite.
+See [docs/online-hosting-plan.md](docs/online-hosting-plan.md) for the full setup guide.
 
 ## Project Structure
 
@@ -175,7 +220,7 @@ Commit only source files, built-in study lists, docs, and safe fixtures.
 index.html                  App shell and views
 styles.css                  App styling
 app.js                      Frontend state, rendering, grading, import/export
-server.js                   Local static server and JSON persistence API
+server.js                   Express server for local JSON persistence and hosted SQLite mode
 data/blind-75.js            Built-in Blind 75 list
 data/neetcode-150.js        Built-in NeetCode 150 list
 data/fixtures/qa-state.json Safe QA fixture state
@@ -189,13 +234,14 @@ docs/online-hosting-plan.md Future hosted-app plan
 ```bash
 npm start
 npm run start:qa
+npm run start:hosted
 npm run check
 ```
 
 `npm run check` runs JavaScript syntax checks for the app and server.
 
-## Future Online Version
+## Online Version
 
-The current local app can evolve into a hosted multi-user app. The recommended path is
-Railway + Google OAuth + SQLite on a persistent volume. See
-[docs/online-hosting-plan.md](docs/online-hosting-plan.md).
+The hosted private-beta path is Railway + Google OAuth + SQLite on a persistent volume.
+Local and hosted state are intentionally separate, so export JSON locally and import it
+after signing in online. See [docs/online-hosting-plan.md](docs/online-hosting-plan.md).

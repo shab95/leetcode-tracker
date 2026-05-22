@@ -6,9 +6,17 @@
   "scripts": {
     "start": "node server.js",
     "start:qa": "TRACKER_ENV=qa PORT=5174 node server.js",
+    "start:hosted": "AUTH_REQUIRED=true NODE_ENV=production node server.js",
     "check": "node --check app.js && node --check server.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "express-session": "^1.19.0",
+    "helmet": "^8.2.0",
+    "passport": "^0.7.0",
+    "passport-google-oauth20": "^2.0.0"
   }
 }

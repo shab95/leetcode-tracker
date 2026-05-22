@@ -36,6 +36,10 @@ const MASTERY_ATTEMPT_THRESHOLDS = {
 const els = {
   addProblemBtn: document.querySelector("#addProblemBtn"),
   addBackfillBtn: document.querySelector("#addBackfillBtn"),
+  accountLabel: document.querySelector("#accountLabel"),
+  accountMenu: document.querySelector("#accountMenu"),
+  appTopbar: document.querySelector("#appTopbar"),
+  authView: document.querySelector("#authView"),
   attentionDialog: document.querySelector("#attentionDialog"),
   backfillDateInput: document.querySelector("#backfillDateInput"),
   backfillGradeInput: document.querySelector("#backfillGradeInput"),
@@ -75,6 +79,8 @@ const els = {
   historyList: document.querySelector("#historyList"),
   jsonImportInput: document.querySelector("#jsonImportInput"),
   listFilter: document.querySelector("#listFilter"),
+  logoutBtn: document.querySelector("#logoutBtn"),
+  logoutDeniedBtn: document.querySelector("#logoutDeniedBtn"),
   newCard: document.querySelector("#newCard"),
   newMeta: document.querySelector("#newMeta"),
   neetcodeAttempted: document.querySelector("#neetcodeAttempted"),
@@ -82,6 +88,8 @@ const els = {
   newSourceSelect: document.querySelector("#newSourceSelect"),
   newOpenLink: document.querySelector("#newOpenLink"),
   newTitle: document.querySelector("#newTitle"),
+  notInvitedCopy: document.querySelector("#notInvitedCopy"),
+  notInvitedView: document.querySelector("#notInvitedView"),
   notesInput: document.querySelector("#notesInput"),
   postGradeNote: document.querySelector("#postGradeNote"),
   postGradeComplexityField: document.querySelector("#postGradeComplexityField"),
@@ -111,6 +119,10 @@ const els = {
   searchInput: document.querySelector("#searchInput"),
   seedBlindBtn: document.querySelector("#seedBlindBtn"),
   seedNeetcodeBtn: document.querySelector("#seedNeetcodeBtn"),
+  setupImportJsonBtn: document.querySelector("#setupImportJsonBtn"),
+  setupSeedBlindBtn: document.querySelector("#setupSeedBlindBtn"),
+  setupSeedNeetcodeBtn: document.querySelector("#setupSeedNeetcodeBtn"),
+  hostedSetup: document.querySelector("#hostedSetup"),
   solutionApproachInput: document.querySelector("#solutionApproachInput"),
   solutionExplanationInput: document.querySelector("#solutionExplanationInput"),
   skipNewBtn: document.querySelector("#skipNewBtn"),
@@ -144,7 +156,10 @@ let sessions = [];
 let dailyPicks = { review: null, newProblem: null };
 let skippedDailyPicks = { review: new Set(), new: new Set() };
 let lastServerSavedAt = "";
-let appEnv = { env: "prod", isQa: false };
+let currentRevision = 0;
+let appEnv = { env: "prod", isQa: false, authRequired: false, storageMode: "local" };
+let currentUser = null;
+let isHostedAllowed = true;
 let diagnosticsTopicFilter = "";
 let pendingNoteProblemId = "";
 let lastGradeUndo = null;
@@ -160,6 +175,8 @@ els.csvImportInput.addEventListener("change", importCsv);
 els.deleteBtn.addEventListener("click", deleteCurrentProblem);
 els.exportBtn.addEventListener("click", exportJson);
 els.jsonImportInput.addEventListener("change", importJson);
+els.logoutBtn?.addEventListener("click", logout);
+els.logoutDeniedBtn?.addEventListener("click", logout);
 els.newSourceSelect.addEventListener("input", () => {
   skippedDailyPicks.new = new Set();
   renderDailyPicks();
@@ -168,6 +185,9 @@ els.problemForm.addEventListener("submit", saveProblem);
 els.resetQaBtn.addEventListener("click", resetQaData);
 els.seedBlindBtn.addEventListener("click", seedBlind75);
 els.seedNeetcodeBtn.addEventListener("click", seedNeetcode150);
+els.setupImportJsonBtn?.addEventListener("click", () => els.jsonImportInput.click());
+els.setupSeedBlindBtn?.addEventListener("click", seedBlind75);
+els.setupSeedNeetcodeBtn?.addEventListener("click", seedNeetcode150);
 els.savePostGradeNoteBtn.addEventListener("click", savePostGradeNote);
 els.skipNewBtn.addEventListener("click", () => skipDailyPick("new"));
 els.skipPostGradeNoteBtn.addEventListener("click", clearPostGradeNote);
@@ -229,11 +249,17 @@ initApp();
 async function initApp() {
   setSaveStatus("loading", "Loading saved data...");
   appEnv = await loadAppEnv();
+  const sessionInfo = await loadSessionInfo();
+  currentUser = sessionInfo.user || null;
+  isHostedAllowed = !appEnv.authRequired || Boolean(sessionInfo.allowed);
+  renderAuthState(sessionInfo);
+  if (appEnv.authRequired && (!sessionInfo.authenticated || !sessionInfo.allowed)) return;
+
   renderQaTools();
   renderDataManagementInfo();
-  const localProblems = loadProblemsFromStorage();
-  const localImportMeta = loadJson(IMPORT_META_KEY, null);
-  const localSessions = loadJson(SESSION_KEY, []);
+  const localProblems = appEnv.authRequired ? [] : loadProblemsFromStorage();
+  const localImportMeta = appEnv.authRequired ? null : loadJson(IMPORT_META_KEY, null);
+  const localSessions = appEnv.authRequired ? [] : loadJson(SESSION_KEY, []);
   const remoteState = await loadRemoteState();
 
   const hasRemoteData =
@@ -247,7 +273,9 @@ async function initApp() {
     problems = localProblems;
     importMeta = localImportMeta;
     sessions = Array.isArray(localSessions) ? localSessions : [];
-    if (problems.length > 0 || importMeta || sessions.length > 0) {
+    if (appEnv.authRequired) {
+      setSaveStatus("saved", "Ready to save to your cloud account.");
+    } else if (problems.length > 0 || importMeta || sessions.length > 0) {
       setSaveStatus("saving", "Migrating browser data to local file...");
       persist();
     } else {
@@ -264,6 +292,7 @@ function applyRemoteState(state) {
   importMeta = state.importMeta || null;
   sessions = Array.isArray(state.sessions) ? state.sessions : [];
   lastServerSavedAt = state.savedAt || "";
+  currentRevision = Number(state.revision || 0);
 }
 
 function loadProblems() {
@@ -296,14 +325,16 @@ function loadJson(key, fallback) {
 }
 
 function persist() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(problems));
-  localStorage.setItem(SESSION_KEY, JSON.stringify(sessions));
-  if (importMeta) localStorage.setItem(IMPORT_META_KEY, JSON.stringify(importMeta));
+  if (!appEnv.authRequired) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(problems));
+    localStorage.setItem(SESSION_KEY, JSON.stringify(sessions));
+    if (importMeta) localStorage.setItem(IMPORT_META_KEY, JSON.stringify(importMeta));
+  }
   saveRemoteState();
 }
 
 function persistImportMeta() {
-  localStorage.setItem(IMPORT_META_KEY, JSON.stringify(importMeta));
+  if (!appEnv.authRequired) localStorage.setItem(IMPORT_META_KEY, JSON.stringify(importMeta));
   saveRemoteState();
 }
 
@@ -328,9 +359,55 @@ async function loadAppEnv() {
   }
 }
 
+async function loadSessionInfo() {
+  if (!appEnv.authRequired) return { authRequired: false, authenticated: true, allowed: true, user: null };
+
+  try {
+    const response = await fetch("/api/me", { cache: "no-store" });
+    if (!response.ok) throw new Error("Session unavailable");
+    return await response.json();
+  } catch {
+    return { authRequired: true, authenticated: false, allowed: false, user: null };
+  }
+}
+
+function renderAuthState(sessionInfo) {
+  const needsLogin = appEnv.authRequired && !sessionInfo.authenticated;
+  const denied = appEnv.authRequired && sessionInfo.authenticated && !sessionInfo.allowed;
+  const showApp = !needsLogin && !denied;
+
+  els.authView.hidden = !needsLogin;
+  els.notInvitedView.hidden = !denied;
+  els.appTopbar.hidden = !showApp;
+  els.hostedSetup.hidden = true;
+  els.dashboardView.hidden = !showApp;
+  els.diagnosticsView.hidden = true;
+  els.dataManagementView.hidden = true;
+
+  if (denied) {
+    const email = sessionInfo.user?.email || "this Google account";
+    els.notInvitedCopy.textContent = `You signed in as ${email}, but this email is not invited yet.`;
+  }
+
+  if (els.accountMenu) {
+    els.accountMenu.hidden = !appEnv.authRequired || !sessionInfo.user;
+    els.accountLabel.textContent = sessionInfo.user?.email || "";
+  }
+}
+
+async function logout() {
+  if (!appEnv.authRequired) return;
+  try {
+    await fetch("/auth/logout", { method: "POST" });
+  } finally {
+    window.location.href = "/index.html";
+  }
+}
+
 function renderQaTools() {
-  if (els.qaTools) els.qaTools.hidden = !appEnv.isQa;
-  if (els.dashboardQaTools) els.dashboardQaTools.hidden = !appEnv.isQa;
+  const showQa = appEnv.isQa && !appEnv.authRequired;
+  if (els.qaTools) els.qaTools.hidden = !showQa;
+  if (els.dashboardQaTools) els.dashboardQaTools.hidden = !showQa;
 }
 
 async function resetQaData() {
@@ -356,28 +433,42 @@ function saveRemoteState() {
   const payload = {
     version: EXPORT_VERSION,
     savedAt: new Date().toISOString(),
+    revision: currentRevision,
     importMeta,
     problems,
     sessions,
   };
 
-  setSaveStatus("saving", "Saving to local file...");
+  setSaveStatus("saving", appEnv.authRequired ? "Saving to your cloud account..." : "Saving to local file...");
   fetch(API_STATE_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   })
     .then((response) => {
+      if (response.status === 409) {
+        const error = new Error("conflict");
+        error.isConflict = true;
+        throw error;
+      }
       if (!response.ok) throw new Error("Save failed");
       return response.json();
     })
     .then((result) => {
       lastServerSavedAt = result.savedAt || new Date().toISOString();
+      currentRevision = Number(result.revision || currentRevision);
       setSaveStatus("saved", buildSavedMessage(lastServerSavedAt));
     })
-    .catch(() => {
-      setSaveStatus("warning", "Local file save failed. Browser fallback updated.");
-      console.warn("Could not save tracker data to the local server. LocalStorage fallback was updated.");
+    .catch((error) => {
+      if (error.isConflict) {
+        setSaveStatus("warning", "Cloud save conflict. Another tab or device saved newer data. Export if needed, then reload.");
+        return;
+      }
+      setSaveStatus(
+        "warning",
+        appEnv.authRequired ? "Cloud save failed. Your account was not updated." : "Local file save failed. Browser fallback updated.",
+      );
+      console.warn("Could not save tracker data to the server.");
     });
 }
 
@@ -388,7 +479,8 @@ function setSaveStatus(status, message) {
 }
 
 function buildSavedMessage(savedAt) {
-  return savedAt ? `Saved to local file - last saved ${formatDateTime(savedAt)}` : "Saved to local file.";
+  const target = appEnv.authRequired ? "your cloud account" : "local file";
+  return savedAt ? `Saved to ${target} - last saved ${formatDateTime(savedAt)}` : `Saved to ${target}.`;
 }
 
 function navigateToRoute(route) {
@@ -408,6 +500,7 @@ function getCurrentRoute() {
 }
 
 function renderAppRoute() {
+  if (appEnv.authRequired && !isHostedAllowed) return;
   const route = getCurrentRoute();
   const isDataRoute = route === "data";
   const isDiagnosticsRoute = route === "diagnostics";
@@ -431,12 +524,26 @@ function renderAppRoute() {
 }
 
 function renderDataManagementInfo() {
-  if (els.dataEnvLabel) els.dataEnvLabel.textContent = appEnv.isQa ? "QA" : "Production";
-  if (els.dataStateFile) els.dataStateFile.textContent = appEnv.isQa ? "data/qa-tracker-state.json" : "data/tracker-state.json";
-  if (els.dataBackupDir) els.dataBackupDir.textContent = appEnv.isQa ? "data/qa-backups/" : "data/backups/";
+  if (els.dataEnvLabel) els.dataEnvLabel.textContent = appEnv.authRequired ? "Private beta cloud" : appEnv.isQa ? "QA" : "Production";
+  if (els.dataStateFile) {
+    els.dataStateFile.textContent = appEnv.authRequired
+      ? "Your Google account"
+      : appEnv.isQa
+        ? "data/qa-tracker-state.json"
+        : "data/tracker-state.json";
+  }
+  if (els.dataBackupDir) {
+    els.dataBackupDir.textContent = appEnv.authRequired
+      ? "Cloud rolling backups"
+      : appEnv.isQa
+        ? "data/qa-backups/"
+        : "data/backups/";
+  }
 }
 
 function render() {
+  if (appEnv.authRequired && !isHostedAllowed) return;
+  if (els.hostedSetup) els.hostedSetup.hidden = !(appEnv.authRequired && problems.length === 0);
   renderTopicOptions();
   renderImportMeta();
   renderStats();
@@ -1877,6 +1984,7 @@ function exportJson() {
   const payload = {
     version: EXPORT_VERSION,
     exportedAt: new Date().toISOString(),
+    revision: currentRevision,
     importMeta,
     problems,
     sessions,
@@ -1899,11 +2007,16 @@ function importJson(event) {
       const imported = JSON.parse(String(reader.result));
       const importedProblems = Array.isArray(imported) ? imported : imported.problems;
       if (!Array.isArray(importedProblems)) throw new Error("Expected problems array");
+      if (
+        appEnv.authRequired &&
+        !window.confirm("Importing replaces your hosted tracker state. We'll save a backup first. Continue?")
+      ) {
+        return;
+      }
       problems = importedProblems.map(normalizeProblem);
       sessions = Array.isArray(imported.sessions) ? imported.sessions : [];
       importMeta = imported.importMeta || importMeta;
       persist();
-      if (importMeta) persistImportMeta();
       render();
     } catch (error) {
       console.error(error);

@@ -70,12 +70,55 @@ input[type="range"],
   margin-bottom: 22px;
 }
 
+.auth-view {
+  display: grid;
+  gap: 16px;
+  max-width: 560px;
+  min-height: 68vh;
+  align-content: center;
+}
+
+.auth-view h1 {
+  font-size: clamp(2.1rem, 5vw, 4.2rem);
+}
+
+.auth-view p {
+  color: var(--muted);
+  font-size: 1.08rem;
+}
+
+.auth-link {
+  width: fit-content;
+  text-decoration: none;
+}
+
 .topbar-actions {
   display: flex;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.account-menu {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.hosted-setup {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.hosted-setup p {
+  margin-bottom: 0;
+  color: var(--muted);
 }
 
 .app-tabs {
