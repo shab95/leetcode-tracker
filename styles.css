@@ -1319,6 +1319,7 @@ form {
 .history-row,
 .history-empty {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   border: 1px solid var(--line);
@@ -1353,14 +1354,28 @@ form {
   line-height: 1.35;
 }
 
+.history-row-meta {
+  display: grid;
+  flex: 0 0 min(260px, 45%);
+  justify-items: end;
+  gap: 8px;
+  min-width: 0;
+}
+
 .history-row small {
-  flex: 0 0 auto;
   max-width: 210px;
   color: var(--muted);
   font-size: 0.72rem;
   font-weight: 800;
   line-height: 1.3;
   text-align: right;
+}
+
+.history-delete-btn {
+  min-height: 28px;
+  padding: 0 9px;
+  color: var(--danger);
+  font-size: 0.72rem;
 }
 
 .history-empty {

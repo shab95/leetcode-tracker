@@ -174,6 +174,10 @@ els.closeDialogBtn.addEventListener("click", () => els.problemDialog.close());
 els.csvImportInput.addEventListener("change", importCsv);
 els.deleteBtn.addEventListener("click", deleteCurrentProblem);
 els.exportBtn.addEventListener("click", exportJson);
+els.historyList.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-delete-history-key]");
+  if (button) deleteHistoryEntry(button.dataset.deleteHistoryKey);
+});
 els.jsonImportInput.addEventListener("change", importJson);
 els.logoutBtn?.addEventListener("click", logout);
 els.logoutDeniedBtn?.addEventListener("click", logout);
@@ -1228,6 +1232,8 @@ function applyGrade(id, grade, undoContext = {}) {
     const reviewEntry = {
       date: today,
       grade,
+      id: crypto.randomUUID(),
+      scheduledReview: problem.nextReview || "",
       previousStage: transition.previousStage,
       newStage: transition.newStage,
       wasOverdue: transition.daysOverdue > 0,
@@ -1406,7 +1412,10 @@ function getGradeTransition({ grade, currentStage, currentGreenStreak = 0, sched
 }
 
 function heldReasonLabel(entry) {
-  if (entry.heldForEarly) return " · held early";
+  if (entry.heldForEarly) {
+    const scheduled = entry.scheduledReview ? ` before ${formatDate(entry.scheduledReview)}` : "";
+    return ` · held early${scheduled}`;
+  }
   if (entry.heldForOverdue) return " · held overdue";
   return "";
 }
@@ -1528,7 +1537,14 @@ function renderHistoryTab(problem) {
           <span>${escapeHtml(historyGradeLabel(entry.grade))}</span>
           ${entry.note ? `<p>${escapeHtml(entry.note)}</p>` : ""}
         </div>
-        <small>${escapeHtml(historyStageSummary(entry))}</small>
+        <div class="history-row-meta">
+          <small>${escapeHtml(historyStageSummary(entry))}</small>
+          ${
+            isProperGrade(entry.grade)
+              ? `<button class="ghost-btn history-delete-btn" type="button" data-delete-history-key="${escapeAttr(historyEntryKey(entry))}">Delete</button>`
+              : ""
+          }
+        </div>
       </div>
     `)
     .join("");
@@ -1563,6 +1579,8 @@ function addBackfillAttempt() {
     date,
     grade,
     backfilled: true,
+    id: crypto.randomUUID(),
+    scheduledReview: shouldUseCurrentScheduleForBackfill(problem, date) ? problem.nextReview || "" : "",
     note,
   };
 
@@ -1587,6 +1605,51 @@ function addBackfillAttempt() {
   els.gradeResult.textContent = `Backfilled ${historyGradeLabel(grade).toLowerCase()} for ${nextProblem.title}.`;
 }
 
+function deleteHistoryEntry(entryKey) {
+  const id = els.problemId.value;
+  const problem = problems.find((item) => item.id === id);
+  if (!problem || !entryKey) return;
+
+  const entry = (problem.reviewHistory || []).find((item) => historyEntryKey(item) === entryKey);
+  if (!entry || !isProperGrade(entry.grade)) return;
+
+  if (!window.confirm(`Delete the ${historyGradeLabel(entry.grade).toLowerCase()} attempt from ${formatDate(entry.date)}?`)) {
+    return;
+  }
+
+  const nextProblem = rebuildProblemFromHistory({
+    ...problem,
+    reviewHistory: (problem.reviewHistory || []).filter((item) => historyEntryKey(item) !== entryKey),
+    updatedAt: new Date().toISOString(),
+  });
+
+  problems = problems.map((item) => (item.id === id ? nextProblem : item));
+  sessions = sessions.filter((session) => !(session.problemId === id && session.date === entry.date && session.grade === entry.grade));
+  lastGradeUndo = null;
+  clearPostGradeNote();
+
+  persist();
+  render();
+  renderReviewSummary(nextProblem);
+  els.statusInput.value = nextProblem.status;
+  els.reviewInput.value = nextProblem.nextReview;
+  els.completionInput.value = nextProblem.completionCount;
+  renderHistoryTab(nextProblem);
+  els.gradeResult.textContent = `Deleted history entry for ${nextProblem.title}.`;
+}
+
+function historyEntryKey(entry) {
+  if (entry.id) return entry.id;
+  return [
+    entry.date || "",
+    entry.grade || "",
+    entry.previousStage ?? "",
+    entry.newStage ?? "",
+    entry.nextReview || "",
+    entry.note || "",
+  ].join("|");
+}
+
 function rebuildProblemFromHistory(problem) {
   const sortedHistory = [...(problem.reviewHistory || [])].sort((a, b) => dateValue(a.date) - dateValue(b.date));
   const importedCount = sortedHistory.filter((entry) => !isProperGrade(entry.grade)).length;
@@ -1599,11 +1662,12 @@ function rebuildProblemFromHistory(problem) {
   const replayedHistory = sortedHistory.map((entry) => {
     if (!isProperGrade(entry.grade)) return entry;
 
+    const effectiveScheduledReview = entry.scheduledReview || scheduledReview;
     const transition = getGradeTransition({
       grade: entry.grade,
       currentStage: stage,
       currentGreenStreak: greenStreak,
-      scheduledReview,
+      scheduledReview: effectiveScheduledReview,
       attemptDate: entry.date,
     });
 
@@ -1612,6 +1676,7 @@ function rebuildProblemFromHistory(problem) {
     scheduledReview = transition.nextReview;
     lastProperEntry = {
       ...entry,
+      scheduledReview: effectiveScheduledReview,
       previousStage: transition.previousStage,
       newStage: transition.newStage,
       wasOverdue: transition.daysOverdue > 0,
@@ -1641,6 +1706,18 @@ function rebuildProblemFromHistory(problem) {
   });
 
   return applyMasteryStatus(normalized);
+}
+
+function shouldUseCurrentScheduleForBackfill(problem, date) {
+  if (!problem.nextReview) return false;
+
+  const latestProperDate = (problem.reviewHistory || [])
+    .filter((entry) => isProperGrade(entry.grade))
+    .map((entry) => normalizeDate(entry.date))
+    .filter(Boolean)
+    .sort((a, b) => dateValue(b) - dateValue(a))[0];
+
+  return !latestProperDate || dateValue(date) >= dateValue(latestProperDate);
 }
 
 function renderReviewSummary(problem) {
