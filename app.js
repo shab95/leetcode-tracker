@@ -1864,6 +1864,20 @@ function seedStudyList(listId) {
 
   const now = new Date().toISOString();
   let added = 0;
+  let removed = 0;
+
+  problems = problems.map((problem) => {
+    if (!problem.listMemberships?.includes(studyList.membership) || problemMatchesStudyList(problem, studyList)) {
+      return problem;
+    }
+
+    removed += 1;
+    return normalizeProblem({
+      ...problem,
+      listMemberships: problem.listMemberships.filter((membership) => membership !== studyList.membership),
+      updatedAt: now,
+    });
+  });
 
   studyList.problems.forEach((planProblem) => {
     const existing = findProblemByPlan(planProblem);
@@ -1891,7 +1905,15 @@ function seedStudyList(listId) {
 
   persist();
   render();
-  alert(`${studyList.label} seeded. Added ${added} new problems.`);
+  alert(`${studyList.label} synced. Added ${added} new problems and removed ${removed} stale memberships.`);
+}
+
+function problemMatchesStudyList(problem, studyList) {
+  const canonical = problemIdentitySlug(problem);
+  const title = normalizeTitle(problem.title);
+  return studyList.problems.some(
+    (planProblem) => (canonical && canonicalSlug(planProblem.slug) === canonical) || normalizeTitle(planProblem.title) === title,
+  );
 }
 
 function addProblemFromPlan(planProblem) {
