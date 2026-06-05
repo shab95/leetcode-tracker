@@ -712,7 +712,11 @@ function safeParseState(stateJson) {
 function buildLeaderboardStats(state, baselineDueCount, weekStart, today) {
   const sessions = Array.isArray(state.sessions) ? state.sessions : [];
   const problems = Array.isArray(state.problems) ? state.problems : [];
-  const weekSessions = sessions.filter((session) => isSessionInWeek(session, weekStart, today));
+  const sessionsWithAttemptTypes = sessions.map((session) => ({
+    ...session,
+    effectiveAttemptType: session.attemptType || inferSessionAttemptType(session, problems),
+  }));
+  const weekSessions = sessionsWithAttemptTypes.filter((session) => isSessionInWeek(session, weekStart, today));
   const gradedWeekSessions = weekSessions.filter((session) => isProperGrade(session.grade));
   const practiceDays = new Set(gradedWeekSessions.map((session) => normalizeDate(session.date)).filter(Boolean)).size;
   const cleanCount = gradedWeekSessions.filter((session) => session.grade === "green").length;
@@ -722,19 +726,45 @@ function buildLeaderboardStats(state, baselineDueCount, weekStart, today) {
   return {
     weekly: {
       practiceDays,
-      reviewsCompleted: gradedWeekSessions.filter((session) => session.attemptType === "review").length,
-      newAttempts: gradedWeekSessions.filter((session) => session.attemptType === "new").length,
+      reviewsCompleted: gradedWeekSessions.filter((session) => session.effectiveAttemptType === "review").length,
+      newAttempts: gradedWeekSessions.filter((session) => session.effectiveAttemptType === "new").length,
       backlogReduced: Math.max(0, Number(baselineDueCount || 0) - currentDueCount),
       cleanRecallRate: totalGraded ? Math.round((cleanCount / totalGraded) * 100) : 0,
-      currentStreak: currentPracticeStreak(sessions, today),
+      currentStreak: currentPracticeStreak(sessionsWithAttemptTypes, today),
     },
     lifetime: {
       durablePlus: problems.filter((problem) => isAttempted(problem) && clampStage(problem.stage) >= 4).length,
       mastered: problems.filter((problem) => isMastered(problem, today)).length,
-      totalGradedAttempts: sessions.filter((session) => isProperGrade(session.grade)).length,
-      totalReviewCompletions: sessions.filter((session) => isProperGrade(session.grade) && session.attemptType === "review").length,
+      totalGradedAttempts: sessionsWithAttemptTypes.filter((session) => isProperGrade(session.grade)).length,
+      totalReviewCompletions: sessionsWithAttemptTypes.filter(
+        (session) => isProperGrade(session.grade) && session.effectiveAttemptType === "review",
+      ).length,
     },
   };
+}
+
+function inferSessionAttemptType(session, problems) {
+  const problem = (problems || []).find((item) => item.id === session.problemId);
+  if (!problem) return "";
+
+  const sessionDate = normalizeDate(session.date);
+  if (!sessionDate) return "";
+
+  const history = Array.isArray(problem.reviewHistory) ? problem.reviewHistory : [];
+  const hasEarlierHistory = history.some((entry) => {
+    const entryDate = normalizeDate(entry.date);
+    return entryDate && entryDate < sessionDate;
+  });
+  if (hasEarlierHistory) return "review";
+
+  const firstAttemptDate = normalizeDate(problem.firstAttemptAt);
+  if (firstAttemptDate && firstAttemptDate < sessionDate) return "review";
+
+  const sameDayProperEntries = history.filter((entry) => normalizeDate(entry.date) === sessionDate && isProperGrade(entry.grade));
+  const matchingEntry = sameDayProperEntries.find((entry) => entry.grade === session.grade);
+  if (matchingEntry?.scheduledReview) return "review";
+
+  return "new";
 }
 
 function isSessionInWeek(session, weekStart, today) {

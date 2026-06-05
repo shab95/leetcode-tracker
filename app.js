@@ -201,6 +201,8 @@ els.leaderboardHead?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-leaderboard-sort]");
   if (button) sortLeaderboard(button.dataset.leaderboardSort);
 });
+els.leaderboardDisplayNameInput?.addEventListener("input", markLeaderboardProfileDirty);
+els.leaderboardOptInInput?.addEventListener("input", markLeaderboardProfileDirty);
 els.saveLeaderboardProfileBtn?.addEventListener("click", saveLeaderboardProfile);
 els.logoutBtn?.addEventListener("click", logout);
 els.logoutDeniedBtn?.addEventListener("click", logout);
@@ -630,11 +632,18 @@ async function saveLeaderboardProfile() {
     els.leaderboardProfileHelp.textContent = leaderboardProfile.optedIn
       ? "You are opted in. Only aggregate stats are shared."
       : "You are opted out and hidden from leaderboard rows.";
+    els.saveLeaderboardProfileBtn.textContent = "Saved";
     await loadLeaderboardData();
     renderLeaderboard();
   } catch {
     els.leaderboardProfileHelp.textContent = "Could not save leaderboard profile. Try again.";
+    els.saveLeaderboardProfileBtn.textContent = "Save profile";
   }
+}
+
+function markLeaderboardProfileDirty() {
+  if (!els.saveLeaderboardProfileBtn) return;
+  els.saveLeaderboardProfileBtn.textContent = "Save profile";
 }
 
 function render() {
