@@ -722,6 +722,7 @@ function buildLeaderboardStats(state, baselineDueCount, weekStart, today) {
   const cleanCount = gradedWeekSessions.filter((session) => session.grade === "green").length;
   const totalGraded = gradedWeekSessions.length;
   const currentDueCount = countDueReviews(problems, today);
+  const lifetimeAttempts = getLifetimeGradedAttempts(problems, sessionsWithAttemptTypes);
 
   return {
     weekly: {
@@ -735,12 +736,51 @@ function buildLeaderboardStats(state, baselineDueCount, weekStart, today) {
     lifetime: {
       durablePlus: problems.filter((problem) => isAttempted(problem) && clampStage(problem.stage) >= 4).length,
       mastered: problems.filter((problem) => isMastered(problem, today)).length,
-      totalGradedAttempts: sessionsWithAttemptTypes.filter((session) => isProperGrade(session.grade)).length,
-      totalReviewCompletions: sessionsWithAttemptTypes.filter(
-        (session) => isProperGrade(session.grade) && session.effectiveAttemptType === "review",
-      ).length,
+      totalGradedAttempts: lifetimeAttempts.length,
+      totalReviewCompletions: lifetimeAttempts.filter((attempt) => attempt.attemptType === "review").length,
     },
   };
+}
+
+function getLifetimeGradedAttempts(problems, sessions) {
+  const attempts = [];
+  const historyKeys = new Set();
+
+  for (const problem of problems || []) {
+    for (const entry of problem.reviewHistory || []) {
+      if (!isProperGrade(entry.grade)) continue;
+
+      const key = historyActivityKey(problem, entry);
+      historyKeys.add(key);
+      attempts.push({
+        key,
+        grade: entry.grade,
+        attemptType: inferHistoryAttemptType(problem, entry),
+      });
+    }
+  }
+
+  for (const session of sessions || []) {
+    if (!isProperGrade(session.grade)) continue;
+    const key = session.historyEntryId || sessionActivityKey(session);
+    if (historyKeys.has(key)) continue;
+    attempts.push({
+      key,
+      grade: session.grade,
+      attemptType: session.effectiveAttemptType || session.attemptType || "",
+    });
+  }
+
+  return attempts;
+}
+
+function historyActivityKey(problem, entry) {
+  return entry.id || [problem.id || "", normalizeDate(entry.date), entry.grade || "", entry.previousStage ?? "", entry.newStage ?? ""].join("|");
+}
+
+function inferHistoryAttemptType(problem, entry) {
+  if (entry.scheduledReview) return "review";
+  return inferBackfillAttemptType(problem, entry);
 }
 
 function getActivitySessions(state) {
