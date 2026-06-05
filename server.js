@@ -710,8 +710,8 @@ function safeParseState(stateJson) {
 }
 
 function buildLeaderboardStats(state, baselineDueCount, weekStart, today) {
-  const sessions = Array.isArray(state.sessions) ? state.sessions : [];
   const problems = Array.isArray(state.problems) ? state.problems : [];
+  const sessions = getActivitySessions(state);
   const sessionsWithAttemptTypes = sessions.map((session) => ({
     ...session,
     effectiveAttemptType: session.attemptType || inferSessionAttemptType(session, problems),
@@ -741,6 +741,59 @@ function buildLeaderboardStats(state, baselineDueCount, weekStart, today) {
       ).length,
     },
   };
+}
+
+function getActivitySessions(state) {
+  const problems = Array.isArray(state.problems) ? state.problems : [];
+  const existingSessions = Array.isArray(state.sessions) ? state.sessions : [];
+  const sessionKeys = new Set(existingSessions.map(sessionActivityKey));
+  const backfillSessions = [];
+
+  for (const problem of problems) {
+    for (const entry of problem.reviewHistory || []) {
+      if (!entry.backfilled || !isProperGrade(entry.grade)) continue;
+
+      const session = {
+        date: normalizeDate(entry.date),
+        problemId: problem.id,
+        title: problem.title,
+        topic: problem.topic,
+        grade: entry.grade,
+        attemptType: inferBackfillAttemptType(problem, entry),
+        stage: entry.newStage ?? problem.stage,
+        status: problem.status,
+        backfilled: true,
+        historyEntryId: entry.id || "",
+      };
+      const key = sessionActivityKey(session);
+      if (!session.date || sessionKeys.has(key)) continue;
+      sessionKeys.add(key);
+      backfillSessions.push(session);
+    }
+  }
+
+  return [...existingSessions, ...backfillSessions];
+}
+
+function sessionActivityKey(session) {
+  return session.historyEntryId || [session.problemId || "", normalizeDate(session.date), session.grade || "", session.backfilled ? "backfilled" : "session"].join("|");
+}
+
+function inferBackfillAttemptType(problem, entry) {
+  if (entry.scheduledReview) return "review";
+
+  const entryDate = normalizeDate(entry.date);
+  const history = Array.isArray(problem.reviewHistory) ? problem.reviewHistory : [];
+  const hasEarlierHistory = history.some((item) => {
+    const itemDate = normalizeDate(item.date);
+    return itemDate && itemDate < entryDate;
+  });
+  if (hasEarlierHistory) return "review";
+
+  const firstAttemptDate = normalizeDate(problem.firstAttemptAt);
+  if (firstAttemptDate && firstAttemptDate < entryDate) return "review";
+
+  return "new";
 }
 
 function inferSessionAttemptType(session, problems) {

@@ -972,7 +972,7 @@ function renderStageChart() {
 
 function renderRecentGradeChart() {
   const weekStart = addDays(dateOnly(new Date()), -6);
-  const recent = sessions.filter((session) => {
+  const recent = getActivitySessions().filter((session) => {
     const date = session.date ? parseIsoDate(session.date) : null;
     return date && date >= weekStart && date <= dateOnly(new Date()) && ["green", "yellow", "red"].includes(session.grade);
   });
@@ -1385,10 +1385,47 @@ function dailyPickKey(type, item) {
 
 function getRecentTopics(days) {
   const cutoff = addDays(dateOnly(new Date()), -days).getTime();
-  return sessions
+  return getActivitySessions()
     .filter((session) => dateValue(session.date) >= cutoff)
     .map((session) => session.topic)
     .filter(Boolean);
+}
+
+function getActivitySessions() {
+  const sessionKeys = new Set(sessions.map(sessionActivityKey));
+  const backfillSessions = [];
+
+  problems.forEach((problem) => {
+    (problem.reviewHistory || []).forEach((entry) => {
+      if (!entry.backfilled || !isProperGrade(entry.grade)) return;
+
+      const session = {
+        date: normalizeDate(entry.date),
+        problemId: problem.id,
+        title: problem.title,
+        topic: problem.topic,
+        grade: entry.grade,
+        attemptType: inferBackfillAttemptType(problem, entry),
+        stage: entry.newStage ?? problem.stage,
+        status: problem.status,
+        backfilled: true,
+        historyEntryId: entry.id || "",
+      };
+      const key = sessionActivityKey(session);
+      if (!session.date || sessionKeys.has(key)) return;
+      sessionKeys.add(key);
+      backfillSessions.push(session);
+    });
+  });
+
+  return [...sessions, ...backfillSessions];
+}
+
+function sessionActivityKey(session) {
+  return (
+    session.historyEntryId ||
+    [session.problemId || "", normalizeDate(session.date), session.grade || "", session.backfilled ? "backfilled" : "session"].join("|")
+  );
 }
 
 function topicPenalty(topic, recentTopics) {
@@ -1940,7 +1977,10 @@ function shouldUseCurrentScheduleForBackfill(problem, date) {
   return !latestProperDate || dateValue(date) >= dateValue(latestProperDate);
 }
 
-function inferBackfillAttemptType(problem, date) {
+function inferBackfillAttemptType(problem, entryOrDate) {
+  const date = typeof entryOrDate === "string" ? entryOrDate : normalizeDate(entryOrDate?.date);
+  if (typeof entryOrDate === "object" && entryOrDate?.scheduledReview) return "review";
+
   const history = Array.isArray(problem.reviewHistory) ? problem.reviewHistory : [];
   const hasEarlierHistory = history.some((entry) => {
     const entryDate = normalizeDate(entry.date);
