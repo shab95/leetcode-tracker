@@ -41,6 +41,8 @@ const PUBLIC_FILES = new Set([
   "/data/neetcode-150.js",
 ]);
 const APP_ROUTES = new Set(["/", "/index.html", "/diagnostics", "/diagnostics/", "/data-management", "/data-management/"]);
+APP_ROUTES.add("/leaderboard");
+APP_ROUTES.add("/leaderboard/");
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -106,6 +108,7 @@ validateConfig();
 
 const allowedEmails = parseAllowedEmails(process.env.ALLOWED_EMAILS);
 const db = IS_HOSTED ? initDatabase(SQLITE_PATH) : null;
+let qaLeaderboardProfile = { displayName: "QA You", optedIn: true };
 const app = express();
 
 app.set("trust proxy", 1);
@@ -220,6 +223,50 @@ app.post("/api/state", requireAllowedUser, async (request, response, next) => {
 
     const result = await saveLocalState(request.body);
     response.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/leaderboard/profile", requireLeaderboardAccess, (request, response) => {
+  if (isQaLeaderboardRequest()) {
+    response.json(qaLeaderboardProfile);
+    return;
+  }
+
+  ensureLeaderboardBaseline(request.user.id);
+  response.json(getLeaderboardProfile(request.user.id));
+});
+
+app.post("/api/leaderboard/profile", requireLeaderboardAccess, (request, response) => {
+  const profile = request.body || {};
+  const optedIn = Boolean(profile.optedIn);
+  const displayName = String(profile.displayName || "").trim().slice(0, 40);
+
+  if (optedIn && displayName.length < 2) {
+    response.status(400).json({ error: "Display name is required to opt in" });
+    return;
+  }
+
+  if (isQaLeaderboardRequest()) {
+    qaLeaderboardProfile = { displayName: displayName || "QA You", optedIn };
+    response.json(qaLeaderboardProfile);
+    return;
+  }
+
+  saveLeaderboardProfile(request.user.id, displayName, optedIn);
+  ensureLeaderboardBaseline(request.user.id);
+  response.json(getLeaderboardProfile(request.user.id));
+});
+
+app.get("/api/leaderboard", requireLeaderboardAccess, async (request, response, next) => {
+  try {
+    if (isQaLeaderboardRequest()) {
+      response.json(await getQaLeaderboard());
+      return;
+    }
+
+    response.json(getLeaderboard(request.user.id));
   } catch (error) {
     next(error);
   }
@@ -374,6 +421,24 @@ function hostedOnly(request, response, next) {
   next();
 }
 
+function requireLeaderboardAccess(request, response, next) {
+  if (isQaLeaderboardRequest()) {
+    next();
+    return;
+  }
+
+  if (!IS_HOSTED) {
+    response.status(404).send("Not found");
+    return;
+  }
+
+  requireAllowedUser(request, response, next);
+}
+
+function isQaLeaderboardRequest() {
+  return IS_QA && !IS_HOSTED;
+}
+
 function initDatabase(filePath) {
   const dbPath = path.resolve(filePath);
   const dir = path.dirname(dbPath);
@@ -416,6 +481,25 @@ function initDatabase(filePath) {
       sid TEXT PRIMARY KEY,
       sess TEXT NOT NULL,
       expires INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS leaderboard_profiles (
+      user_id INTEGER PRIMARY KEY,
+      display_name TEXT NOT NULL DEFAULT '',
+      opted_in INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS leaderboard_weekly_baselines (
+      user_id INTEGER NOT NULL,
+      week_start TEXT NOT NULL,
+      due_count_start INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (user_id, week_start),
+      FOREIGN KEY (user_id) REFERENCES users(id)
     );
   `);
   return database;
@@ -462,6 +546,301 @@ function publicUser(user) {
     name: user.name,
     pictureUrl: user.picture_url,
   };
+}
+
+function getLeaderboardProfile(userId) {
+  const row = db.prepare("SELECT display_name, opted_in FROM leaderboard_profiles WHERE user_id = ?").get(userId);
+  return {
+    displayName: row?.display_name || "",
+    optedIn: Boolean(row?.opted_in),
+  };
+}
+
+function saveLeaderboardProfile(userId, displayName, optedIn) {
+  const now = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO leaderboard_profiles (user_id, display_name, opted_in, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(user_id) DO UPDATE SET
+      display_name = excluded.display_name,
+      opted_in = excluded.opted_in,
+      updated_at = excluded.updated_at
+  `).run(userId, displayName, optedIn ? 1 : 0, now, now);
+}
+
+function getLeaderboard(currentUserId) {
+  const weekStart = currentWeekStart();
+  const today = todayInTimeZone();
+  const rows = db.prepare(`
+    SELECT
+      users.id AS user_id,
+      leaderboard_profiles.display_name,
+      tracker_state.state_json
+    FROM leaderboard_profiles
+    JOIN users ON users.id = leaderboard_profiles.user_id
+    JOIN tracker_state ON tracker_state.user_id = users.id
+    WHERE leaderboard_profiles.opted_in = 1
+      AND users.is_allowed = 1
+  `).all();
+
+  const leaderboardRows = rows.map((row) => {
+    const state = safeParseState(row.state_json);
+    ensureLeaderboardBaseline(row.user_id, state, weekStart, today);
+    const baseline = getLeaderboardBaseline(row.user_id, weekStart);
+    const stats = buildLeaderboardStats(state, baseline?.due_count_start || 0, weekStart, today);
+    return {
+      userId: row.user_id === currentUserId ? "me" : crypto.createHash("sha256").update(String(row.user_id)).digest("hex").slice(0, 12),
+      displayName: row.display_name,
+      isCurrentUser: row.user_id === currentUserId,
+      weekly: stats.weekly,
+      lifetime: stats.lifetime,
+    };
+  });
+
+  return {
+    weekStart,
+    today,
+    rows: leaderboardRows,
+  };
+}
+
+async function getQaLeaderboard() {
+  const weekStart = currentWeekStart();
+  const today = todayInTimeZone();
+  const state = await getLocalState();
+  const currentDueCount = countDueReviews(state.problems || [], today);
+  const currentStats = buildLeaderboardStats(state, currentDueCount + 4, weekStart, today);
+  const rows = [
+    {
+      userId: "qa-alex",
+      displayName: "Alex QA",
+      isCurrentUser: false,
+      weekly: {
+        practiceDays: 5,
+        reviewsCompleted: 18,
+        newAttempts: 6,
+        backlogReduced: 12,
+        cleanRecallRate: 78,
+        currentStreak: 4,
+      },
+      lifetime: {
+        durablePlus: 44,
+        mastered: 19,
+        totalGradedAttempts: 128,
+        totalReviewCompletions: 91,
+      },
+    },
+    {
+      userId: "qa-maya",
+      displayName: "Maya QA",
+      isCurrentUser: false,
+      weekly: {
+        practiceDays: 3,
+        reviewsCompleted: 11,
+        newAttempts: 9,
+        backlogReduced: 3,
+        cleanRecallRate: 65,
+        currentStreak: 2,
+      },
+      lifetime: {
+        durablePlus: 31,
+        mastered: 11,
+        totalGradedAttempts: 96,
+        totalReviewCompletions: 58,
+      },
+    },
+    {
+      userId: "qa-sam",
+      displayName: "Sam QA",
+      isCurrentUser: false,
+      weekly: {
+        practiceDays: 6,
+        reviewsCompleted: 7,
+        newAttempts: 2,
+        backlogReduced: 1,
+        cleanRecallRate: 92,
+        currentStreak: 6,
+      },
+      lifetime: {
+        durablePlus: 17,
+        mastered: 6,
+        totalGradedAttempts: 53,
+        totalReviewCompletions: 35,
+      },
+    },
+  ];
+
+  if (qaLeaderboardProfile.optedIn) {
+    rows.unshift({
+      userId: "qa-current",
+      displayName: qaLeaderboardProfile.displayName || "QA You",
+      isCurrentUser: true,
+      weekly: currentStats.weekly,
+      lifetime: currentStats.lifetime,
+    });
+  }
+
+  return { weekStart, today, rows };
+}
+
+function ensureLeaderboardBaseline(userId, state = null, weekStart = currentWeekStart(), today = todayInTimeZone()) {
+  if (!IS_HOSTED) return;
+  const existing = getLeaderboardBaseline(userId, weekStart);
+  if (existing) return;
+
+  const effectiveState = state || getHostedState(userId);
+  const dueCount = countDueReviews(effectiveState.problems || [], today);
+  const now = new Date().toISOString();
+  db.prepare(`
+    INSERT OR IGNORE INTO leaderboard_weekly_baselines (user_id, week_start, due_count_start, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(userId, weekStart, dueCount, now, now);
+}
+
+function getLeaderboardBaseline(userId, weekStart) {
+  return db.prepare("SELECT due_count_start FROM leaderboard_weekly_baselines WHERE user_id = ? AND week_start = ?").get(userId, weekStart);
+}
+
+function safeParseState(stateJson) {
+  try {
+    return sanitizeState(JSON.parse(stateJson));
+  } catch {
+    return { ...EMPTY_STATE };
+  }
+}
+
+function buildLeaderboardStats(state, baselineDueCount, weekStart, today) {
+  const sessions = Array.isArray(state.sessions) ? state.sessions : [];
+  const problems = Array.isArray(state.problems) ? state.problems : [];
+  const weekSessions = sessions.filter((session) => isSessionInWeek(session, weekStart, today));
+  const gradedWeekSessions = weekSessions.filter((session) => isProperGrade(session.grade));
+  const practiceDays = new Set(gradedWeekSessions.map((session) => normalizeDate(session.date)).filter(Boolean)).size;
+  const cleanCount = gradedWeekSessions.filter((session) => session.grade === "green").length;
+  const totalGraded = gradedWeekSessions.length;
+  const currentDueCount = countDueReviews(problems, today);
+
+  return {
+    weekly: {
+      practiceDays,
+      reviewsCompleted: gradedWeekSessions.filter((session) => session.attemptType === "review").length,
+      newAttempts: gradedWeekSessions.filter((session) => session.attemptType === "new").length,
+      backlogReduced: Math.max(0, Number(baselineDueCount || 0) - currentDueCount),
+      cleanRecallRate: totalGraded ? Math.round((cleanCount / totalGraded) * 100) : 0,
+      currentStreak: currentPracticeStreak(sessions, today),
+    },
+    lifetime: {
+      durablePlus: problems.filter((problem) => isAttempted(problem) && clampStage(problem.stage) >= 4).length,
+      mastered: problems.filter((problem) => isMastered(problem, today)).length,
+      totalGradedAttempts: sessions.filter((session) => isProperGrade(session.grade)).length,
+      totalReviewCompletions: sessions.filter((session) => isProperGrade(session.grade) && session.attemptType === "review").length,
+    },
+  };
+}
+
+function isSessionInWeek(session, weekStart, today) {
+  const date = normalizeDate(session.date);
+  return date && date >= weekStart && date <= today;
+}
+
+function currentPracticeStreak(sessions, today) {
+  const dates = new Set(
+    (sessions || [])
+      .filter((session) => isProperGrade(session.grade))
+      .map((session) => normalizeDate(session.date))
+      .filter(Boolean),
+  );
+  let cursor = today;
+  let streak = 0;
+
+  if (!dates.has(cursor)) cursor = addDaysIso(cursor, -1);
+
+  while (dates.has(cursor)) {
+    streak += 1;
+    cursor = addDaysIso(cursor, -1);
+  }
+
+  return streak;
+}
+
+function countDueReviews(problems, today) {
+  return (problems || []).filter((problem) => problem.nextReview && normalizeDate(problem.nextReview) <= today).length;
+}
+
+function isAttempted(problem) {
+  return Number(problem.completionCount || 0) > 0 || Boolean(problem.firstAttemptAt || problem.lastReviewedAt);
+}
+
+function isMastered(problem, today) {
+  const attempts = Number(problem.completionCount || 0);
+  const threshold = masteryAttemptThreshold(problem.difficulty);
+  const recent = (problem.reviewHistory || []).slice(-3);
+  const hasRecentRed = recent.some((entry) => entry.grade === "red");
+  const firstAttemptAt = problem.firstAttemptAt || problem.reviewHistory?.[0]?.date || "";
+  const daysSinceFirstAttempt = firstAttemptAt ? dateDiffDays(normalizeDate(firstAttemptAt), today) : 0;
+
+  return (
+    attempts >= threshold &&
+    Number(problem.greenStreak || 0) >= 2 &&
+    clampStage(problem.stage) >= 4 &&
+    !hasRecentRed &&
+    daysSinceFirstAttempt >= 14 &&
+    Boolean(problem.complexityKnown)
+  );
+}
+
+function masteryAttemptThreshold(difficulty) {
+  if (difficulty === "Easy") return 3;
+  if (difficulty === "Hard") return 5;
+  return 4;
+}
+
+function isProperGrade(grade) {
+  return ["red", "yellow", "green"].includes(grade);
+}
+
+function clampStage(stage) {
+  return Math.max(0, Math.min(5, Math.round(Number(stage || 0))));
+}
+
+function currentWeekStart() {
+  const today = todayInTimeZone();
+  const day = dayOfWeek(today);
+  const daysSinceMonday = (day + 6) % 7;
+  return addDaysIso(today, -daysSinceMonday);
+}
+
+function todayInTimeZone() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function dayOfWeek(isoDate) {
+  return new Date(`${isoDate}T12:00:00Z`).getUTCDay();
+}
+
+function addDaysIso(isoDate, days) {
+  const date = new Date(`${isoDate}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function dateDiffDays(fromIsoDate, toIsoDate) {
+  if (!fromIsoDate || !toIsoDate) return 0;
+  return Math.floor((new Date(`${toIsoDate}T12:00:00Z`) - new Date(`${fromIsoDate}T12:00:00Z`)) / 86400000);
+}
+
+function normalizeDate(value) {
+  if (!value) return "";
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
 }
 
 function getHostedState(userId) {

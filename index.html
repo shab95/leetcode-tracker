@@ -31,6 +31,7 @@
           <nav class="app-tabs" aria-label="App sections">
             <a href="/index.html" data-route="dashboard">Dashboard</a>
             <a href="/diagnostics" data-route="diagnostics">Diagnostics</a>
+            <a href="/leaderboard" data-route="leaderboard" id="leaderboardNavLink" hidden>Leaderboard</a>
             <a href="/data-management" data-route="data">Data Management</a>
           </nav>
           <button class="primary-btn" id="addProblemBtn" type="button">
@@ -318,6 +319,53 @@
               <div class="grade-chart" id="recentGradeChart"></div>
               <p class="memory-empty" id="recentGradeEmpty">Recent grade quality appears after you grade problems in this app.</p>
             </article>
+          </div>
+        </section>
+      </section>
+
+      <section class="leaderboard-view" id="leaderboardView" hidden>
+        <section class="panel leaderboard-panel" aria-label="Leaderboard">
+          <div class="section-head">
+            <div>
+              <h2>Leaderboard</h2>
+              <p>Opt-in aggregate practice stats. Problem names, notes, grades, and history stay private.</p>
+            </div>
+          </div>
+
+          <article class="leaderboard-profile">
+            <div>
+              <span class="data-card-label">Profile</span>
+              <h3>Public leaderboard identity</h3>
+              <p id="leaderboardProfileHelp">Choose a display name and opt in when you want to appear on the board.</p>
+            </div>
+            <div class="leaderboard-profile-controls">
+              <label class="field">
+                <span>Display name</span>
+                <input id="leaderboardDisplayNameInput" maxlength="40" placeholder="shab" />
+              </label>
+              <label class="toggle-row">
+                <input id="leaderboardOptInInput" type="checkbox" />
+                <span>Opt in to leaderboard</span>
+              </label>
+              <button class="primary-btn" id="saveLeaderboardProfileBtn" type="button">Save profile</button>
+            </div>
+          </article>
+
+          <div class="leaderboard-tabs" role="tablist" aria-label="Leaderboard views">
+            <button class="leaderboard-tab is-active" type="button" data-leaderboard-view="weekly">This Week</button>
+            <button class="leaderboard-tab" type="button" data-leaderboard-view="lifetime">Lifetime</button>
+          </div>
+
+          <div class="table-scroll leaderboard-table-wrap">
+            <table>
+              <thead id="leaderboardHead"></thead>
+              <tbody id="leaderboardRows"></tbody>
+            </table>
+          </div>
+
+          <div class="empty-state leaderboard-empty" id="leaderboardEmpty" hidden>
+            <h3>No leaderboard rows yet</h3>
+            <p>Opt in with a display name to join. Friends appear here after they opt in too.</p>
           </div>
         </section>
       </section>

@@ -6,6 +6,8 @@ const EXPORT_VERSION = 3;
 const API_STATE_URL = "/api/state";
 const API_ENV_URL = "/api/env";
 const API_RESET_QA_URL = "/api/reset-qa";
+const API_LEADERBOARD_URL = "/api/leaderboard";
+const API_LEADERBOARD_PROFILE_URL = "/api/leaderboard/profile";
 
 const BLIND_75 = window.BLIND_75 || [];
 const NEETCODE_150 = window.NEETCODE_150 || [];
@@ -78,6 +80,14 @@ const els = {
   gradeResult: document.querySelector("#gradeResult"),
   historyList: document.querySelector("#historyList"),
   jsonImportInput: document.querySelector("#jsonImportInput"),
+  leaderboardDisplayNameInput: document.querySelector("#leaderboardDisplayNameInput"),
+  leaderboardEmpty: document.querySelector("#leaderboardEmpty"),
+  leaderboardHead: document.querySelector("#leaderboardHead"),
+  leaderboardNavLink: document.querySelector("#leaderboardNavLink"),
+  leaderboardOptInInput: document.querySelector("#leaderboardOptInInput"),
+  leaderboardProfileHelp: document.querySelector("#leaderboardProfileHelp"),
+  leaderboardRows: document.querySelector("#leaderboardRows"),
+  leaderboardView: document.querySelector("#leaderboardView"),
   listFilter: document.querySelector("#listFilter"),
   logoutBtn: document.querySelector("#logoutBtn"),
   logoutDeniedBtn: document.querySelector("#logoutDeniedBtn"),
@@ -115,6 +125,7 @@ const els = {
   recentGradeEmpty: document.querySelector("#recentGradeEmpty"),
   masteryBlockers: document.querySelector("#masteryBlockers"),
   savePostGradeNoteBtn: document.querySelector("#savePostGradeNoteBtn"),
+  saveLeaderboardProfileBtn: document.querySelector("#saveLeaderboardProfileBtn"),
   saveStatus: document.querySelector("#saveStatus"),
   searchInput: document.querySelector("#searchInput"),
   seedBlindBtn: document.querySelector("#seedBlindBtn"),
@@ -164,6 +175,13 @@ let diagnosticsTopicFilter = "";
 let pendingNoteProblemId = "";
 let lastGradeUndo = null;
 let tableSort = { column: "nextReview", direction: "asc" };
+let leaderboardProfile = { displayName: "", optedIn: false };
+let leaderboardData = { rows: [], weekStart: "", today: "" };
+let leaderboardViewMode = "weekly";
+let leaderboardSort = {
+  weekly: { column: "practiceDays", direction: "desc" },
+  lifetime: { column: "mastered", direction: "desc" },
+};
 
 els.addProblemBtn.addEventListener("click", () => openDialog());
 els.addBackfillBtn.addEventListener("click", addBackfillAttempt);
@@ -179,6 +197,11 @@ els.historyList.addEventListener("click", (event) => {
   if (button) deleteHistoryEntry(button.dataset.deleteHistoryKey);
 });
 els.jsonImportInput.addEventListener("change", importJson);
+els.leaderboardHead?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-leaderboard-sort]");
+  if (button) sortLeaderboard(button.dataset.leaderboardSort);
+});
+els.saveLeaderboardProfileBtn?.addEventListener("click", saveLeaderboardProfile);
 els.logoutBtn?.addEventListener("click", logout);
 els.logoutDeniedBtn?.addEventListener("click", logout);
 els.newSourceSelect.addEventListener("input", () => {
@@ -198,6 +221,12 @@ els.skipPostGradeNoteBtn.addEventListener("click", clearPostGradeNote);
 els.skipReviewBtn.addEventListener("click", () => skipDailyPick("review"));
 els.undoGradeBtn.addEventListener("click", undoLastGrade);
 els.viewAllTopicsBtn.addEventListener("click", openAttentionDialog);
+document.querySelectorAll("[data-leaderboard-view]").forEach((button) => {
+  button.addEventListener("click", () => {
+    leaderboardViewMode = button.dataset.leaderboardView;
+    renderLeaderboard();
+  });
+});
 dialogTabButtons.forEach((button) => {
   button.addEventListener("click", () => setProblemDialogTab(button.dataset.dialogTab));
 });
@@ -258,6 +287,7 @@ async function initApp() {
   isHostedAllowed = !appEnv.authRequired || Boolean(sessionInfo.allowed);
   renderAuthState(sessionInfo);
   if (appEnv.authRequired && (!sessionInfo.authenticated || !sessionInfo.allowed)) return;
+  await loadLeaderboardProfile();
 
   renderQaTools();
   renderDataManagementInfo();
@@ -386,6 +416,7 @@ function renderAuthState(sessionInfo) {
   els.hostedSetup.hidden = true;
   els.dashboardView.hidden = !showApp;
   els.diagnosticsView.hidden = true;
+  if (els.leaderboardView) els.leaderboardView.hidden = true;
   els.dataManagementView.hidden = true;
 
   if (denied) {
@@ -397,6 +428,7 @@ function renderAuthState(sessionInfo) {
     els.accountMenu.hidden = !appEnv.authRequired || !sessionInfo.user;
     els.accountLabel.textContent = sessionInfo.user?.email || "";
   }
+  if (els.leaderboardNavLink) els.leaderboardNavLink.hidden = !canUseLeaderboard() || !showApp;
 }
 
 async function logout() {
@@ -491,6 +523,7 @@ function navigateToRoute(route) {
   const paths = {
     dashboard: "/index.html",
     diagnostics: "/diagnostics",
+    leaderboard: "/leaderboard",
     data: "/data-management",
   };
   const path = paths[route] || paths.dashboard;
@@ -499,6 +532,7 @@ function navigateToRoute(route) {
 }
 
 function getCurrentRoute() {
+  if (window.location.pathname === "/leaderboard") return canUseLeaderboard() ? "leaderboard" : "dashboard";
   if (window.location.pathname === "/diagnostics") return "diagnostics";
   return window.location.pathname === "/data-management" ? "data" : "dashboard";
 }
@@ -508,13 +542,19 @@ function renderAppRoute() {
   const route = getCurrentRoute();
   const isDataRoute = route === "data";
   const isDiagnosticsRoute = route === "diagnostics";
+  const isLeaderboardRoute = route === "leaderboard";
 
-  els.dashboardView.hidden = isDataRoute || isDiagnosticsRoute;
+  els.dashboardView.hidden = isDataRoute || isDiagnosticsRoute || isLeaderboardRoute;
   els.diagnosticsView.hidden = !isDiagnosticsRoute;
+  if (els.leaderboardView) els.leaderboardView.hidden = !isLeaderboardRoute;
   els.dataManagementView.hidden = !isDataRoute;
   els.addProblemBtn.classList.toggle("is-invisible", isDataRoute);
   els.addProblemBtn.setAttribute("aria-hidden", isDataRoute ? "true" : "false");
   els.addProblemBtn.tabIndex = isDataRoute ? -1 : 0;
+
+  if (isLeaderboardRoute) {
+    loadLeaderboardData().then(renderLeaderboard);
+  }
 
   routeLinks.forEach((link) => {
     const isActive = link.dataset.route === route;
@@ -545,6 +585,58 @@ function renderDataManagementInfo() {
   }
 }
 
+async function loadLeaderboardProfile() {
+  if (!canUseLeaderboard()) return;
+
+  try {
+    const response = await fetch(API_LEADERBOARD_PROFILE_URL, { cache: "no-store" });
+    if (!response.ok) throw new Error("Leaderboard profile unavailable");
+    leaderboardProfile = await response.json();
+  } catch {
+    leaderboardProfile = { displayName: "", optedIn: false };
+  }
+}
+
+async function loadLeaderboardData() {
+  if (!canUseLeaderboard()) return;
+
+  try {
+    const response = await fetch(API_LEADERBOARD_URL, { cache: "no-store" });
+    if (!response.ok) throw new Error("Leaderboard unavailable");
+    leaderboardData = await response.json();
+  } catch {
+    leaderboardData = { rows: [], weekStart: "", today: "" };
+  }
+}
+
+async function saveLeaderboardProfile() {
+  if (!canUseLeaderboard()) return;
+  const displayName = els.leaderboardDisplayNameInput.value.trim();
+  const optedIn = els.leaderboardOptInInput.checked;
+
+  if (optedIn && displayName.length < 2) {
+    els.leaderboardProfileHelp.textContent = "Choose a display name before opting in.";
+    return;
+  }
+
+  try {
+    const response = await fetch(API_LEADERBOARD_PROFILE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ displayName, optedIn }),
+    });
+    if (!response.ok) throw new Error("Profile save failed");
+    leaderboardProfile = await response.json();
+    els.leaderboardProfileHelp.textContent = leaderboardProfile.optedIn
+      ? "You are opted in. Only aggregate stats are shared."
+      : "You are opted out and hidden from leaderboard rows.";
+    await loadLeaderboardData();
+    renderLeaderboard();
+  } catch {
+    els.leaderboardProfileHelp.textContent = "Could not save leaderboard profile. Try again.";
+  }
+}
+
 function render() {
   if (appEnv.authRequired && !isHostedAllowed) return;
   if (els.hostedSetup) els.hostedSetup.hidden = !(appEnv.authRequired && problems.length === 0);
@@ -554,6 +646,106 @@ function render() {
   renderMemoryHealth();
   renderDailyPicks();
   renderRows(getFilteredProblems());
+  renderLeaderboard();
+}
+
+function renderLeaderboard() {
+  if (!els.leaderboardView || !canUseLeaderboard()) return;
+
+  els.leaderboardDisplayNameInput.value = leaderboardProfile.displayName || "";
+  els.leaderboardOptInInput.checked = Boolean(leaderboardProfile.optedIn);
+  els.leaderboardProfileHelp.textContent = leaderboardProfile.optedIn
+    ? "You are opted in. Only aggregate stats are shared."
+    : "Choose a display name and opt in when you want to appear on the board.";
+
+  document.querySelectorAll("[data-leaderboard-view]").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.leaderboardView === leaderboardViewMode);
+  });
+
+  const columns = leaderboardColumns(leaderboardViewMode);
+  const rows = sortedLeaderboardRows();
+  els.leaderboardHead.innerHTML = `
+    <tr>
+      <th>Rank</th>
+      <th>Name</th>
+      ${columns
+        .map((column) => `
+          <th>
+            <button class="sort-header" type="button" data-leaderboard-sort="${column.key}">
+              ${column.label}${leaderboardSort[leaderboardViewMode].column === column.key ? sortArrow(leaderboardSort[leaderboardViewMode].direction) : ""}
+            </button>
+          </th>
+        `)
+        .join("")}
+    </tr>
+  `;
+
+  els.leaderboardRows.innerHTML = rows
+    .map((row, index) => `
+      <tr class="${row.isCurrentUser ? "leaderboard-current-user" : ""}">
+        <td>${index + 1}</td>
+        <td>
+          <strong>${escapeHtml(row.displayName)}</strong>
+          ${row.isCurrentUser ? `<span class="leaderboard-you">You</span>` : ""}
+        </td>
+        ${columns.map((column) => `<td>${escapeHtml(formatLeaderboardValue(column, row[leaderboardViewMode][column.key]))}</td>`).join("")}
+      </tr>
+    `)
+    .join("");
+
+  els.leaderboardEmpty.hidden = rows.length > 0;
+}
+
+function canUseLeaderboard() {
+  return Boolean(appEnv.authRequired || appEnv.isQa);
+}
+
+function leaderboardColumns(viewMode) {
+  if (viewMode === "lifetime") {
+    return [
+      { key: "mastered", label: "Mastered" },
+      { key: "durablePlus", label: "Durable+" },
+      { key: "totalGradedAttempts", label: "Graded attempts" },
+      { key: "totalReviewCompletions", label: "Review completions" },
+    ];
+  }
+
+  return [
+    { key: "practiceDays", label: "Practice days" },
+    { key: "reviewsCompleted", label: "Reviews" },
+    { key: "newAttempts", label: "New attempts" },
+    { key: "backlogReduced", label: "Backlog reduced" },
+    { key: "cleanRecallRate", label: "Clean recall" },
+    { key: "currentStreak", label: "Streak" },
+  ];
+}
+
+function sortedLeaderboardRows() {
+  const sort = leaderboardSort[leaderboardViewMode];
+  const direction = sort.direction === "asc" ? 1 : -1;
+  return [...(leaderboardData.rows || [])].sort((a, b) => {
+    const aValue = Number(a[leaderboardViewMode]?.[sort.column] || 0);
+    const bValue = Number(b[leaderboardViewMode]?.[sort.column] || 0);
+    return (aValue - bValue) * direction || a.displayName.localeCompare(b.displayName);
+  });
+}
+
+function sortLeaderboard(column) {
+  const current = leaderboardSort[leaderboardViewMode];
+  leaderboardSort[leaderboardViewMode] = {
+    column,
+    direction: current.column === column && current.direction === "desc" ? "asc" : "desc",
+  };
+  renderLeaderboard();
+}
+
+function formatLeaderboardValue(column, value) {
+  if (column.key === "cleanRecallRate") return `${Number(value || 0)}%`;
+  return String(Number(value || 0));
+}
+
+function sortArrow(direction) {
+  return direction === "asc" ? " ↑" : " ↓";
 }
 
 function renderStats() {
@@ -1209,6 +1401,7 @@ function gradeDailyPick(cardType, grade) {
     createdProblemId: existing ? "" : problem.id,
     problemSnapshot,
     sessionsSnapshot,
+    attemptType: cardType === "review" ? "review" : "new",
   });
 }
 
@@ -1279,6 +1472,7 @@ function applyGrade(id, grade, undoContext = {}) {
         title: gradedProblem.title,
         topic: gradedProblem.topic,
         grade,
+        attemptType: undoContext.attemptType || "",
         stage: gradedProblem.stage,
         status: gradedProblem.status,
       },
