@@ -97,8 +97,10 @@ date, not from the date the user entered the backfill. If that next review date 
 in the past, the problem is simply overdue.
 
 Imported CSV rows remain historical context and can count as prior attempts, but only
-proper grades should drive manual backfill scheduling. Backfilled attempts are problem
-history, not live app sessions, so they do not appear in the Recent Grades diagnostic.
+proper grades should drive manual backfill scheduling. Manual backfills entered with a
+real grade are also recorded as app sessions on the attempt date, so same-week backfills
+can appear in Recent Grades and leaderboard weekly activity. Imported CSV rows do not
+create sessions.
 
 Clean solves only prove spaced recall when they happen on or after the scheduled review
 date. A clean solve before the scheduled review date is still recorded as history, but it
@@ -244,7 +246,8 @@ The UI should show plain-language reasons, for example:
 8 due · 3 early-stage · 1 recent slow
 ```
 
-Recent Grades should use only app session data, not imported CSV history.
+Recent Grades should use only app session data, including manual graded backfills, not
+imported CSV history.
 If there is little or no session data yet, the empty state should explain that recent grade
 quality appears after the user grades problems in the app.
 

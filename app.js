@@ -1467,6 +1467,7 @@ function applyGrade(id, grade, undoContext = {}) {
 
   const gradedProblem = problems.find((problem) => problem.id === id);
   if (gradedProblem) {
+    const latestHistoryEntry = gradedProblem.reviewHistory?.[gradedProblem.reviewHistory.length - 1];
     lastGradeUndo = {
       problemId: id,
       title: gradedProblem.title,
@@ -1484,6 +1485,7 @@ function applyGrade(id, grade, undoContext = {}) {
         attemptType: undoContext.attemptType || "",
         stage: gradedProblem.stage,
         status: gradedProblem.status,
+        historyEntryId: latestHistoryEntry?.id || "",
       },
       ...sessions,
     ].slice(0, 100);
@@ -1794,6 +1796,18 @@ function addBackfillAttempt() {
   });
 
   problems = problems.map((item) => (item.id === id ? nextProblem : item));
+  sessions = upsertSession({
+    date,
+    problemId: id,
+    title: nextProblem.title,
+    topic: nextProblem.topic,
+    grade,
+    attemptType: inferBackfillAttemptType(problem, date),
+    stage: nextProblem.stage,
+    status: nextProblem.status,
+    backfilled: true,
+    historyEntryId: entry.id,
+  });
   lastGradeUndo = null;
   clearPostGradeNote();
 
@@ -1827,7 +1841,10 @@ function deleteHistoryEntry(entryKey) {
   });
 
   problems = problems.map((item) => (item.id === id ? nextProblem : item));
-  sessions = sessions.filter((session) => !(session.problemId === id && session.date === entry.date && session.grade === entry.grade));
+  sessions = sessions.filter((session) => {
+    if (entry.id && session.historyEntryId) return session.historyEntryId !== entry.id;
+    return !(session.backfilled && session.problemId === id && session.date === entry.date && session.grade === entry.grade);
+  });
   lastGradeUndo = null;
   clearPostGradeNote();
 
@@ -1921,6 +1938,31 @@ function shouldUseCurrentScheduleForBackfill(problem, date) {
     .sort((a, b) => dateValue(b) - dateValue(a))[0];
 
   return !latestProperDate || dateValue(date) >= dateValue(latestProperDate);
+}
+
+function inferBackfillAttemptType(problem, date) {
+  const history = Array.isArray(problem.reviewHistory) ? problem.reviewHistory : [];
+  const hasEarlierHistory = history.some((entry) => {
+    const entryDate = normalizeDate(entry.date);
+    return entryDate && dateValue(entryDate) < dateValue(date);
+  });
+  if (hasEarlierHistory) return "review";
+
+  const firstAttemptAt = normalizeDate(problem.firstAttemptAt);
+  if (firstAttemptAt && dateValue(firstAttemptAt) < dateValue(date)) return "review";
+
+  return "new";
+}
+
+function upsertSession(session) {
+  const nextSessions = sessions.filter((item) => {
+    if (session.historyEntryId && item.historyEntryId) return item.historyEntryId !== session.historyEntryId;
+    return !(item.backfilled && item.problemId === session.problemId && item.date === session.date && item.grade === session.grade);
+  });
+
+  return [session, ...nextSessions]
+    .sort((a, b) => dateValue(b.date) - dateValue(a.date))
+    .slice(0, 100);
 }
 
 function renderReviewSummary(problem) {

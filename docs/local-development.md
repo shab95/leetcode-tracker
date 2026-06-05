@@ -180,8 +180,10 @@ The server adds `revision` to prevent stale overwrites from another tab or devic
 
 Manual backfill uses the same JSON state file. A backfilled attempt is stored in the
 problem's `reviewHistory` with a real grade, then the frontend rebuilds that problem's
-stage and next review from chronological graded history. Backfills do not add rows to
-`sessions`, because diagnostics use sessions for attempts made inside the app.
+stage and next review from chronological graded history. Manual graded backfills also add
+rows to `sessions` using the backfilled attempt date, because they are app-entered graded
+activity. Imported CSV history remains historical context only and does not create session
+activity.
 
 The replay uses the same spaced-repetition transition as Today grading. Clean attempts
 before the scheduled review date are stored with `heldForEarly: true`, keep the existing
