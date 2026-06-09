@@ -828,6 +828,53 @@ h3 {
   line-height: 1.35;
 }
 
+.grading-reference {
+  margin: 0 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-strong);
+  padding: 10px 12px;
+}
+
+.grading-reference summary {
+  cursor: pointer;
+  color: var(--ink);
+  font-size: 0.88rem;
+  font-weight: 850;
+}
+
+.grading-reference-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.grading-reference article {
+  border-left: 3px solid #d8e7e2;
+  padding-left: 10px;
+}
+
+.grading-reference strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--ink);
+  font-size: 0.84rem;
+}
+
+.grading-reference p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.grading-timebox {
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 9px;
+}
+
 .post-grade-note {
   display: grid;
   gap: 10px;
@@ -1716,6 +1763,7 @@ form {
 
   .section-head,
   .daily-grid,
+  .grading-reference-grid,
   .memory-grid,
   .data-grid,
   .leaderboard-profile,

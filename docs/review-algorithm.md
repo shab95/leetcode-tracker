@@ -71,6 +71,24 @@ The user attempts the problem first, then the grade and lateness together decide
 ## Grading Buttons
 
 The user grades based on whether they could recreate the solution, not whether they recognized it.
+The grade should reflect the full attempt: deriving the idea, coding it, checking edge
+cases, and explaining complexity.
+
+Default time boxes:
+
+```text
+Review: 10-20 minutes
+New Easy: about 20 minutes
+New Medium: about 30 minutes
+New Hard: about 45 minutes
+```
+
+Use `Could not solve` when the user needed the solution, could not reach working code, or
+could not explain the core idea after the time box. Use `Solved with hints / slow` when
+the user needed hints, recognized the pattern but struggled to derive it, exceeded the
+target time, or got there with heavy debugging. Use `Solved cleanly` only when the user
+solved without hints, coded a working answer, tested important edge cases, and can explain
+time and space complexity.
 
 Problem notes should not appear on the Today cards before grading, because notes can act
 as hints and weaken the recall test. After grading, the app may prompt for a short note

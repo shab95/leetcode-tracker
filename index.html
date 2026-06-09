@@ -120,6 +120,24 @@
           </div>
 
           <p class="grade-result" id="gradeResult" aria-live="polite"></p>
+          <details class="grading-reference">
+            <summary>How to choose a grade</summary>
+            <div class="grading-reference-grid">
+              <article>
+                <strong>Could not solve</strong>
+                <p>Needed the solution, could not reach working code, or could not explain the core idea after the time box.</p>
+              </article>
+              <article>
+                <strong>Solved with hints / slow</strong>
+                <p>Needed hints, recognized the pattern but struggled to derive it, had heavy debugging, or exceeded the target time.</p>
+              </article>
+              <article>
+                <strong>Solved cleanly</strong>
+                <p>Solved without hints, coded a working answer, tested edge cases, and can explain time and space complexity.</p>
+              </article>
+            </div>
+            <p class="grading-timebox">Default time boxes: review 10-20 min; new Easy 20 min, Medium 30 min, Hard 45 min.</p>
+          </details>
           <div class="post-grade-note" id="postGradeNote" hidden>
             <div>
               <strong id="postGradeTitle">Add a quick gotcha or pattern note?</strong>
@@ -147,7 +165,7 @@
               <p id="reviewMeta">Import your CSV or grade problems to build the queue.</p>
               <p class="pick-reason" id="reviewReason"></p>
               <a class="ghost-btn open-problem-link" id="reviewOpenLink" href="#" target="_blank" rel="noreferrer" hidden>Open on LeetCode</a>
-              <p class="grade-guidance">Grade based on whether you could recreate the solution, not whether you recognized it.</p>
+              <p class="grade-guidance">Grade the full attempt: idea, code, edge cases, and explanation.</p>
               <div class="grade-actions" data-card="review">
                 <button class="grade-btn red" type="button" data-grade="red">Could not solve</button>
                 <button class="grade-btn yellow" type="button" data-grade="yellow">Solved with hints / slow</button>
@@ -160,7 +178,7 @@
               <h3 id="newTitle">Blind 75 queue ready</h3>
               <p id="newMeta">The next unfinished Blind 75 problem will appear here.</p>
               <a class="ghost-btn open-problem-link" id="newOpenLink" href="#" target="_blank" rel="noreferrer" hidden>Open on LeetCode</a>
-              <p class="grade-guidance">Grade based on whether you could recreate the solution, not whether you recognized it.</p>
+              <p class="grade-guidance">Grade the full attempt: idea, code, edge cases, and explanation.</p>
               <div class="grade-actions" data-card="new">
                 <button class="grade-btn red" type="button" data-grade="red">Could not solve</button>
                 <button class="grade-btn yellow" type="button" data-grade="yellow">Solved with hints / slow</button>
