@@ -599,6 +599,20 @@ h3 {
   background: var(--panel-strong);
 }
 
+.leaderboard-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.leaderboard-info-btn {
+  width: 18px;
+  height: 18px;
+  font-size: 0.66rem;
+  text-transform: none;
+  cursor: help;
+}
+
 .leaderboard-current-user {
   background: #f0f7f4;
 }

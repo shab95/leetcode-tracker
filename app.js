@@ -680,9 +680,12 @@ function renderLeaderboard() {
       ${columns
         .map((column) => `
           <th>
-            <button class="sort-header" type="button" data-leaderboard-sort="${column.key}">
-              ${column.label}${leaderboardSort[leaderboardViewMode].column === column.key ? sortArrow(leaderboardSort[leaderboardViewMode].direction) : ""}
-            </button>
+            <span class="leaderboard-header">
+              <button class="sort-header" type="button" data-leaderboard-sort="${column.key}">
+                ${column.label}${leaderboardSort[leaderboardViewMode].column === column.key ? sortArrow(leaderboardSort[leaderboardViewMode].direction) : ""}
+              </button>
+              ${column.description ? renderInfoButton(column.description) : ""}
+            </span>
           </th>
         `)
         .join("")}
@@ -714,8 +717,16 @@ function leaderboardColumns(viewMode) {
     return [
       { key: "mastered", label: "Mastered" },
       { key: "durablePlus", label: "Durable+" },
-      { key: "totalGradedAttempts", label: "Graded attempts" },
-      { key: "totalReviewCompletions", label: "Review completions" },
+      {
+        key: "totalGradedAttempts",
+        label: "Graded attempts",
+        description: "Total real grades entered in the tracker: Today grades and manual graded backfills. Imported CSV history is excluded.",
+      },
+      {
+        key: "totalReviewCompletions",
+        label: "Review completions",
+        description: "Graded attempts that were reviews of problems already in the review loop. First-time or new attempts are excluded.",
+      },
     ];
   }
 
@@ -723,10 +734,28 @@ function leaderboardColumns(viewMode) {
     { key: "practiceDays", label: "Practice days" },
     { key: "reviewsCompleted", label: "Reviews" },
     { key: "newAttempts", label: "New attempts" },
-    { key: "backlogReduced", label: "Backlog reduced" },
+    {
+      key: "backlogReduced",
+      label: "Backlog reduced",
+      description: "How many due reviews were cleared compared with the start of this week. It can rise when reviews are completed and fall as new reviews become due.",
+    },
     { key: "cleanRecallRate", label: "Clean recall" },
     { key: "currentStreak", label: "Streak" },
   ];
+}
+
+function renderInfoButton(description) {
+  return `
+    <button
+      class="info-btn leaderboard-info-btn"
+      type="button"
+      aria-label="${escapeAttr(description)}"
+      title="${escapeAttr(description)}"
+      tabindex="-1"
+    >
+      i
+    </button>
+  `;
 }
 
 function sortedLeaderboardRows() {
