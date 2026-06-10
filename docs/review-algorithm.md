@@ -73,6 +73,8 @@ The user attempts the problem first, then the grade and lateness together decide
 The user grades based on whether they could recreate the solution, not whether they recognized it.
 The grade should reflect the full attempt: deriving the idea, coding it, checking edge
 cases, and explaining complexity.
+Attempt dates are date-only values based on the user's local browser calendar date, not
+UTC, so late-night practice should not accidentally become tomorrow's attempt.
 
 Default time boxes:
 
