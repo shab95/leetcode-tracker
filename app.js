@@ -750,7 +750,7 @@ function renderInfoButton(description) {
       class="info-btn leaderboard-info-btn"
       type="button"
       aria-label="${escapeAttr(description)}"
-      title="${escapeAttr(description)}"
+      data-tooltip="${escapeAttr(description)}"
       tabindex="-1"
     >
       i

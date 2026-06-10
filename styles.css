@@ -606,11 +606,43 @@ h3 {
 }
 
 .leaderboard-info-btn {
+  position: relative;
   width: 18px;
   height: 18px;
   font-size: 0.66rem;
   text-transform: none;
   cursor: help;
+}
+
+.leaderboard-info-btn::after {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  left: 50%;
+  width: max-content;
+  max-width: 280px;
+  transform: translateX(-50%);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--ink);
+  color: white;
+  padding: 8px 10px;
+  box-shadow: var(--shadow);
+  content: attr(data-tooltip);
+  font-size: 0.72rem;
+  font-weight: 750;
+  line-height: 1.3;
+  opacity: 0;
+  pointer-events: none;
+  text-align: left;
+  text-transform: none;
+  visibility: hidden;
+}
+
+.leaderboard-info-btn:hover::after,
+.leaderboard-info-btn:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
 }
 
 .leaderboard-current-user {
