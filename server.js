@@ -570,6 +570,7 @@ function saveLeaderboardProfile(userId, displayName, optedIn) {
 
 function getLeaderboard(currentUserId) {
   const weekStart = currentWeekStart();
+  const weekEnd = addDaysIso(weekStart, 6);
   const today = todayInTimeZone();
   const rows = db.prepare(`
     SELECT
@@ -587,7 +588,7 @@ function getLeaderboard(currentUserId) {
     const state = safeParseState(row.state_json);
     ensureLeaderboardBaseline(row.user_id, state, weekStart, today);
     const baseline = getLeaderboardBaseline(row.user_id, weekStart);
-    const stats = buildLeaderboardStats(state, baseline?.due_count_start || 0, weekStart, today);
+    const stats = buildLeaderboardStats(state, baseline?.due_count_start || 0, weekStart, weekEnd, today);
     return {
       userId: row.user_id === currentUserId ? "me" : crypto.createHash("sha256").update(String(row.user_id)).digest("hex").slice(0, 12),
       displayName: row.display_name,
@@ -599,6 +600,7 @@ function getLeaderboard(currentUserId) {
 
   return {
     weekStart,
+    weekEnd,
     today,
     rows: leaderboardRows,
   };
@@ -606,10 +608,11 @@ function getLeaderboard(currentUserId) {
 
 async function getQaLeaderboard() {
   const weekStart = currentWeekStart();
+  const weekEnd = addDaysIso(weekStart, 6);
   const today = todayInTimeZone();
   const state = await getLocalState();
   const currentDueCount = countDueReviews(state.problems || [], today);
-  const currentStats = buildLeaderboardStats(state, currentDueCount + 4, weekStart, today);
+  const currentStats = buildLeaderboardStats(state, currentDueCount + 4, weekStart, weekEnd, today);
   const rows = [
     {
       userId: "qa-alex",
@@ -680,7 +683,7 @@ async function getQaLeaderboard() {
     });
   }
 
-  return { weekStart, today, rows };
+  return { weekStart, weekEnd, today, rows };
 }
 
 function ensureLeaderboardBaseline(userId, state = null, weekStart = currentWeekStart(), today = todayInTimeZone()) {
@@ -709,20 +712,21 @@ function safeParseState(stateJson) {
   }
 }
 
-function buildLeaderboardStats(state, baselineDueCount, weekStart, today) {
+function buildLeaderboardStats(state, baselineDueCount, weekStart, weekEnd, today) {
   const problems = Array.isArray(state.problems) ? state.problems : [];
   const sessions = getActivitySessions(state);
   const sessionsWithAttemptTypes = sessions.map((session) => ({
     ...session,
     effectiveAttemptType: session.attemptType || inferSessionAttemptType(session, problems),
   }));
-  const weekSessions = sessionsWithAttemptTypes.filter((session) => isSessionInWeek(session, weekStart, today));
+  const weekSessions = sessionsWithAttemptTypes.filter((session) => isSessionInWeek(session, weekStart, weekEnd));
   const gradedWeekSessions = weekSessions.filter((session) => isProperGrade(session.grade));
   const practiceDays = new Set(gradedWeekSessions.map((session) => normalizeDate(session.date)).filter(Boolean)).size;
   const cleanCount = gradedWeekSessions.filter((session) => session.grade === "green").length;
   const totalGraded = gradedWeekSessions.length;
   const currentDueCount = countDueReviews(problems, today);
   const lifetimeAttempts = getLifetimeGradedAttempts(problems, sessionsWithAttemptTypes);
+  const streakAnchor = latestActivityDate(gradedWeekSessions, today);
 
   return {
     weekly: {
@@ -731,7 +735,7 @@ function buildLeaderboardStats(state, baselineDueCount, weekStart, today) {
       newAttempts: gradedWeekSessions.filter((session) => session.effectiveAttemptType === "new").length,
       backlogReduced: Math.max(0, Number(baselineDueCount || 0) - currentDueCount),
       cleanRecallRate: totalGraded ? Math.round((cleanCount / totalGraded) * 100) : 0,
-      currentStreak: currentPracticeStreak(sessionsWithAttemptTypes, today),
+      currentStreak: currentPracticeStreak(sessionsWithAttemptTypes, streakAnchor),
     },
     lifetime: {
       durablePlus: problems.filter((problem) => isAttempted(problem) && clampStage(problem.stage) >= 4).length,
@@ -740,6 +744,13 @@ function buildLeaderboardStats(state, baselineDueCount, weekStart, today) {
       totalReviewCompletions: lifetimeAttempts.filter((attempt) => attempt.attemptType === "review").length,
     },
   };
+}
+
+function latestActivityDate(sessions, fallbackDate) {
+  return (sessions || [])
+    .map((session) => normalizeDate(session.date))
+    .filter(Boolean)
+    .sort((a, b) => b.localeCompare(a))[0] || fallbackDate;
 }
 
 function getLifetimeGradedAttempts(problems, sessions) {
@@ -860,9 +871,9 @@ function inferSessionAttemptType(session, problems) {
   return "new";
 }
 
-function isSessionInWeek(session, weekStart, today) {
+function isSessionInWeek(session, weekStart, weekEnd) {
   const date = normalizeDate(session.date);
-  return date && date >= weekStart && date <= today;
+  return date && date >= weekStart && date <= weekEnd;
 }
 
 function currentPracticeStreak(sessions, today) {
