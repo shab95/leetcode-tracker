@@ -7,6 +7,7 @@
     "rowCount": 9,
     "schemaVersion": 3
   },
+  "recoveryProblemIds": ["qa-valid-anagram", "qa-group-anagrams"],
   "problems": [
     {
       "id": "qa-valid-anagram",

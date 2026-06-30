@@ -17,6 +17,7 @@ const EMPTY_STATE = {
   importMeta: null,
   problems: [],
   sessions: [],
+  recoveryProblemIds: [],
 };
 
 const ENV = process.env.TRACKER_ENV === "qa" ? "qa" : "prod";
@@ -1123,6 +1124,7 @@ async function loadQaFixture() {
     importMeta: state.importMeta || null,
     problems: state.problems,
     sessions: state.sessions,
+    recoveryProblemIds: Array.isArray(state.recoveryProblemIds) ? state.recoveryProblemIds : [],
   });
 }
 
@@ -1142,6 +1144,7 @@ function sanitizeState(state) {
     importMeta: state.importMeta || null,
     problems: state.problems,
     sessions: state.sessions,
+    recoveryProblemIds: Array.isArray(state.recoveryProblemIds) ? state.recoveryProblemIds : [],
   };
 }
 

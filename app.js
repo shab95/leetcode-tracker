@@ -2,6 +2,7 @@ const STORAGE_KEY = "leetcode-tracker.problems.v3";
 const LEGACY_STORAGE_KEYS = ["leetcode-tracker.problems.v2", "leetcode-tracker.problems.v1"];
 const IMPORT_META_KEY = "leetcode-tracker.import.v1";
 const SESSION_KEY = "leetcode-tracker.sessions.v1";
+const RECOVERY_LANE_KEY = "leetcode-tracker.recovery.v1";
 const EXPORT_VERSION = 3;
 const API_STATE_URL = "/api/state";
 const API_ENV_URL = "/api/env";
@@ -34,6 +35,9 @@ const MASTERY_ATTEMPT_THRESHOLDS = {
   Medium: 4,
   Hard: 5,
 };
+const WEEKLY_PRACTICE_TARGET = 4;
+const RECOVERY_LANE_LIMIT = 3;
+const RECOVERY_GRADUATION_STAGE = 3;
 
 const els = {
   addProblemBtn: document.querySelector("#addProblemBtn"),
@@ -72,6 +76,8 @@ const els = {
   dialogTitle: document.querySelector("#dialogTitle"),
   difficultyFilter: document.querySelector("#difficultyFilter"),
   difficultyInput: document.querySelector("#difficultyInput"),
+  dueReviewsRevealBtn: document.querySelector("#dueReviewsRevealBtn"),
+  dueReviewsRevealCopy: document.querySelector("#dueReviewsRevealCopy"),
   emptyState: document.querySelector("#emptyState"),
   exportBtn: document.querySelector("#exportBtn"),
   filterBanner: document.querySelector("#filterBanner"),
@@ -110,15 +116,20 @@ const els = {
   problemForm: document.querySelector("#problemForm"),
   problemId: document.querySelector("#problemId"),
   problemRows: document.querySelector("#problemRows"),
+  problemsPanel: document.querySelector("#problemsPanel"),
   qaTools: document.querySelector("#qaTools"),
   resultCount: document.querySelector("#resultCount"),
   resetQaBtn: document.querySelector("#resetQaBtn"),
+  recoveryCount: document.querySelector("#recoveryCount"),
+  recoveryList: document.querySelector("#recoveryList"),
+  recoverySummary: document.querySelector("#recoverySummary"),
   reviewCard: document.querySelector("#reviewCard"),
   reviewDue: document.querySelector("#reviewDue"),
   reviewInput: document.querySelector("#reviewInput"),
   reviewMeta: document.querySelector("#reviewMeta"),
   reviewOpenLink: document.querySelector("#reviewOpenLink"),
   reviewReason: document.querySelector("#reviewReason"),
+  reviewRecoveryBtn: document.querySelector("#reviewRecoveryBtn"),
   reviewSummaryStats: document.querySelector("#reviewSummaryStats"),
   reviewTitle: document.querySelector("#reviewTitle"),
   recentGradeChart: document.querySelector("#recentGradeChart"),
@@ -134,6 +145,12 @@ const els = {
   setupSeedBlindBtn: document.querySelector("#setupSeedBlindBtn"),
   setupSeedNeetcodeBtn: document.querySelector("#setupSeedNeetcodeBtn"),
   hostedSetup: document.querySelector("#hostedSetup"),
+  habitActionBtn: document.querySelector("#habitActionBtn"),
+  habitCopy: document.querySelector("#habitCopy"),
+  habitRhythm: document.querySelector("#habitRhythm"),
+  habitTitle: document.querySelector("#habitTitle"),
+  habitToday: document.querySelector("#habitToday"),
+  habitWeek: document.querySelector("#habitWeek"),
   solutionApproachInput: document.querySelector("#solutionApproachInput"),
   solutionExplanationInput: document.querySelector("#solutionExplanationInput"),
   skipNewBtn: document.querySelector("#skipNewBtn"),
@@ -144,6 +161,7 @@ const els = {
   statusFilter: document.querySelector("#statusFilter"),
   statusInput: document.querySelector("#statusInput"),
   titleInput: document.querySelector("#titleInput"),
+  todayPanel: document.querySelector("#todayPanel"),
   todaySummary: document.querySelector("#todaySummary"),
   topicFilter: document.querySelector("#topicFilter"),
   topicInput: document.querySelector("#topicInput"),
@@ -164,6 +182,7 @@ const tableSortHeaders = document.querySelectorAll("[data-sort-column]");
 let problems = [];
 let importMeta = null;
 let sessions = [];
+let recoveryProblemIds = [];
 let dailyPicks = { review: null, newProblem: null };
 let skippedDailyPicks = { review: new Set(), new: new Set() };
 let lastServerSavedAt = "";
@@ -175,6 +194,7 @@ let diagnosticsTopicFilter = "";
 let pendingNoteProblemId = "";
 let lastGradeUndo = null;
 let tableSort = { column: "nextReview", direction: "asc" };
+let dueReviewsVisible = false;
 let leaderboardProfile = { displayName: "", optedIn: false };
 let leaderboardData = { rows: [], weekStart: "", today: "" };
 let leaderboardViewMode = "weekly";
@@ -191,11 +211,13 @@ els.clearFilterBtn.addEventListener("click", clearDiagnosticsTopicFilter);
 els.closeDialogBtn.addEventListener("click", () => els.problemDialog.close());
 els.csvImportInput.addEventListener("change", importCsv);
 els.deleteBtn.addEventListener("click", deleteCurrentProblem);
+els.dueReviewsRevealBtn?.addEventListener("click", toggleDueReviewsVisibility);
 els.exportBtn.addEventListener("click", exportJson);
 els.historyList.addEventListener("click", (event) => {
   const button = event.target.closest("[data-delete-history-key]");
   if (button) deleteHistoryEntry(button.dataset.deleteHistoryKey);
 });
+els.habitActionBtn?.addEventListener("click", startMinimumPractice);
 els.jsonImportInput.addEventListener("change", importJson);
 els.leaderboardHead?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-leaderboard-sort]");
@@ -212,6 +234,11 @@ els.newSourceSelect.addEventListener("input", () => {
 });
 els.problemForm.addEventListener("submit", saveProblem);
 els.resetQaBtn.addEventListener("click", resetQaData);
+els.recoveryList?.addEventListener("click", (event) => {
+  const removeButton = event.target.closest("[data-recovery-remove]");
+  if (removeButton) removeFromRecoveryLane(removeButton.dataset.recoveryRemove);
+});
+els.reviewRecoveryBtn?.addEventListener("click", () => addToRecoveryLane(dailyPicks.review?.id));
 els.seedBlindBtn.addEventListener("click", seedBlind75);
 els.seedNeetcodeBtn.addEventListener("click", seedNeetcode150);
 els.setupImportJsonBtn?.addEventListener("click", () => els.jsonImportInput.click());
@@ -296,6 +323,7 @@ async function initApp() {
   const localProblems = appEnv.authRequired ? [] : loadProblemsFromStorage();
   const localImportMeta = appEnv.authRequired ? null : loadJson(IMPORT_META_KEY, null);
   const localSessions = appEnv.authRequired ? [] : loadJson(SESSION_KEY, []);
+  const localRecoveryProblemIds = appEnv.authRequired ? [] : loadJson(RECOVERY_LANE_KEY, []);
   const remoteState = await loadRemoteState();
 
   const hasRemoteData =
@@ -309,6 +337,7 @@ async function initApp() {
     problems = localProblems;
     importMeta = localImportMeta;
     sessions = Array.isArray(localSessions) ? localSessions : [];
+    recoveryProblemIds = normalizeRecoveryProblemIds(localRecoveryProblemIds);
     if (appEnv.authRequired) {
       setSaveStatus("saved", "Ready to save to your cloud account.");
     } else if (problems.length > 0 || importMeta || sessions.length > 0) {
@@ -327,6 +356,7 @@ function applyRemoteState(state) {
   problems = Array.isArray(state.problems) ? state.problems.map(normalizeProblem) : [];
   importMeta = state.importMeta || null;
   sessions = Array.isArray(state.sessions) ? state.sessions : [];
+  recoveryProblemIds = normalizeRecoveryProblemIds(state.recoveryProblemIds);
   lastServerSavedAt = state.savedAt || "";
   currentRevision = Number(state.revision || 0);
 }
@@ -364,6 +394,7 @@ function persist() {
   if (!appEnv.authRequired) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(problems));
     localStorage.setItem(SESSION_KEY, JSON.stringify(sessions));
+    localStorage.setItem(RECOVERY_LANE_KEY, JSON.stringify(recoveryProblemIds));
     if (importMeta) localStorage.setItem(IMPORT_META_KEY, JSON.stringify(importMeta));
   }
   saveRemoteState();
@@ -475,6 +506,7 @@ function saveRemoteState() {
     importMeta,
     problems,
     sessions,
+    recoveryProblemIds,
   };
 
   setSaveStatus("saving", appEnv.authRequired ? "Saving to your cloud account..." : "Saving to local file...");
@@ -652,8 +684,10 @@ function render() {
   renderTopicOptions();
   renderImportMeta();
   renderStats();
-  renderMemoryHealth();
   renderDailyPicks();
+  renderMinimumPractice();
+  renderRecoveryLane();
+  renderMemoryHealth();
   renderRows(getFilteredProblems());
   renderLeaderboard();
 }
@@ -814,12 +848,221 @@ function renderStats() {
   }).length;
 
   els.totalSolved.textContent = mastered.length;
-  els.reviewDue.textContent = due.length;
+  renderDueReviewsStat(due.length);
   els.blindAttempted.textContent = `${blindAttempted}/${BLIND_75.length}`;
   els.blindMastered.textContent = `${blindMastered}/${BLIND_75.length}`;
   els.neetcodeAttempted.textContent = `${neetcodeAttempted}/${NEETCODE_150.length}`;
   els.neetcodeMastered.textContent = `${neetcodeMastered}/${NEETCODE_150.length}`;
   els.weeklySolved.textContent = recent.length;
+}
+
+function renderDueReviewsStat(count) {
+  if (!els.reviewDue) return;
+
+  els.reviewDue.textContent = dueReviewsVisible ? count : "Hidden";
+  if (els.dueReviewsRevealBtn) {
+    els.dueReviewsRevealBtn.setAttribute("aria-expanded", String(dueReviewsVisible));
+  }
+  if (els.dueReviewsRevealCopy) {
+    els.dueReviewsRevealCopy.textContent = dueReviewsVisible
+      ? "You are behind, but nothing is broken. This will pay off."
+      : "All that matters is the next one. Click to reveal when you want the count.";
+  }
+}
+
+function toggleDueReviewsVisibility() {
+  dueReviewsVisible = !dueReviewsVisible;
+  renderStats();
+}
+
+function renderMinimumPractice() {
+  if (!els.habitToday) return;
+
+  const habit = buildMinimumPracticeState();
+  els.habitToday.textContent = habit.todayComplete ? "Complete" : "Open";
+  els.habitWeek.textContent = `${habit.weekPracticeDays}/${WEEKLY_PRACTICE_TARGET} rhythm days`;
+  els.habitRhythm.textContent = `${habit.rhythmDays} ${habit.rhythmDays === 1 ? "day" : "days"}`;
+  els.habitTitle.textContent = habit.todayComplete ? "Minimum day complete" : "One honest attempt completes today";
+  els.habitCopy.textContent = habit.comeback
+    ? "Comeback day logged. The loop is alive again."
+    : habit.todayComplete
+      ? "Minimum day complete. Momentum protected."
+      : "One real grade is enough to keep the loop alive.";
+  els.habitActionBtn.textContent = dailyPicks.review || dailyPicks.newProblem ? "Start with today's picks" : "Find a problem to backfill";
+}
+
+function buildMinimumPracticeState() {
+  const today = toIsoDate(new Date());
+  const weekStart = toIsoDate(startOfWeekMonday(dateOnly(new Date())));
+  const weekEnd = toIsoDate(addDays(parseIsoDate(weekStart), 6));
+  const practiceDates = [
+    ...new Set(
+      getActivitySessions()
+        .filter((session) => isProperGrade(session.grade))
+        .map((session) => normalizeDate(session.date))
+        .filter(Boolean),
+    ),
+  ].sort((a, b) => a.localeCompare(b));
+
+  const todayComplete = practiceDates.includes(today);
+  const weekPracticeDays = practiceDates.filter((date) => date >= weekStart && date <= weekEnd).length;
+  const rhythmDays = currentPracticeRhythm(practiceDates, today);
+  const previousPracticeDate = practiceDates.filter((date) => date < today).at(-1) || "";
+  const daysSincePrevious = previousPracticeDate
+    ? Math.floor((parseIsoDate(today) - parseIsoDate(previousPracticeDate)) / 86400000)
+    : 0;
+
+  return {
+    todayComplete,
+    weekPracticeDays,
+    rhythmDays,
+    comeback: todayComplete && daysSincePrevious >= 3,
+  };
+}
+
+function currentPracticeRhythm(practiceDates, today) {
+  const dates = new Set(practiceDates);
+  let cursor = dates.has(today) ? today : toIsoDate(addDays(parseIsoDate(today), -1));
+  let rhythm = 0;
+
+  while (dates.has(cursor)) {
+    rhythm += 1;
+    cursor = toIsoDate(addDays(parseIsoDate(cursor), -1));
+  }
+
+  return rhythm;
+}
+
+function startMinimumPractice() {
+  const hasTodayPick = Boolean(dailyPicks.review || dailyPicks.newProblem);
+  const target = hasTodayPick ? els.todayPanel : els.problemsPanel;
+
+  target?.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  if (hasTodayPick) {
+    window.setTimeout(() => {
+      const firstEnabledGrade = els.todayPanel?.querySelector(".grade-btn:not(:disabled)");
+      firstEnabledGrade?.focus({ preventScroll: true });
+    }, 350);
+  } else {
+    window.setTimeout(() => {
+      els.searchInput?.focus({ preventScroll: true });
+    }, 350);
+  }
+}
+
+function renderRecoveryLane() {
+  if (!els.recoveryList) return;
+
+  recoveryProblemIds = normalizeRecoveryProblemIds(recoveryProblemIds);
+  const recoveryProblems = getRecoveryProblems();
+  const dueRecovery = recoveryProblems.filter((problem) => problem.nextReview && isReviewDue(problem.nextReview));
+
+  els.recoveryCount.textContent = `${recoveryProblems.length}/${RECOVERY_LANE_LIMIT}`;
+  els.recoverySummary.textContent =
+    recoveryProblems.length === 0
+      ? "Pick up to 3 cold problems. The rest can wait."
+      : dueRecovery.length > 0
+        ? `${dueRecovery.length} recovery ${dueRecovery.length === 1 ? "review is" : "reviews are"} due. All that matters is the next one.`
+        : `Recovery lane is warm. Next up: ${nextRecoveryTiming(recoveryProblems)}.`;
+
+  if (recoveryProblems.length === 0) {
+    els.recoveryList.innerHTML = `
+      <div class="recovery-empty">
+        <strong>No active recovery problems.</strong>
+        <span>When an old review feels important, add it here and bring it back online.</span>
+      </div>
+    `;
+    return;
+  }
+
+  els.recoveryList.innerHTML = recoveryProblems
+    .map((problem) => `
+      <article class="recovery-item ${isReviewDue(problem.nextReview) ? "is-due" : ""}">
+        <div>
+          <strong>${escapeHtml(problem.title)}</strong>
+          <span>${escapeHtml(stageName(problem.stage))} · ${escapeHtml(reviewTimingLabel(problem.nextReview))} · ${Number(problem.completionCount || 0)} ${Number(problem.completionCount || 0) === 1 ? "attempt" : "attempts"}</span>
+        </div>
+        <div class="recovery-actions">
+          ${problem.url ? `<a class="ghost-btn small-btn" href="${escapeAttr(problem.url)}" target="_blank" rel="noreferrer">Open</a>` : ""}
+          <button class="ghost-btn small-btn" type="button" data-recovery-remove="${escapeAttr(problem.id)}">Remove</button>
+        </div>
+      </article>
+    `)
+    .join("");
+}
+
+function getRecoveryProblems() {
+  return recoveryProblemIds
+    .map((id) => problems.find((problem) => problem.id === id))
+    .filter(Boolean)
+    .filter((problem) => clampStage(problem.stage) < RECOVERY_GRADUATION_STAGE);
+}
+
+function nextRecoveryTiming(recoveryProblems) {
+  const next = recoveryProblems
+    .filter((problem) => problem.nextReview)
+    .sort((a, b) => dateValue(a.nextReview) - dateValue(b.nextReview))[0];
+  return next ? `${next.title} ${reviewTimingLabel(next.nextReview)}` : "grade one to schedule it";
+}
+
+function addToRecoveryLane(id) {
+  const problem = problems.find((item) => item.id === id);
+  if (!problem) return;
+
+  if (clampStage(problem.stage) >= RECOVERY_GRADUATION_STAGE) {
+    setRecoveryMessage(`${problem.title} is already at ${stageName(problem.stage)}, so it does not need Recovery Lane.`);
+    return;
+  }
+
+  if (recoveryProblemIds.includes(id)) {
+    setRecoveryMessage(`${problem.title} is already in Recovery Lane.`);
+    return;
+  }
+
+  if (recoveryProblemIds.length >= RECOVERY_LANE_LIMIT) {
+    setRecoveryMessage("Recovery Lane is full. Remove one before adding another.");
+    return;
+  }
+
+  recoveryProblemIds = normalizeRecoveryProblemIds([...recoveryProblemIds, id]);
+  persist();
+  render();
+  setRecoveryMessage(`${problem.title} added to Recovery Lane.`);
+}
+
+function removeFromRecoveryLane(id, options = {}) {
+  const problem = problems.find((item) => item.id === id);
+  const nextIds = recoveryProblemIds.filter((problemId) => problemId !== id);
+  if (nextIds.length === recoveryProblemIds.length) return;
+
+  recoveryProblemIds = nextIds;
+  if (!options.skipPersist) persist();
+  render();
+  if (!options.silent && problem) setRecoveryMessage(`${problem.title} removed from Recovery Lane.`);
+}
+
+function maybeGraduateRecoveryProblem(problem) {
+  if (!problem || !recoveryProblemIds.includes(problem.id)) return "";
+  if (clampStage(problem.stage) < RECOVERY_GRADUATION_STAGE) return "";
+
+  recoveryProblemIds = recoveryProblemIds.filter((id) => id !== problem.id);
+  return `${problem.title} graduated from Recovery Lane.`;
+}
+
+function normalizeRecoveryProblemIds(ids = []) {
+  const existingIds = new Set(problems.map((problem) => problem.id));
+  return [...new Set((Array.isArray(ids) ? ids : []).filter(Boolean))]
+    .filter((id) => existingIds.has(id))
+    .filter((id) => {
+      const problem = problems.find((item) => item.id === id);
+      return problem && clampStage(problem.stage) < RECOVERY_GRADUATION_STAGE;
+    })
+    .slice(0, RECOVERY_LANE_LIMIT);
+}
+
+function setRecoveryMessage(message) {
+  if (els.gradeResult) els.gradeResult.textContent = message;
 }
 
 function renderMemoryHealth() {
@@ -1076,6 +1319,7 @@ function renderRecommendationCard(type, item) {
   const meta = type === "review" ? els.reviewMeta : els.newMeta;
   const openLink = type === "review" ? els.reviewOpenLink : els.newOpenLink;
   const buttons = card.querySelectorAll("[data-grade]");
+  const recoveryButton = type === "review" ? els.reviewRecoveryBtn : null;
 
   if (!item) {
     card.dataset.problemId = "";
@@ -1087,6 +1331,7 @@ function renderRecommendationCard(type, item) {
     if (type === "review") els.reviewReason.textContent = "";
     openLink.hidden = true;
     openLink.removeAttribute("href");
+    if (recoveryButton) recoveryButton.hidden = true;
     buttons.forEach((button) => (button.disabled = true));
     return;
   }
@@ -1107,6 +1352,13 @@ function renderRecommendationCard(type, item) {
   } else {
     openLink.hidden = true;
     openLink.removeAttribute("href");
+  }
+  if (recoveryButton) {
+    const inRecoveryLane = recoveryProblemIds.includes(item.id);
+    const canAddToRecovery = item.id && !inRecoveryLane && clampStage(item.stage) < RECOVERY_GRADUATION_STAGE;
+    recoveryButton.textContent = inRecoveryLane ? "In Recovery Lane" : "Add to Recovery Lane";
+    recoveryButton.disabled = inRecoveryLane || !canAddToRecovery;
+    recoveryButton.hidden = false;
   }
   buttons.forEach((button) => (button.disabled = false));
 }
@@ -1144,6 +1396,10 @@ function renderRows(rows) {
     const openNode = problem.url
       ? `<a class="icon-btn row-open-link" href="${escapeAttr(problem.url)}" target="_blank" rel="noreferrer" aria-label="Open ${escapeAttr(problem.title)} on LeetCode">Open</a>`
       : "";
+    const recoveryNode =
+      clampStage(problem.stage) < RECOVERY_GRADUATION_STAGE && !recoveryProblemIds.includes(problem.id)
+        ? `<button class="icon-btn" type="button" data-recovery-add="${escapeAttr(problem.id)}" aria-label="Add ${escapeAttr(problem.title)} to Recovery Lane">Recover</button>`
+        : "";
     const memberships = renderMembershipBadges(problem);
 
     tr.innerHTML = `
@@ -1163,6 +1419,7 @@ function renderRows(rows) {
       <td>
         <div class="row-actions">
           ${openNode}
+          ${recoveryNode}
           <button class="icon-btn" type="button" data-edit="${problem.id}" aria-label="Edit ${escapeAttr(problem.title)}">Edit</button>
         </div>
       </td>
@@ -1173,6 +1430,9 @@ function renderRows(rows) {
 
   els.problemRows.querySelectorAll("[data-edit]").forEach((button) => {
     button.addEventListener("click", () => openDialog(button.dataset.edit));
+  });
+  els.problemRows.querySelectorAll("[data-recovery-add]").forEach((button) => {
+    button.addEventListener("click", () => addToRecoveryLane(button.dataset.recoveryAdd));
   });
 }
 
@@ -1352,7 +1612,8 @@ function getDailyPicks(options = {}) {
 }
 
 function getNextReviewPick() {
-  return getDueReviews().find((problem) => !skippedDailyPicks.review.has(problem.id)) || null;
+  const dueReviews = getDueReviews().filter((problem) => !skippedDailyPicks.review.has(problem.id));
+  return dueReviews.find((problem) => recoveryProblemIds.includes(problem.id)) || dueReviews[0] || null;
 }
 
 function getDueReviews() {
@@ -1468,6 +1729,7 @@ function gradeDailyPick(cardType, grade) {
   const existing = pick.id ? problems.find((problem) => problem.id === pick.id) : findProblemBySlug(pick.titleSlug);
   const problemSnapshot = existing ? cloneState(existing) : null;
   const sessionsSnapshot = cloneState(sessions);
+  const recoverySnapshot = cloneState(recoveryProblemIds);
   if (existing && cardType === "new") {
     existing.listMemberships = mergeMemberships(existing.listMemberships, [getSelectedStudyList().membership]);
   }
@@ -1476,6 +1738,7 @@ function gradeDailyPick(cardType, grade) {
     createdProblemId: existing ? "" : problem.id,
     problemSnapshot,
     sessionsSnapshot,
+    recoverySnapshot,
     attemptType: cardType === "review" ? "review" : "new",
   });
 }
@@ -1540,7 +1803,10 @@ function applyGrade(id, grade, undoContext = {}) {
       createdProblemId: undoContext.createdProblemId || "",
       problemSnapshot: undoContext.problemSnapshot || null,
       sessionsSnapshot: undoContext.sessionsSnapshot || cloneState(sessions),
+      recoverySnapshot: undoContext.recoverySnapshot || cloneState(recoveryProblemIds),
     };
+    const graduationMessage = maybeGraduateRecoveryProblem(gradedProblem);
+    if (graduationMessage) gradeMessage = `${gradeMessage} ${graduationMessage}`;
     sessions = [
       {
         date: today,
@@ -1566,11 +1832,12 @@ function applyGrade(id, grade, undoContext = {}) {
 function undoLastGrade() {
   if (!lastGradeUndo) return;
 
-  const { problemId, createdProblemId, problemSnapshot, sessionsSnapshot, title } = lastGradeUndo;
+  const { problemId, createdProblemId, problemSnapshot, sessionsSnapshot, recoverySnapshot, title } = lastGradeUndo;
   problems = createdProblemId
     ? problems.filter((problem) => problem.id !== createdProblemId)
     : problems.map((problem) => (problem.id === problemId ? normalizeProblem(problemSnapshot) : problem));
   sessions = sessionsSnapshot;
+  recoveryProblemIds = Array.isArray(recoverySnapshot) ? recoverySnapshot : recoveryProblemIds;
   lastGradeUndo = null;
 
   persist();
@@ -1862,6 +2129,7 @@ function addBackfillAttempt() {
   });
 
   problems = problems.map((item) => (item.id === id ? nextProblem : item));
+  const graduationMessage = maybeGraduateRecoveryProblem(nextProblem);
   sessions = upsertSession({
     date,
     problemId: id,
@@ -1885,7 +2153,10 @@ function addBackfillAttempt() {
   els.completionInput.value = nextProblem.completionCount;
   renderHistoryTab(nextProblem);
   els.backfillNoteInput.value = "";
-  els.gradeResult.textContent = `Backfilled ${historyGradeLabel(grade).toLowerCase()} for ${nextProblem.title}.`;
+  els.gradeResult.textContent = [
+    `Backfilled ${historyGradeLabel(grade).toLowerCase()} for ${nextProblem.title}.`,
+    graduationMessage,
+  ].filter(Boolean).join(" ");
 }
 
 function deleteHistoryEntry(entryKey) {
@@ -1907,6 +2178,7 @@ function deleteHistoryEntry(entryKey) {
   });
 
   problems = problems.map((item) => (item.id === id ? nextProblem : item));
+  recoveryProblemIds = normalizeRecoveryProblemIds(recoveryProblemIds);
   sessions = sessions.filter((session) => {
     if (entry.id && session.historyEntryId) return session.historyEntryId !== entry.id;
     return !(session.backfilled && session.problemId === id && session.date === entry.date && session.grade === entry.grade);
@@ -2149,6 +2421,7 @@ function saveProblem(event) {
   problems = existing
     ? problems.map((problem) => (problem.id === id ? masteredNext : problem))
     : [masteredNext, ...problems];
+  recoveryProblemIds = normalizeRecoveryProblemIds(recoveryProblemIds);
 
   persist();
   render();
@@ -2158,6 +2431,7 @@ function saveProblem(event) {
 function deleteCurrentProblem() {
   const id = els.problemId.value;
   problems = problems.filter((problem) => problem.id !== id);
+  recoveryProblemIds = recoveryProblemIds.filter((problemId) => problemId !== id);
   sessions = sessions.filter((session) => session.problemId !== id);
   persist();
   render();
@@ -2401,6 +2675,7 @@ function exportJson() {
     importMeta,
     problems,
     sessions,
+    recoveryProblemIds,
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const link = document.createElement("a");
@@ -2428,6 +2703,7 @@ function importJson(event) {
       }
       problems = importedProblems.map(normalizeProblem);
       sessions = Array.isArray(imported.sessions) ? imported.sessions : [];
+      recoveryProblemIds = normalizeRecoveryProblemIds(imported.recoveryProblemIds);
       importMeta = imported.importMeta || importMeta;
       persist();
       render();
@@ -2776,6 +3052,14 @@ function isReviewDue(value) {
 
 function dateOnly(date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function startOfWeekMonday(date) {
+  const start = dateOnly(date);
+  const day = start.getDay();
+  const daysSinceMonday = (day + 6) % 7;
+  start.setDate(start.getDate() - daysSinceMonday);
+  return start;
 }
 
 function dateValue(value) {

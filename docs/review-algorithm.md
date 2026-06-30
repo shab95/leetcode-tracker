@@ -271,6 +271,39 @@ imported CSV history.
 If there is little or no session data yet, the empty state should explain that recent grade
 quality appears after the user grades problems in the app.
 
+## Habit Signals
+
+The Practice Dashboard may show a lightweight Minimum Viable Practice panel. This is a
+habit-building aid only; it does not change scheduling, stage movement, mastery,
+leaderboard privacy, cloud sync, or saved schema.
+
+A Minimum Viable Practice day is complete when the user records any real graded attempt:
+
+```text
+Could not solve
+Solved with hints / slow
+Solved cleanly
+```
+
+Valid sources are Today-card grades and manual graded backfills. Imported CSV rows do not
+complete a habit day because they are historical context, not current practice.
+
+The panel may show:
+
+- **Today**: complete if a real grade exists for the user's local date.
+- **This Week**: distinct practice days in the current Monday-Sunday week, with a soft
+  rhythm target of `4`.
+- **Rhythm**: consecutive practice days, anchored on today when complete or yesterday
+  when today is still open.
+
+Copy should stay gentle and non-punitive:
+
+```text
+One real grade is enough to keep the loop alive.
+Minimum day complete. Momentum protected.
+Comeback day logged. The loop is alive again.
+```
+
 ## Mastery Rule
 
 A problem becomes `Mastered` only when all conditions are true:
@@ -309,9 +342,10 @@ This is intentionally lightweight. A fuller interview-readiness checklist can co
 
 The daily dashboard should prioritize:
 
-1. Overdue reviews.
-2. Reviews due today.
-3. One new unattempted problem from the selected study list.
+1. Due Recovery Lane reviews.
+2. Other overdue reviews.
+3. Other reviews due today.
+4. One new unattempted problem from the selected study list.
 
 The default new-problem source is Blind 75, so the standard daily rhythm is:
 
@@ -327,6 +361,32 @@ If there are many overdue reviews, Diagnostics should use calm copy:
 
 ```text
 You are behind, but nothing is broken. Do reviews today and the system will adapt.
+```
+
+Dashboard backlog counts may be hidden behind a reveal control by default. This is a
+pressure-reduction UI choice only: the review queue, due-review priority, and scheduling
+rules are unchanged. The visible copy should keep the focus on one review at a time.
+
+## Recovery Lane
+
+The Practice Dashboard may show a Recovery Lane for up to `3` manually chosen problems.
+This is a tiny active focus list for cold or important reviews the user wants to bring
+back online. It is not a separate schedule.
+
+Rules:
+
+- Users manually add and remove problems.
+- Recovery Lane problems are prioritized only when they are already due.
+- Not-due Recovery Lane problems stay visible, but they should not be forced early.
+- The normal review schedule, stage movement, and mastery rules remain unchanged.
+- When a Recovery Lane problem reaches `Transfer (Stage 3)`, it graduates and leaves the lane.
+
+Recommended copy:
+
+```text
+Bring these back online. The rest can wait.
+All that matters is the next one.
+Problem graduated from Recovery Lane.
 ```
 
 ## Stats

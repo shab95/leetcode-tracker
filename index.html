@@ -64,9 +64,12 @@
             <span>Mastered</span>
             <strong id="totalSolved">0</strong>
           </article>
-          <article class="stat-card">
+          <article class="stat-card stat-card-reveal">
             <span>Due Reviews</span>
-            <strong id="reviewDue">0</strong>
+            <button class="stat-reveal-btn" id="dueReviewsRevealBtn" type="button" aria-expanded="false">
+              <strong id="reviewDue">Hidden</strong>
+              <small id="dueReviewsRevealCopy">All that matters is the next one. Click to reveal when you want the count.</small>
+            </button>
           </article>
           <article class="stat-card">
             <span>Blind 75 Attempted</span>
@@ -100,7 +103,44 @@
           </article>
         </section>
 
-        <section class="panel daily-panel" aria-label="Today's recommendation">
+        <section class="panel habit-panel" id="minimumPracticePanel" aria-label="Minimum viable practice">
+          <div class="habit-copy">
+            <span class="habit-label">Minimum Practice</span>
+            <h2 id="habitTitle">One honest attempt completes today</h2>
+            <p id="habitCopy">One real grade is enough to keep the loop alive.</p>
+          </div>
+
+          <div class="habit-metrics" aria-label="Practice rhythm">
+            <div>
+              <span>Today</span>
+              <strong id="habitToday">Open</strong>
+            </div>
+            <div>
+              <span>This Week</span>
+              <strong id="habitWeek">0/4 rhythm days</strong>
+            </div>
+            <div>
+              <span>Rhythm</span>
+              <strong id="habitRhythm">0 days</strong>
+            </div>
+          </div>
+
+          <button class="ghost-btn" id="habitActionBtn" type="button">Start with today's picks</button>
+        </section>
+
+        <section class="panel recovery-panel" id="recoveryPanel" aria-label="Recovery lane">
+          <div class="section-head recovery-head">
+            <div>
+              <span class="habit-label">Recovery Lane</span>
+              <h2>Bring these back online</h2>
+              <p id="recoverySummary">Pick up to 3 cold problems. The rest can wait.</p>
+            </div>
+            <span class="recovery-count" id="recoveryCount">0/3</span>
+          </div>
+          <div class="recovery-list" id="recoveryList"></div>
+        </section>
+
+        <section class="panel daily-panel" id="todayPanel" aria-label="Today's recommendation">
           <div class="section-head">
             <div>
               <h2>Today</h2>
@@ -164,7 +204,10 @@
               <h3 id="reviewTitle">No due review</h3>
               <p id="reviewMeta">Import your CSV or grade problems to build the queue.</p>
               <p class="pick-reason" id="reviewReason"></p>
-              <a class="ghost-btn open-problem-link" id="reviewOpenLink" href="#" target="_blank" rel="noreferrer" hidden>Open on LeetCode</a>
+              <div class="recommend-card-links">
+                <a class="ghost-btn open-problem-link" id="reviewOpenLink" href="#" target="_blank" rel="noreferrer" hidden>Open on LeetCode</a>
+                <button class="ghost-btn open-problem-link" id="reviewRecoveryBtn" type="button" hidden>Add to Recovery Lane</button>
+              </div>
               <p class="grade-guidance">Grade the full attempt: idea, code, edge cases, and explanation.</p>
               <div class="grade-actions" data-card="review">
                 <button class="grade-btn red" type="button" data-grade="red">Could not solve</button>
@@ -253,7 +296,7 @@
             </details>
           </aside>
 
-          <section class="panel table-panel" aria-label="Problem tracker">
+          <section class="panel table-panel" id="problemsPanel" aria-label="Problem tracker">
             <div class="filter-banner" id="filterBanner" hidden>
               <span id="filterBannerText"></span>
               <button class="ghost-btn small-btn" id="clearFilterBtn" type="button">Clear filter</button>
