@@ -51,6 +51,10 @@ Optional:
 ```text
 MAX_STATE_BYTES=5000000
 BACKUP_RETENTION=20
+VAPID_PUBLIC_KEY
+VAPID_PRIVATE_KEY
+VAPID_SUBJECT=mailto:you@example.com
+NOTIFICATION_CHECK_INTERVAL_MS=60000
 ```
 
 `ALLOWED_EMAILS` is comma-separated:
@@ -60,6 +64,15 @@ you@example.com,friend@example.com
 ```
 
 `SQLITE_PATH` must point to durable storage. On Railway, put it under the mounted volume.
+
+Phone reminders are optional. Generate Web Push VAPID keys locally:
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Store the public key in `VAPID_PUBLIC_KEY`, the private key in `VAPID_PRIVATE_KEY`, and
+set `VAPID_SUBJECT` to a contact email. Do not commit the private key.
 
 ## Google OAuth Setup
 
@@ -99,12 +112,31 @@ GOOGLE_CALLBACK_URL=https://YOUR-APP.up.railway.app/auth/google/callback
 SESSION_SECRET=use-a-long-random-secret
 ALLOWED_EMAILS=you@example.com
 SQLITE_PATH=/path/to/railway/volume/tracker.sqlite
+VAPID_PUBLIC_KEY=...
+VAPID_PRIVATE_KEY=...
+VAPID_SUBJECT=mailto:you@example.com
 ```
 
 5. Use one app replica while SQLite is the database.
 6. Deploy.
 7. Open the app, sign in with an allowlisted email, then import a JSON backup or seed built-in
-   lists from Data Management.
+   lists from Settings.
+
+## Phone Reminders
+
+Hosted mode can send an optional daily Minimum Practice reminder. The reminder is
+motivational only: it checks whether the user has already logged any real graded attempt
+for their local date, and sends a notification only when the day is still open.
+
+To use reminders on iPhone:
+
+1. Open the hosted site in Safari.
+2. Add it to the Home Screen.
+3. Launch the tracker from the Home Screen icon.
+4. Enable reminders from Settings.
+
+The app uses an in-process reminder loop, SQLite, and Web Push subscriptions, so keep the
+Railway service at one replica for this version.
 
 ## First User Flow
 
@@ -113,10 +145,10 @@ Hosted state starts empty. That is deliberate because local and hosted data are 
 To move your current progress online:
 
 1. Run local mode.
-2. Go to Data Management.
+2. Go to Settings.
 3. Export JSON.
 4. Open the hosted app and sign in.
-5. Go to Data Management.
+5. Go to Settings.
 6. Import JSON.
 
 The hosted import replaces your cloud state and creates a server-side backup first.

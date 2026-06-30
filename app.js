@@ -3,12 +3,18 @@ const LEGACY_STORAGE_KEYS = ["leetcode-tracker.problems.v2", "leetcode-tracker.p
 const IMPORT_META_KEY = "leetcode-tracker.import.v1";
 const SESSION_KEY = "leetcode-tracker.sessions.v1";
 const RECOVERY_LANE_KEY = "leetcode-tracker.recovery.v1";
+const NOTIFICATION_BANNER_KEY = "leetcode-tracker.notification-banner-seen.v1";
 const EXPORT_VERSION = 3;
 const API_STATE_URL = "/api/state";
 const API_ENV_URL = "/api/env";
 const API_RESET_QA_URL = "/api/reset-qa";
 const API_LEADERBOARD_URL = "/api/leaderboard";
 const API_LEADERBOARD_PROFILE_URL = "/api/leaderboard/profile";
+const API_NOTIFICATIONS_CONFIG_URL = "/api/notifications/config";
+const API_NOTIFICATIONS_SUBSCRIBE_URL = "/api/notifications/subscribe";
+const API_NOTIFICATIONS_SETTINGS_URL = "/api/notifications/settings";
+const API_NOTIFICATIONS_UNSUBSCRIBE_URL = "/api/notifications/unsubscribe";
+const API_NOTIFICATIONS_TEST_URL = "/api/notifications/test";
 
 const BLIND_75 = window.BLIND_75 || [];
 const NEETCODE_150 = window.NEETCODE_150 || [];
@@ -79,6 +85,7 @@ const els = {
   dueReviewsRevealBtn: document.querySelector("#dueReviewsRevealBtn"),
   dueReviewsRevealCopy: document.querySelector("#dueReviewsRevealCopy"),
   emptyState: document.querySelector("#emptyState"),
+  enableNotificationsBtn: document.querySelector("#enableNotificationsBtn"),
   exportBtn: document.querySelector("#exportBtn"),
   filterBanner: document.querySelector("#filterBanner"),
   filterBannerText: document.querySelector("#filterBannerText"),
@@ -106,6 +113,12 @@ const els = {
   newTitle: document.querySelector("#newTitle"),
   notInvitedCopy: document.querySelector("#notInvitedCopy"),
   notInvitedView: document.querySelector("#notInvitedView"),
+  notificationControls: document.querySelector("#notificationControls"),
+  notificationBanner: document.querySelector("#notificationBanner"),
+  notificationSettingsBtn: document.querySelector("#notificationSettingsBtn"),
+  notificationSettingsCard: document.querySelector("#notificationSettingsCard"),
+  notificationStatus: document.querySelector("#notificationStatus"),
+  notificationTimeInput: document.querySelector("#notificationTimeInput"),
   notesInput: document.querySelector("#notesInput"),
   postGradeNote: document.querySelector("#postGradeNote"),
   postGradeComplexityField: document.querySelector("#postGradeComplexityField"),
@@ -141,6 +154,7 @@ const els = {
   searchInput: document.querySelector("#searchInput"),
   seedBlindBtn: document.querySelector("#seedBlindBtn"),
   seedNeetcodeBtn: document.querySelector("#seedNeetcodeBtn"),
+  settingsNotificationNudge: document.querySelector("#settingsNotificationNudge"),
   setupImportJsonBtn: document.querySelector("#setupImportJsonBtn"),
   setupSeedBlindBtn: document.querySelector("#setupSeedBlindBtn"),
   setupSeedNeetcodeBtn: document.querySelector("#setupSeedNeetcodeBtn"),
@@ -167,6 +181,8 @@ const els = {
   topicInput: document.querySelector("#topicInput"),
   totalSolved: document.querySelector("#totalSolved"),
   timeComplexityInput: document.querySelector("#timeComplexityInput"),
+  testNotificationBtn: document.querySelector("#testNotificationBtn"),
+  disableNotificationsBtn: document.querySelector("#disableNotificationsBtn"),
   undoGradeBtn: document.querySelector("#undoGradeBtn"),
   urlInput: document.querySelector("#urlInput"),
   viewAllTopicsBtn: document.querySelector("#viewAllTopicsBtn"),
@@ -202,6 +218,8 @@ let leaderboardSort = {
   weekly: { column: "practiceDays", direction: "desc" },
   lifetime: { column: "mastered", direction: "desc" },
 };
+let notificationConfig = { available: false, configured: false, vapidPublicKey: "", settings: null, reason: "" };
+let currentPushSubscription = null;
 
 els.addProblemBtn.addEventListener("click", () => openDialog());
 els.addBackfillBtn.addEventListener("click", addBackfillAttempt);
@@ -211,7 +229,9 @@ els.clearFilterBtn.addEventListener("click", clearDiagnosticsTopicFilter);
 els.closeDialogBtn.addEventListener("click", () => els.problemDialog.close());
 els.csvImportInput.addEventListener("change", importCsv);
 els.deleteBtn.addEventListener("click", deleteCurrentProblem);
+els.disableNotificationsBtn?.addEventListener("click", disableNotifications);
 els.dueReviewsRevealBtn?.addEventListener("click", toggleDueReviewsVisibility);
+els.enableNotificationsBtn?.addEventListener("click", enableNotifications);
 els.exportBtn.addEventListener("click", exportJson);
 els.historyList.addEventListener("click", (event) => {
   const button = event.target.closest("[data-delete-history-key]");
@@ -219,6 +239,7 @@ els.historyList.addEventListener("click", (event) => {
 });
 els.habitActionBtn?.addEventListener("click", startMinimumPractice);
 els.jsonImportInput.addEventListener("change", importJson);
+els.notificationSettingsBtn?.addEventListener("click", openNotificationSettings);
 els.leaderboardHead?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-leaderboard-sort]");
   if (button) sortLeaderboard(button.dataset.leaderboardSort);
@@ -305,6 +326,8 @@ tableSortButtons.forEach((button) => {
 els.topicFilter.addEventListener("input", () => {
   if (els.topicFilter.value !== diagnosticsTopicFilter) diagnosticsTopicFilter = "";
 });
+els.testNotificationBtn?.addEventListener("click", sendTestNotification);
+els.notificationTimeInput?.addEventListener("change", saveNotificationSettings);
 
 initApp();
 
@@ -317,6 +340,7 @@ async function initApp() {
   renderAuthState(sessionInfo);
   if (appEnv.authRequired && (!sessionInfo.authenticated || !sessionInfo.allowed)) return;
   await loadLeaderboardProfile();
+  await loadNotificationConfig();
 
   renderQaTools();
   renderDataManagementInfo();
@@ -678,11 +702,202 @@ function markLeaderboardProfileDirty() {
   els.saveLeaderboardProfileBtn.textContent = "Save profile";
 }
 
+async function loadNotificationConfig() {
+  try {
+    const response = await fetch(API_NOTIFICATIONS_CONFIG_URL, { cache: "no-store" });
+    if (!response.ok) throw new Error("Notifications unavailable");
+    notificationConfig = await response.json();
+  } catch {
+    notificationConfig = { available: false, configured: false, vapidPublicKey: "", settings: null, reason: "Phone reminders are unavailable." };
+  }
+}
+
+function renderNotificationControls() {
+  if (els.settingsNotificationNudge) {
+    els.settingsNotificationNudge.hidden = notificationBannerRecentlySeen();
+  }
+  if (!els.notificationControls || !els.notificationSettingsBtn) return;
+
+  const browserSupported = supportsPushNotifications();
+  const canUseNotifications = Boolean(appEnv.authRequired && notificationConfig.available);
+  els.notificationControls.hidden = false;
+
+  const settings = notificationConfig.settings || {};
+  if (settings.reminderTime && document.activeElement !== els.notificationTimeInput) {
+    els.notificationTimeInput.value = settings.reminderTime;
+  }
+
+  const enabled = Boolean(settings.enabled && settings.subscriptionCount > 0);
+  els.enableNotificationsBtn.hidden = enabled;
+  els.testNotificationBtn.hidden = !enabled;
+  els.disableNotificationsBtn.hidden = !enabled;
+  els.notificationTimeInput.disabled = !browserSupported || !canUseNotifications || !notificationConfig.configured;
+  if (els.notificationBanner) {
+    els.notificationBanner.hidden = enabled || notificationBannerRecentlySeen();
+  }
+  if (els.settingsNotificationNudge) {
+    els.settingsNotificationNudge.hidden = enabled || notificationBannerRecentlySeen();
+  }
+
+  if (!browserSupported) {
+    els.notificationStatus.textContent = "This browser does not support web push reminders.";
+  } else if (!canUseNotifications) {
+    els.notificationStatus.textContent = "Phone reminders work from the hosted app on your phone.";
+  } else if (!notificationConfig.configured) {
+    els.notificationStatus.textContent = notificationConfig.reason || "Server push keys are not configured yet.";
+  } else if (Notification.permission === "denied") {
+    els.notificationStatus.textContent = "Notifications are blocked in this browser's settings.";
+  } else if (enabled) {
+    els.notificationStatus.textContent = `Reminder on at ${els.notificationTimeInput.value || settings.reminderTime}. Only sends if today is still open.`;
+  } else {
+    els.notificationStatus.textContent = "Enable a phone reminder for days when Minimum Practice is still open.";
+  }
+}
+
+function supportsPushNotifications() {
+  return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+}
+
+function openNotificationSettings() {
+  localStorage.setItem(notificationBannerStorageKey(), new Date().toISOString());
+  if (els.notificationBanner) els.notificationBanner.hidden = true;
+  navigateToRoute("data");
+  window.requestAnimationFrame(() => {
+    els.notificationSettingsCard?.scrollIntoView({ behavior: "smooth", block: "start" });
+    els.notificationTimeInput?.focus({ preventScroll: true });
+  });
+}
+
+function notificationBannerRecentlySeen() {
+  const value = localStorage.getItem(notificationBannerStorageKey());
+  if (!value) return false;
+  const seenAt = new Date(value);
+  if (Number.isNaN(seenAt.getTime())) return false;
+  const fourteenDays = 14 * 24 * 60 * 60 * 1000;
+  return Date.now() - seenAt.getTime() < fourteenDays;
+}
+
+function notificationBannerStorageKey() {
+  return `${NOTIFICATION_BANNER_KEY}.${appEnv.env || "prod"}.${appEnv.authRequired ? "hosted" : "local"}`;
+}
+
+async function enableNotifications() {
+  if (!supportsPushNotifications() || !notificationConfig.configured) {
+    renderNotificationControls();
+    return;
+  }
+
+  els.notificationStatus.textContent = "Setting up reminders...";
+  try {
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") {
+      els.notificationStatus.textContent = "Notifications were not allowed.";
+      return;
+    }
+
+    const registration = await navigator.serviceWorker.register("/service-worker.js");
+    const existing = await registration.pushManager.getSubscription();
+    if (existing) await existing.unsubscribe();
+
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(notificationConfig.vapidPublicKey),
+    });
+    currentPushSubscription = subscription;
+
+    const response = await fetch(API_NOTIFICATIONS_SUBSCRIBE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        subscription,
+        reminderTime: els.notificationTimeInput.value || "20:30",
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York",
+        enabled: true,
+      }),
+    });
+    if (!response.ok) throw new Error("Subscription save failed");
+
+    const result = await response.json();
+    notificationConfig.settings = result.settings;
+    renderNotificationControls();
+  } catch (error) {
+    console.error(error);
+    els.notificationStatus.textContent = "Could not enable reminders. Try again from the installed phone app.";
+  }
+}
+
+async function disableNotifications() {
+  try {
+    const registration = await navigator.serviceWorker.getRegistration();
+    const subscription = await registration?.pushManager.getSubscription();
+    const endpoint = subscription?.endpoint || currentPushSubscription?.endpoint || "";
+    if (subscription) await subscription.unsubscribe();
+
+    const response = await fetch(API_NOTIFICATIONS_UNSUBSCRIBE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint }),
+    });
+    if (response.ok) {
+      const result = await response.json();
+      notificationConfig.settings = result.settings;
+    }
+    currentPushSubscription = null;
+  } catch (error) {
+    console.warn(error);
+  }
+  renderNotificationControls();
+}
+
+async function saveNotificationSettings() {
+  if (!notificationConfig.settings?.enabled || !notificationConfig.configured) return;
+
+  try {
+    const registration = await navigator.serviceWorker.getRegistration();
+    const subscription = await registration?.pushManager.getSubscription();
+    const response = await fetch(API_NOTIFICATIONS_SETTINGS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        endpoint: subscription?.endpoint || currentPushSubscription?.endpoint || "",
+        reminderTime: els.notificationTimeInput.value || "20:30",
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York",
+        enabled: true,
+      }),
+    });
+    if (!response.ok) throw new Error("Settings save failed");
+    const result = await response.json();
+    notificationConfig.settings = result.settings;
+    renderNotificationControls();
+  } catch {
+    els.notificationStatus.textContent = "Could not save reminder time.";
+  }
+}
+
+async function sendTestNotification() {
+  els.notificationStatus.textContent = "Sending test notification...";
+  try {
+    const response = await fetch(API_NOTIFICATIONS_TEST_URL, { method: "POST" });
+    if (!response.ok) throw new Error("Test notification failed");
+    els.notificationStatus.textContent = "Test sent. Check your phone.";
+  } catch {
+    els.notificationStatus.textContent = "Could not send a test notification.";
+  }
+}
+
+function urlBase64ToUint8Array(value) {
+  const padding = "=".repeat((4 - (value.length % 4)) % 4);
+  const base64 = `${value}${padding}`.replace(/-/g, "+").replace(/_/g, "/");
+  const raw = window.atob(base64);
+  return Uint8Array.from([...raw].map((char) => char.charCodeAt(0)));
+}
+
 function render() {
   if (appEnv.authRequired && !isHostedAllowed) return;
   if (els.hostedSetup) els.hostedSetup.hidden = !(appEnv.authRequired && problems.length === 0);
   renderTopicOptions();
   renderImportMeta();
+  renderNotificationControls();
   renderStats();
   renderDailyPicks();
   renderMinimumPractice();

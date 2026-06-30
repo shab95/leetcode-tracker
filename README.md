@@ -21,7 +21,7 @@ hosted mode with Google OAuth and per-user SQLite storage.
 - Hides notes and solution references before grading so they do not become hints.
 - Shows Diagnostics for backlog pressure, attention topics, stage distribution, and
   recent grade quality.
-- Provides a Data Management page for CSV import, JSON backup/restore, and list seeding.
+- Provides a Settings page for reminders, CSV import, JSON backup/restore, and list seeding.
 - Includes QA mode with disposable fixture data.
 - Supports an optional private-beta cloud mode for invited Google accounts.
 
@@ -84,7 +84,7 @@ study list, grade a problem, or edit a problem.
 
 To populate the app:
 
-1. Open `Data Management`.
+1. Open `Settings`.
 2. Choose one or more setup actions:
    - `Seed Blind 75` to add the built-in Blind 75 list.
    - `Seed NeetCode 150` to add the built-in NeetCode 150 list.
@@ -131,12 +131,13 @@ The clean QA fixture lives at:
 data/fixtures/qa-state.json
 ```
 
-Use `Data Management -> Reset QA data` to restore QA to the fixture state.
+Use `Settings -> Reset QA data` to restore QA to the fixture state.
 
-## Data Management
+## Settings
 
-Open `Data Management` in the top navigation for rare/admin actions:
+Open `Settings` in the top navigation for reminders and rare/admin actions:
 
+- `Phone Reminder`: installs and enables optional Minimum Practice nudges in hosted mode.
 - `Import CSV once`: migrates an existing tracker CSV into app state.
 - `Seed Blind 75`: adds/merges built-in Blind 75 problems.
 - `Seed NeetCode 150`: adds/merges built-in NeetCode 150 problems.
@@ -202,7 +203,26 @@ Optional:
 ```text
 MAX_STATE_BYTES=5000000
 BACKUP_RETENTION=20
+VAPID_PUBLIC_KEY
+VAPID_PRIVATE_KEY
+VAPID_SUBJECT=mailto:you@example.com
+NOTIFICATION_CHECK_INTERVAL_MS=60000
 ```
+
+Phone reminders are optional. If `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` are set,
+hosted users can enable a daily Minimum Practice reminder from the Dashboard. Generate
+keys with:
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+For phone reminders, install the hosted tracker as a Home Screen web app first:
+
+- iPhone: open the hosted tracker in Safari, tap Share, choose Add to Home Screen,
+  then open the tracker from the new icon.
+- Android: open the hosted tracker in Chrome, tap the menu, choose Add to Home screen,
+  then open the tracker from the new icon.
 
 Run hosted mode locally for smoke testing:
 

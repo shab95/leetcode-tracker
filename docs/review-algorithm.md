@@ -304,6 +304,12 @@ Minimum day complete. Momentum protected.
 Comeback day logged. The loop is alive again.
 ```
 
+In hosted mode, the Dashboard may offer an optional phone reminder for Minimum Practice.
+The reminder is explanatory and motivational only. It does not affect stage movement,
+mastery, review scheduling, leaderboard metrics, or cloud sync. If enabled, it checks the
+user's selected local reminder time and sends only when no real graded attempt has been
+recorded for that local date.
+
 ## Mastery Rule
 
 A problem becomes `Mastered` only when all conditions are true:

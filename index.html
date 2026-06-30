@@ -3,7 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#226a5f" />
     <title>DSA Anti-Forgetting Tracker</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -32,7 +34,7 @@
             <a href="/index.html" data-route="dashboard">Dashboard</a>
             <a href="/diagnostics" data-route="diagnostics">Diagnostics</a>
             <a href="/leaderboard" data-route="leaderboard" id="leaderboardNavLink" hidden>Leaderboard</a>
-            <a href="/data-management" data-route="data">Data Management</a>
+            <a href="/data-management" data-route="data">Settings <span class="nav-nudge" id="settingsNotificationNudge" hidden>new</span></a>
           </nav>
           <button class="primary-btn" id="addProblemBtn" type="button">
             <span aria-hidden="true">+</span>
@@ -435,9 +437,18 @@
         <section class="panel data-panel" aria-label="Data management">
           <div class="section-head">
             <div>
-              <h2>Data Management</h2>
-              <p>Back up, restore, and manage the tracker data source.</p>
+              <h2>Settings</h2>
+              <p>Manage reminders, backups, imports, and tracker data.</p>
             </div>
+          </div>
+
+          <div class="settings-nudge" id="notificationBanner" hidden>
+            <span class="nudge-dot" aria-hidden="true"></span>
+            <div>
+              <strong>Enable phone reminders</strong>
+              <p>Get a gentle nudge when Minimum Practice is still open.</p>
+            </div>
+            <button class="ghost-btn" id="notificationSettingsBtn" type="button">Click here</button>
           </div>
 
           <div class="data-grid">
@@ -480,6 +491,27 @@
                 <button class="ghost-btn" id="seedBlindBtn" type="button">Seed Blind 75</button>
                 <button class="ghost-btn" id="seedNeetcodeBtn" type="button">Seed NeetCode 150</button>
               </div>
+            </article>
+
+            <article class="data-card notification-card" id="notificationSettingsCard">
+              <span class="data-card-label">Phone Reminder</span>
+              <h3>Minimum Practice nudge</h3>
+              <p class="data-card-copy">Install the hosted tracker on your phone, then enable a daily reminder. It only sends if Minimum Practice is still open for that day.</p>
+              <div class="notification-controls" id="notificationControls" hidden>
+                <label class="notification-time">
+                  <span>Reminder time</span>
+                  <input id="notificationTimeInput" type="time" value="20:30" />
+                </label>
+                <button class="ghost-btn" id="enableNotificationsBtn" type="button">Enable</button>
+                <button class="ghost-btn" id="testNotificationBtn" type="button" hidden>Test</button>
+                <button class="ghost-btn" id="disableNotificationsBtn" type="button" hidden>Disable</button>
+              </div>
+              <small class="notification-status" id="notificationStatus">Phone reminders need the hosted app.</small>
+              <details class="install-hint" open>
+                <summary>Add to phone Home Screen</summary>
+                <p>iPhone: open the hosted tracker in Safari, tap Share, choose Add to Home Screen, then launch it from the new icon before enabling reminders.</p>
+                <p>Android: open the hosted tracker in Chrome, tap the menu, choose Add to Home screen, then launch it from the new icon.</p>
+              </details>
             </article>
 
             <article class="data-card qa-data-card" id="qaTools" hidden>

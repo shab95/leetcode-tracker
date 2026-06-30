@@ -8,6 +8,7 @@ const session = require("express-session");
 const helmet = require("helmet");
 const passport = require("passport");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
+const webPush = require("web-push");
 
 const EXPORT_VERSION = 3;
 const EMPTY_STATE = {
@@ -34,9 +35,17 @@ const QA_FIXTURE_FILE = path.join(DATA_DIR, "fixtures", "qa-state.json");
 const MAX_STATE_BYTES = Number(process.env.MAX_STATE_BYTES || 5_000_000);
 const BACKUP_RETENTION = Number(process.env.BACKUP_RETENTION || 20);
 const SQLITE_PATH = process.env.SQLITE_PATH || path.join(DATA_DIR, "tracker.sqlite");
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || "";
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "";
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT || "mailto:notifications@leetcode-tracker.local";
+const NOTIFICATION_CHECK_INTERVAL_MS = Number(process.env.NOTIFICATION_CHECK_INTERVAL_MS || 60_000);
+const NOTIFICATIONS_CONFIGURED = Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
 const PUBLIC_FILES = new Set([
   "/index.html",
   "/app.js",
+  "/manifest.webmanifest",
+  "/pwa-icon.svg",
+  "/service-worker.js",
   "/styles.css",
   "/data/blind-75.js",
   "/data/neetcode-150.js",
@@ -48,6 +57,9 @@ const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".webmanifest": "application/manifest+json; charset=utf-8",
 };
 
 class SqliteSessionStore extends session.Store {
@@ -106,6 +118,10 @@ class SqliteSessionStore extends session.Store {
 }
 
 validateConfig();
+
+if (NOTIFICATIONS_CONFIGURED) {
+  webPush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+}
 
 const allowedEmails = parseAllowedEmails(process.env.ALLOWED_EMAILS);
 const db = IS_HOSTED ? initDatabase(SQLITE_PATH) : null;
@@ -273,6 +289,83 @@ app.get("/api/leaderboard", requireLeaderboardAccess, async (request, response, 
   }
 });
 
+app.get("/api/notifications/config", requireAllowedUser, (request, response) => {
+  if (!IS_HOSTED) {
+    response.json({
+      available: false,
+      configured: false,
+      vapidPublicKey: "",
+      settings: null,
+      reason: "Phone reminders are available in the hosted app.",
+    });
+    return;
+  }
+
+  response.json({
+    available: true,
+    configured: NOTIFICATIONS_CONFIGURED,
+    vapidPublicKey: NOTIFICATIONS_CONFIGURED ? VAPID_PUBLIC_KEY : "",
+    settings: getNotificationSettings(request.user.id),
+    reason: NOTIFICATIONS_CONFIGURED ? "" : "Server push keys are not configured yet.",
+  });
+});
+
+app.post("/api/notifications/subscribe", requireAllowedUser, (request, response) => {
+  if (!IS_HOSTED || !NOTIFICATIONS_CONFIGURED) {
+    response.status(503).json({ error: "Notifications are not configured" });
+    return;
+  }
+
+  const validation = validateNotificationSubscription(request.body || {});
+  if (!validation.ok) {
+    response.status(400).json({ error: validation.error });
+    return;
+  }
+
+  savePushSubscription(request.user.id, validation.subscription, validation.settings);
+  response.json({ ok: true, settings: getNotificationSettings(request.user.id) });
+});
+
+app.post("/api/notifications/settings", requireAllowedUser, (request, response) => {
+  if (!IS_HOSTED || !NOTIFICATIONS_CONFIGURED) {
+    response.status(503).json({ error: "Notifications are not configured" });
+    return;
+  }
+
+  const settings = normalizeNotificationSettings(request.body || {});
+  updatePushSubscriptionSettings(request.user.id, request.body?.endpoint || "", settings);
+  response.json({ ok: true, settings: getNotificationSettings(request.user.id) });
+});
+
+app.post("/api/notifications/unsubscribe", requireAllowedUser, (request, response) => {
+  if (!IS_HOSTED) {
+    response.json({ ok: true, settings: null });
+    return;
+  }
+
+  deletePushSubscription(request.user.id, request.body?.endpoint || "");
+  response.json({ ok: true, settings: getNotificationSettings(request.user.id) });
+});
+
+app.post("/api/notifications/test", requireAllowedUser, async (request, response, next) => {
+  try {
+    if (!IS_HOSTED || !NOTIFICATIONS_CONFIGURED) {
+      response.status(503).json({ error: "Notifications are not configured" });
+      return;
+    }
+
+    const count = await sendPracticeNotificationToUser(request.user.id, {
+      title: "DSA Tracker",
+      body: "All that matters is the next one.",
+      tag: "minimum-practice-test",
+      url: "/index.html",
+    });
+    response.json({ ok: true, sent: count });
+  } catch (error) {
+    next(error);
+  }
+});
+
 if (!IS_HOSTED) {
   app.post("/api/reset-qa", async (request, response, next) => {
     try {
@@ -318,8 +411,15 @@ const httpServer = app.listen(PORT, HOST, () => {
   console.log(`Host: ${HOST}`);
   if (IS_HOSTED) console.log(`SQLite path: ${SQLITE_PATH}`);
   else console.log(`State file: ${STATE_FILE}`);
+  if (IS_HOSTED) console.log(`Push notifications: ${NOTIFICATIONS_CONFIGURED ? "configured" : "not configured"}`);
 });
 httpServer.ref();
+
+if (IS_HOSTED && NOTIFICATIONS_CONFIGURED) {
+  setInterval(() => {
+    sendDuePracticeReminders().catch((error) => console.warn(`Reminder check failed: ${error.message}`));
+  }, NOTIFICATION_CHECK_INTERVAL_MS).unref();
+}
 
 function validateConfig() {
   if (!IS_HOSTED) return;
@@ -500,6 +600,20 @@ function initDatabase(filePath) {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       PRIMARY KEY (user_id, week_start),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      endpoint TEXT NOT NULL UNIQUE,
+      subscription_json TEXT NOT NULL,
+      reminder_time TEXT NOT NULL DEFAULT '20:30',
+      timezone TEXT NOT NULL DEFAULT 'America/New_York',
+      enabled INTEGER NOT NULL DEFAULT 1,
+      last_sent_date TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
   `);
@@ -895,6 +1009,194 @@ function currentPracticeStreak(sessions, today) {
   }
 
   return streak;
+}
+
+function getNotificationSettings(userId) {
+  const row = db.prepare(`
+    SELECT reminder_time, timezone, enabled
+    FROM push_subscriptions
+    WHERE user_id = ?
+    ORDER BY updated_at DESC, id DESC
+    LIMIT 1
+  `).get(userId);
+
+  if (!row) return { enabled: false, reminderTime: "20:30", timezone: "America/New_York", subscriptionCount: 0 };
+
+  const count = db.prepare("SELECT COUNT(*) AS count FROM push_subscriptions WHERE user_id = ?").get(userId)?.count || 0;
+  return {
+    enabled: Boolean(row.enabled),
+    reminderTime: row.reminder_time,
+    timezone: row.timezone,
+    subscriptionCount: Number(count || 0),
+  };
+}
+
+function validateNotificationSubscription(body) {
+  const subscription = body.subscription || {};
+  const endpoint = String(subscription.endpoint || "").trim();
+  const keys = subscription.keys || {};
+
+  if (!endpoint || !keys.p256dh || !keys.auth) {
+    return { ok: false, error: "Invalid push subscription" };
+  }
+
+  return {
+    ok: true,
+    subscription,
+    settings: normalizeNotificationSettings(body),
+  };
+}
+
+function normalizeNotificationSettings(body = {}) {
+  const reminderTime = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(body.reminderTime || ""))
+    ? String(body.reminderTime)
+    : "20:30";
+  const timezone = normalizeNotificationTimezone(body.timezone);
+  return {
+    reminderTime,
+    timezone,
+    enabled: body.enabled !== false,
+  };
+}
+
+function normalizeNotificationTimezone(value) {
+  const timezone = String(value || "America/New_York").trim().slice(0, 80) || "America/New_York";
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(new Date());
+    return timezone;
+  } catch {
+    return "America/New_York";
+  }
+}
+
+function savePushSubscription(userId, subscription, settings) {
+  const now = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO push_subscriptions (user_id, endpoint, subscription_json, reminder_time, timezone, enabled, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(endpoint) DO UPDATE SET
+      user_id = excluded.user_id,
+      subscription_json = excluded.subscription_json,
+      reminder_time = excluded.reminder_time,
+      timezone = excluded.timezone,
+      enabled = excluded.enabled,
+      updated_at = excluded.updated_at
+  `).run(
+    userId,
+    subscription.endpoint,
+    JSON.stringify(subscription),
+    settings.reminderTime,
+    settings.timezone,
+    settings.enabled ? 1 : 0,
+    now,
+    now,
+  );
+}
+
+function updatePushSubscriptionSettings(userId, endpoint, settings) {
+  const now = new Date().toISOString();
+  if (endpoint) {
+    db.prepare(`
+      UPDATE push_subscriptions
+      SET reminder_time = ?, timezone = ?, enabled = ?, updated_at = ?
+      WHERE user_id = ? AND endpoint = ?
+    `).run(settings.reminderTime, settings.timezone, settings.enabled ? 1 : 0, now, userId, endpoint);
+    return;
+  }
+
+  db.prepare(`
+    UPDATE push_subscriptions
+    SET reminder_time = ?, timezone = ?, enabled = ?, updated_at = ?
+    WHERE user_id = ?
+  `).run(settings.reminderTime, settings.timezone, settings.enabled ? 1 : 0, now, userId);
+}
+
+function deletePushSubscription(userId, endpoint) {
+  if (endpoint) {
+    db.prepare("DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint = ?").run(userId, endpoint);
+    return;
+  }
+
+  db.prepare("DELETE FROM push_subscriptions WHERE user_id = ?").run(userId);
+}
+
+async function sendDuePracticeReminders() {
+  if (!IS_HOSTED || !NOTIFICATIONS_CONFIGURED) return;
+
+  const rows = db.prepare(`
+    SELECT push_subscriptions.*, users.email
+    FROM push_subscriptions
+    JOIN users ON users.id = push_subscriptions.user_id
+    WHERE push_subscriptions.enabled = 1
+      AND users.is_allowed = 1
+  `).all();
+
+  for (const row of rows) {
+    try {
+      const local = localDateTimeParts(new Date(), row.timezone);
+      if (row.last_sent_date === local.date) continue;
+      if (local.time < row.reminder_time) continue;
+      if (minimumPracticeComplete(row.user_id, local.date)) continue;
+
+      const sent = await sendPushSubscription(row, {
+        title: "DSA Tracker",
+        body: "All that matters is the next one.",
+        tag: "minimum-practice-reminder",
+        url: "/index.html",
+      });
+
+      if (sent) {
+        db.prepare("UPDATE push_subscriptions SET last_sent_date = ?, updated_at = ? WHERE id = ?")
+          .run(local.date, new Date().toISOString(), row.id);
+      }
+    } catch (error) {
+      console.warn(`Practice reminder failed for subscription ${row.id}: ${error.message}`);
+    }
+  }
+}
+
+function minimumPracticeComplete(userId, localDate) {
+  const state = getHostedState(userId);
+  return getActivitySessions(state).some((session) => isProperGrade(session.grade) && normalizeDate(session.date) === localDate);
+}
+
+async function sendPracticeNotificationToUser(userId, payload) {
+  const rows = db.prepare("SELECT * FROM push_subscriptions WHERE user_id = ? AND enabled = 1").all(userId);
+  let sent = 0;
+  for (const row of rows) {
+    if (await sendPushSubscription(row, payload)) sent += 1;
+  }
+  return sent;
+}
+
+async function sendPushSubscription(row, payload) {
+  try {
+    await webPush.sendNotification(JSON.parse(row.subscription_json), JSON.stringify(payload));
+    return true;
+  } catch (error) {
+    if (error.statusCode === 404 || error.statusCode === 410) {
+      db.prepare("DELETE FROM push_subscriptions WHERE id = ?").run(row.id);
+      return false;
+    }
+    throw error;
+  }
+}
+
+function localDateTimeParts(date, timezone) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: normalizeNotificationTimezone(timezone),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const value = (type) => parts.find((part) => part.type === type)?.value || "";
+  return {
+    date: `${value("year")}-${value("month")}-${value("day")}`,
+    time: `${value("hour")}:${value("minute")}`,
+  };
 }
 
 function countDueReviews(problems, today) {

@@ -88,6 +88,14 @@ ALLOWED_EMAILS
 SQLITE_PATH
 ```
 
+Optional hosted-only phone reminder variables:
+
+```text
+VAPID_PUBLIC_KEY
+VAPID_PRIVATE_KEY
+VAPID_SUBJECT=mailto:you@example.com
+```
+
 Hosted mode changes storage and trust boundaries:
 
 ```text
@@ -100,6 +108,10 @@ backups: rolling SQLite backup rows per user
 Hosted mode does not read or write `data/tracker-state.json`. Local state and hosted state
 are intentionally separate. To move progress online, export JSON from local mode and import
 it after signing in to hosted mode.
+
+Phone reminders are only available in hosted mode when VAPID keys are configured. Local
+and QA file-backed servers show the reminder controls as unavailable because they do not
+have authenticated cloud users or push subscriptions.
 
 ## API Endpoints
 
