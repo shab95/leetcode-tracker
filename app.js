@@ -879,7 +879,15 @@ async function sendTestNotification() {
   try {
     const response = await fetch(API_NOTIFICATIONS_TEST_URL, { method: "POST" });
     if (!response.ok) throw new Error("Test notification failed");
-    els.notificationStatus.textContent = "Test sent. Check your phone.";
+    const result = await response.json();
+    if ((result.sent || 0) > 0) {
+      els.notificationStatus.textContent = result.failed
+        ? `Test sent. ${result.failed} stale subscription${result.failed === 1 ? "" : "s"} were skipped.`
+        : "Test sent. Check your phone.";
+      return;
+    }
+
+    els.notificationStatus.textContent = "No active reminder subscription yet. Try Enable first.";
   } catch {
     els.notificationStatus.textContent = "Could not send a test notification.";
   }

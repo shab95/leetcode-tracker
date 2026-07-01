@@ -354,13 +354,13 @@ app.post("/api/notifications/test", requireAllowedUser, async (request, response
       return;
     }
 
-    const count = await sendPracticeNotificationToUser(request.user.id, {
+    const result = await sendPracticeNotificationToUser(request.user.id, {
       title: "DSA Tracker",
       body: "All that matters is the next one.",
       tag: "minimum-practice-test",
       url: "/index.html",
     });
-    response.json({ ok: true, sent: count });
+    response.json({ ok: true, sent: result.sent, failed: result.failed });
   } catch (error) {
     next(error);
   }
@@ -1163,10 +1163,16 @@ function minimumPracticeComplete(userId, localDate) {
 async function sendPracticeNotificationToUser(userId, payload) {
   const rows = db.prepare("SELECT * FROM push_subscriptions WHERE user_id = ? AND enabled = 1").all(userId);
   let sent = 0;
+  let failed = 0;
   for (const row of rows) {
-    if (await sendPushSubscription(row, payload)) sent += 1;
+    try {
+      if (await sendPushSubscription(row, payload)) sent += 1;
+    } catch (error) {
+      failed += 1;
+      console.warn(`Push notification failed for subscription ${row.id}: ${error.message}`);
+    }
   }
-  return sent;
+  return { sent, failed };
 }
 
 async function sendPushSubscription(row, payload) {
