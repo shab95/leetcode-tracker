@@ -887,7 +887,9 @@ async function sendTestNotification() {
       return;
     }
 
-    els.notificationStatus.textContent = "No active reminder subscription yet. Try Enable first.";
+    els.notificationStatus.textContent = result.failed
+      ? "The old subscription was cleared. Tap Disable, then Enable again to create a fresh one."
+      : "No active reminder subscription yet. Try Enable first.";
   } catch {
     els.notificationStatus.textContent = "Could not send a test notification.";
   }

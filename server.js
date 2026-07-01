@@ -1180,12 +1180,17 @@ async function sendPushSubscription(row, payload) {
     await webPush.sendNotification(JSON.parse(row.subscription_json), JSON.stringify(payload));
     return true;
   } catch (error) {
-    if (error.statusCode === 404 || error.statusCode === 410) {
+    if (isStalePushError(error)) {
       db.prepare("DELETE FROM push_subscriptions WHERE id = ?").run(row.id);
       return false;
     }
     throw error;
   }
+}
+
+function isStalePushError(error) {
+  const body = typeof error?.body === "string" ? error.body : "";
+  return error?.statusCode === 404 || error?.statusCode === 410 || body.includes("BadJwtToken");
 }
 
 function localDateTimeParts(date, timezone) {
