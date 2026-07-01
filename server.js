@@ -360,7 +360,7 @@ app.post("/api/notifications/test", requireAllowedUser, async (request, response
       tag: "minimum-practice-test",
       url: "/index.html",
     });
-    response.json({ ok: true, sent: result.sent, failed: result.failed });
+    response.json({ ok: true, sent: result.sent, failed: result.failed, stale: result.stale });
   } catch (error) {
     next(error);
   }
@@ -1138,14 +1138,14 @@ async function sendDuePracticeReminders() {
       if (local.time < row.reminder_time) continue;
       if (minimumPracticeComplete(row.user_id, local.date)) continue;
 
-      const sent = await sendPushSubscription(row, {
+      const result = await sendPushSubscription(row, {
         title: "DSA Tracker",
         body: "All that matters is the next one.",
         tag: "minimum-practice-reminder",
         url: "/index.html",
       });
 
-      if (sent) {
+      if (result.sent) {
         db.prepare("UPDATE push_subscriptions SET last_sent_date = ?, updated_at = ? WHERE id = ?")
           .run(local.date, new Date().toISOString(), row.id);
       }
@@ -1164,25 +1164,28 @@ async function sendPracticeNotificationToUser(userId, payload) {
   const rows = db.prepare("SELECT * FROM push_subscriptions WHERE user_id = ? AND enabled = 1").all(userId);
   let sent = 0;
   let failed = 0;
+  let stale = 0;
   for (const row of rows) {
     try {
-      if (await sendPushSubscription(row, payload)) sent += 1;
+      const result = await sendPushSubscription(row, payload);
+      if (result.sent) sent += 1;
+      if (result.stale) stale += 1;
     } catch (error) {
       failed += 1;
       console.warn(`Push notification failed for subscription ${row.id}: ${error.message}`);
     }
   }
-  return { sent, failed };
+  return { sent, failed, stale };
 }
 
 async function sendPushSubscription(row, payload) {
   try {
     await webPush.sendNotification(JSON.parse(row.subscription_json), JSON.stringify(payload));
-    return true;
+    return { sent: true, stale: false };
   } catch (error) {
     if (isStalePushError(error)) {
       db.prepare("DELETE FROM push_subscriptions WHERE id = ?").run(row.id);
-      return false;
+      return { sent: false, stale: true };
     }
     throw error;
   }

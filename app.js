@@ -881,14 +881,26 @@ async function sendTestNotification() {
     if (!response.ok) throw new Error("Test notification failed");
     const result = await response.json();
     if ((result.sent || 0) > 0) {
-      els.notificationStatus.textContent = result.failed
-        ? `Test sent. ${result.failed} stale subscription${result.failed === 1 ? "" : "s"} were skipped.`
-        : "Test sent. Check your phone.";
+      if ((result.stale || 0) > 0) {
+        const label = result.stale === 1 ? "subscription was" : "subscriptions were";
+        els.notificationStatus.textContent = `Test sent. ${result.stale} old phone ${label} cleared.`;
+      } else {
+        els.notificationStatus.textContent = result.failed
+          ? "Test sent, but one phone endpoint failed."
+          : "Test sent. Check your phone.";
+      }
+      return;
+    }
+
+    if ((result.stale || 0) > 0) {
+      await loadNotificationConfig();
+      renderNotificationControls();
+      els.notificationStatus.textContent = "The old phone subscription was cleared. Tap Enable again to create a fresh one.";
       return;
     }
 
     els.notificationStatus.textContent = result.failed
-      ? "The old subscription was cleared. Tap Disable, then Enable again to create a fresh one."
+      ? "The test could not reach your phone. Try disabling and enabling reminders again."
       : "No active reminder subscription yet. Try Enable first.";
   } catch {
     els.notificationStatus.textContent = "Could not send a test notification.";
