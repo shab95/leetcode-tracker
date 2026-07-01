@@ -93,8 +93,12 @@ Optional hosted-only phone reminder variables:
 ```text
 VAPID_PUBLIC_KEY
 VAPID_PRIVATE_KEY
-VAPID_SUBJECT=mailto:you@example.com
+VAPID_SUBJECT=https://your-hosted-app.example.com
 ```
+
+`VAPID_SUBJECT` must be a real contact value, such as `mailto:you@example.com` or the
+hosted `https://...` origin. Avoid fake `.local` values because push services may reject
+their signed tokens.
 
 Hosted mode changes storage and trust boundaries:
 

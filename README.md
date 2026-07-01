@@ -205,7 +205,7 @@ MAX_STATE_BYTES=5000000
 BACKUP_RETENTION=20
 VAPID_PUBLIC_KEY
 VAPID_PRIVATE_KEY
-VAPID_SUBJECT=mailto:you@example.com
+VAPID_SUBJECT=https://your-hosted-app.example.com
 NOTIFICATION_CHECK_INTERVAL_MS=60000
 ```
 
@@ -216,6 +216,10 @@ keys with:
 ```bash
 npx web-push generate-vapid-keys
 ```
+
+Set `VAPID_SUBJECT` to a real contact value, either `mailto:you@example.com` or the
+hosted `https://...` origin. Do not use fake `.local` values; some push services reject
+those tokens.
 
 For phone reminders, install the hosted tracker as a Home Screen web app first:
 

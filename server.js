@@ -37,7 +37,7 @@ const BACKUP_RETENTION = Number(process.env.BACKUP_RETENTION || 20);
 const SQLITE_PATH = process.env.SQLITE_PATH || path.join(DATA_DIR, "tracker.sqlite");
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || "";
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "";
-const VAPID_SUBJECT = process.env.VAPID_SUBJECT || "mailto:notifications@leetcode-tracker.local";
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT || "";
 const NOTIFICATION_CHECK_INTERVAL_MS = Number(process.env.NOTIFICATION_CHECK_INTERVAL_MS || 60_000);
 const NOTIFICATIONS_CONFIGURED = Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
 const PUBLIC_FILES = new Set([
@@ -411,7 +411,10 @@ const httpServer = app.listen(PORT, HOST, () => {
   console.log(`Host: ${HOST}`);
   if (IS_HOSTED) console.log(`SQLite path: ${SQLITE_PATH}`);
   else console.log(`State file: ${STATE_FILE}`);
-  if (IS_HOSTED) console.log(`Push notifications: ${NOTIFICATIONS_CONFIGURED ? "configured" : "not configured"}`);
+  if (IS_HOSTED) {
+    console.log(`Push notifications: ${NOTIFICATIONS_CONFIGURED ? "configured" : "not configured"}`);
+    if (NOTIFICATIONS_CONFIGURED) console.log(`VAPID subject: ${describeVapidSubject(VAPID_SUBJECT)}`);
+  }
 });
 httpServer.ref();
 
@@ -435,6 +438,29 @@ function validateConfig() {
   const missing = required.filter((key) => !process.env[key]);
   if (missing.length > 0) {
     throw new Error(`Hosted mode is missing required env vars: ${missing.join(", ")}`);
+  }
+
+  if (NOTIFICATIONS_CONFIGURED && !isValidVapidSubject(VAPID_SUBJECT)) {
+    throw new Error("Hosted push notifications require VAPID_SUBJECT to be a real mailto: or https:// contact value.");
+  }
+}
+
+function isValidVapidSubject(value) {
+  const subject = String(value || "").trim();
+  if (subject.endsWith(".local")) return false;
+  return /^mailto:[^@\s]+@[^@\s]+\.[^@\s]+$/i.test(subject) || /^https:\/\/[^/\s]+/i.test(subject);
+}
+
+function describeVapidSubject(value) {
+  const subject = String(value || "").trim();
+  if (subject.startsWith("mailto:")) {
+    const domain = subject.split("@").pop() || "unknown";
+    return `mailto domain ${domain}`;
+  }
+  try {
+    return new URL(subject).origin;
+  } catch {
+    return "invalid";
   }
 }
 
