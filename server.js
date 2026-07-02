@@ -354,12 +354,7 @@ app.post("/api/notifications/test", requireAllowedUser, async (request, response
       return;
     }
 
-    const result = await sendPracticeNotificationToUser(request.user.id, {
-      title: "DSA Tracker",
-      body: "All that matters is the next one.",
-      tag: "minimum-practice-test",
-      url: "/index.html",
-    });
+    const result = await sendPracticeNotificationToUser(request.user.id, { test: true });
     response.json({ ok: true, sent: result.sent, failed: result.failed, stale: result.stale });
   } catch (error) {
     next(error);
@@ -1164,12 +1159,7 @@ async function sendDuePracticeReminders() {
       if (local.time < row.reminder_time) continue;
       if (minimumPracticeComplete(row.user_id, local.date)) continue;
 
-      const result = await sendPushSubscription(row, {
-        title: "DSA Tracker",
-        body: "All that matters is the next one.",
-        tag: "minimum-practice-reminder",
-        url: "/index.html",
-      });
+      const result = await sendPushSubscription(row, buildReminderPayload(row.user_id, local.date, false));
 
       if (result.sent) {
         db.prepare("UPDATE push_subscriptions SET last_sent_date = ?, updated_at = ? WHERE id = ?")
@@ -1188,12 +1178,13 @@ function minimumPracticeComplete(userId, localDate) {
 
 async function sendPracticeNotificationToUser(userId, payload) {
   const rows = db.prepare("SELECT * FROM push_subscriptions WHERE user_id = ? AND enabled = 1").all(userId);
+  const body = buildReminderPayload(userId, todayInTimeZone(), Boolean(payload?.test));
   let sent = 0;
   let failed = 0;
   let stale = 0;
   for (const row of rows) {
     try {
-      const result = await sendPushSubscription(row, payload);
+      const result = await sendPushSubscription(row, body);
       if (result.sent) sent += 1;
       if (result.stale) stale += 1;
     } catch (error) {
@@ -1220,6 +1211,68 @@ async function sendPushSubscription(row, payload) {
 function isStalePushError(error) {
   const body = typeof error?.body === "string" ? error.body : "";
   return error?.statusCode === 404 || error?.statusCode === 410 || body.includes("BadJwtToken");
+}
+
+function buildReminderPayload(userId, localDate, isTest = false) {
+  const state = getHostedState(userId);
+  const problems = Array.isArray(state.problems) ? state.problems : [];
+  const sessions = getActivitySessions(state).filter((session) => isProperGrade(session.grade));
+  const lastPracticeDate = latestActivityDate(sessions, localDate);
+  const daysSincePractice = dateDiffDays(lastPracticeDate, localDate);
+  const dueCount = countDueReviews(problems, localDate);
+  const overdueCount = problems.filter((problem) => problem.nextReview && normalizeDate(problem.nextReview) < localDate).length;
+  const pick = pickReminderCopy({ userId, localDate, daysSincePractice, dueCount, overdueCount, isTest });
+
+  return {
+    title: pick.title,
+    body: pick.body,
+    tag: isTest ? "minimum-practice-test" : "minimum-practice-reminder",
+    url: "/index.html",
+  };
+}
+
+function pickReminderCopy({ userId, localDate, daysSincePractice, dueCount, overdueCount, isTest }) {
+  if (isTest) {
+    return pickFromList([
+      { title: "DSA Tracker", body: "Quick ping: your next rep is ready whenever you are." },
+      { title: "DSA Tracker", body: "Small nudge, big payoff. One honest attempt keeps the loop alive." },
+      { title: "DSA Tracker", body: "Your tracker is ready for one more clean win." },
+    ], userId, localDate, dueCount + overdueCount);
+  }
+
+  if (daysSincePractice >= 14) {
+    return pickFromList([
+      { title: "DSA Tracker", body: "Welcome back. One problem is enough to restart momentum." },
+      { title: "DSA Tracker", body: "No guilt, no catch-up marathon. Just one problem to get moving again." },
+      { title: "DSA Tracker", body: "Your queue is still here. Take one calm rep and rebuild the rhythm." },
+    ], userId, localDate, daysSincePractice + overdueCount);
+  }
+
+  if (daysSincePractice >= 3) {
+    return pickFromList([
+      { title: "DSA Tracker", body: "You’re close. One attempt today keeps the loop warm." },
+      { title: "DSA Tracker", body: "One problem now, and future-you gets the payoff." },
+      { title: "DSA Tracker", body: "The next rep is waiting. Let’s keep the chain moving." },
+    ], userId, localDate, daysSincePractice + dueCount);
+  }
+
+  return pickFromList([
+    { title: "DSA Tracker", body: "Your next rep is ready." },
+    { title: "DSA Tracker", body: "One problem keeps the streak moving." },
+    { title: "DSA Tracker", body: "Small dose, big payoff. Let’s keep going." },
+    { title: "DSA Tracker", body: "Time for one clean win." },
+    { title: "DSA Tracker", body: "All that matters is the next one." },
+  ], userId, localDate, dueCount);
+}
+
+function pickFromList(items, userId, localDate, salt = 0) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return { title: "DSA Tracker", body: "All that matters is the next one." };
+  }
+
+  const seed = crypto.createHash("sha256").update([userId, localDate, salt, items.length].join("|")).digest();
+  const index = seed.readUInt32BE(0) % items.length;
+  return items[index];
 }
 
 function localDateTimeParts(date, timezone) {
