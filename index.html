@@ -26,15 +26,16 @@
 
       <section class="topbar" id="appTopbar">
         <div>
-          <p class="eyebrow">Anti-forgetting dashboard</p>
+          <p class="eyebrow">Anti-forgetting practice</p>
           <h1>DSA Tracker</h1>
         </div>
         <div class="topbar-actions">
           <nav class="app-tabs" aria-label="App sections">
-            <a href="/index.html" data-route="dashboard">Dashboard</a>
-            <a href="/diagnostics" data-route="diagnostics">Diagnostics</a>
+            <a href="/index.html" data-route="dashboard">Practice</a>
+            <a href="/library" data-route="library">Library</a>
+            <a href="/memory" data-route="diagnostics">Memory</a>
             <a href="/leaderboard" data-route="leaderboard" id="leaderboardNavLink" hidden>Leaderboard</a>
-            <a href="/data-management" data-route="data">Settings <span class="nav-nudge" id="settingsNotificationNudge" hidden>new</span></a>
+            <a href="/settings" data-route="data">Settings <span class="nav-nudge" id="settingsNotificationNudge" hidden>new</span></a>
           </nav>
           <button class="primary-btn" id="addProblemBtn" type="button">
             <span aria-hidden="true">+</span>
@@ -44,6 +45,13 @@
             <span id="accountLabel"></span>
             <button class="ghost-btn small-btn" id="logoutBtn" type="button">Logout</button>
           </div>
+        </div>
+      </section>
+
+      <section class="status-strip" id="appStatusStrip">
+        <p class="save-status" id="saveStatus" data-status="loading" aria-live="polite">Loading saved data...</p>
+        <div class="qa-tools" id="dashboardQaTools" hidden>
+          <span class="qa-badge">QA</span>
         </div>
       </section>
 
@@ -61,104 +69,27 @@
       </section>
 
       <section id="dashboardView">
-        <section class="stats-grid" aria-label="Practice stats">
-          <article class="stat-card">
-            <span>Mastered</span>
-            <strong id="totalSolved">0</strong>
-          </article>
-          <article class="stat-card stat-card-reveal">
-            <span>Due Reviews</span>
-            <button class="stat-reveal-btn" id="dueReviewsRevealBtn" type="button" aria-expanded="false">
-              <strong id="reviewDue">Hidden</strong>
-              <small id="dueReviewsRevealCopy">All that matters is the next one. Click to reveal when you want the count.</small>
-            </button>
-          </article>
-          <article class="stat-card">
-            <span>Blind 75 Attempted</span>
-            <strong id="blindAttempted">0/75</strong>
-          </article>
-          <article class="stat-card">
-            <span>Blind 75 Mastered</span>
-            <strong id="blindMastered">0/75</strong>
-          </article>
-          <article class="stat-card">
-            <span>NeetCode 150 Attempted</span>
-            <strong id="neetcodeAttempted">0/150</strong>
-          </article>
-          <article class="stat-card">
-            <span>NeetCode 150 Mastered</span>
-            <strong id="neetcodeMastered">0/150</strong>
-          </article>
-          <article class="stat-card">
-            <span class="stat-label-with-info">
-              7-Day Activity
-              <button
-                class="info-btn"
-                type="button"
-                aria-label="Problems attempted or reviewed in the last 7 days. Multiple attempts on the same problem count once."
-                title="Problems attempted or reviewed in the last 7 days. Multiple attempts on the same problem count once."
-              >
-                i
-              </button>
-            </span>
-            <strong id="weeklySolved">0</strong>
-          </article>
-        </section>
-
-        <section class="panel habit-panel" id="minimumPracticePanel" aria-label="Minimum viable practice">
-          <div class="habit-copy">
-            <span class="habit-label">Minimum Practice</span>
-            <h2 id="habitTitle">One honest attempt completes today</h2>
-            <p id="habitCopy">One real grade is enough to keep the loop alive.</p>
-          </div>
-
-          <div class="habit-metrics" aria-label="Practice rhythm">
-            <div>
-              <span>Today</span>
-              <strong id="habitToday">Open</strong>
-            </div>
-            <div>
-              <span>This Week</span>
-              <strong id="habitWeek">0/4 rhythm days</strong>
-            </div>
-            <div>
-              <span>Rhythm</span>
-              <strong id="habitRhythm">0 days</strong>
-            </div>
-          </div>
-
-          <button class="ghost-btn" id="habitActionBtn" type="button">Start with today's picks</button>
-        </section>
-
-        <section class="panel recovery-panel" id="recoveryPanel" aria-label="Recovery lane">
-          <div class="section-head recovery-head">
-            <div>
-              <span class="habit-label">Recovery Lane</span>
-              <h2>Bring these back online</h2>
-              <p id="recoverySummary">Pick up to 3 cold problems. The rest can wait.</p>
-            </div>
-            <span class="recovery-count" id="recoveryCount">0/3</span>
-          </div>
-          <div class="recovery-list" id="recoveryList"></div>
-        </section>
-
-        <section class="panel daily-panel" id="todayPanel" aria-label="Today's recommendation">
+        <section class="panel daily-panel" id="todayPanel" aria-label="Daily practice recommendation">
           <div class="section-head">
             <div>
-              <h2>Today</h2>
+              <span class="habit-label">Practice</span>
+              <h2>Daily Rep</h2>
               <p id="todaySummary">1 review and 1 new problem by default.</p>
             </div>
-            <div class="daily-skip-controls" aria-label="Skip recommendations">
-              <label class="source-control">
-                <span>New problem source</span>
-                <select id="newSourceSelect">
-                  <option value="blind75">Blind 75</option>
-                  <option value="neetcode150">NeetCode 150</option>
-                </select>
-              </label>
-              <button class="ghost-btn" id="skipReviewBtn" type="button">Skip review</button>
-              <button class="ghost-btn" id="skipNewBtn" type="button">Skip new</button>
-            </div>
+            <details class="pick-options">
+              <summary>Change pick</summary>
+              <div class="daily-skip-controls" aria-label="Skip recommendations">
+                <label class="source-control">
+                  <span>New problem source</span>
+                  <select id="newSourceSelect">
+                    <option value="blind75">Blind 75</option>
+                    <option value="neetcode150">NeetCode 150</option>
+                  </select>
+                </label>
+                <button class="ghost-btn" id="skipReviewBtn" type="button">Skip review</button>
+                <button class="ghost-btn" id="skipNewBtn" type="button">Skip new</button>
+              </div>
+            </details>
           </div>
 
           <p class="grade-result" id="gradeResult" aria-live="polite"></p>
@@ -201,7 +132,7 @@
           </div>
 
           <div class="daily-grid">
-            <article class="recommend-card" id="reviewCard">
+            <article class="recommend-card primary-rep-card" id="reviewCard">
               <span class="card-label">Review</span>
               <h3 id="reviewTitle">No due review</h3>
               <p id="reviewMeta">Import your CSV or grade problems to build the queue.</p>
@@ -218,12 +149,12 @@
               </div>
             </article>
 
-            <article class="recommend-card" id="newCard">
-              <span class="card-label">New</span>
+            <article class="recommend-card secondary-rep-card" id="newCard">
+              <span class="card-label">Optional new rep</span>
               <h3 id="newTitle">Blind 75 queue ready</h3>
               <p id="newMeta">The next unfinished Blind 75 problem will appear here.</p>
               <a class="ghost-btn open-problem-link" id="newOpenLink" href="#" target="_blank" rel="noreferrer" hidden>Open on LeetCode</a>
-              <p class="grade-guidance">Grade the full attempt: idea, code, edge cases, and explanation.</p>
+              <p class="grade-guidance">If you have more energy, add one new problem to the loop.</p>
               <div class="grade-actions" data-card="new">
                 <button class="grade-btn red" type="button" data-grade="red">Could not solve</button>
                 <button class="grade-btn yellow" type="button" data-grade="yellow">Solved with hints / slow</button>
@@ -233,6 +164,45 @@
           </div>
         </section>
 
+        <section class="panel habit-panel" id="minimumPracticePanel" aria-label="Minimum viable practice">
+          <div class="habit-copy">
+            <span class="habit-label">Minimum Practice</span>
+            <h2 id="habitTitle">One honest attempt completes today</h2>
+            <p id="habitCopy">One real grade is enough to keep the loop alive.</p>
+          </div>
+
+          <div class="habit-metrics" aria-label="Practice rhythm">
+            <div>
+              <span>Today</span>
+              <strong id="habitToday">Open</strong>
+            </div>
+            <div>
+              <span>This Week</span>
+              <strong id="habitWeek">0/4 rhythm days</strong>
+            </div>
+            <div>
+              <span>Rhythm</span>
+              <strong id="habitRhythm">0 days</strong>
+            </div>
+          </div>
+
+          <button class="ghost-btn" id="habitActionBtn" type="button">Start with today's picks</button>
+        </section>
+
+        <section class="panel recovery-panel" id="recoveryPanel" aria-label="Recovery lane">
+          <div class="section-head recovery-head">
+            <div>
+              <span class="habit-label">Recovery Lane</span>
+              <h2>Bring these back online</h2>
+              <p id="recoverySummary">Pick up to 3 cold problems. The rest can wait.</p>
+            </div>
+            <span class="recovery-count" id="recoveryCount">0/3</span>
+          </div>
+          <div class="recovery-list" id="recoveryList"></div>
+        </section>
+      </section>
+
+      <section class="library-view" id="libraryView" hidden>
         <section class="workspace">
           <aside class="panel controls" aria-label="Tracker controls">
             <label class="field">
@@ -279,11 +249,6 @@
             </label>
 
             <div class="divider"></div>
-
-            <p class="save-status" id="saveStatus" data-status="loading" aria-live="polite">Loading saved data...</p>
-            <div class="qa-tools" id="dashboardQaTools" hidden>
-              <span class="qa-badge">QA</span>
-            </div>
 
             <details class="stage-reference" open>
               <summary>Review Stages</summary>
@@ -345,11 +310,55 @@
       </section>
 
       <section class="diagnostics-view" id="diagnosticsView" hidden>
+        <section class="stats-grid memory-stats" aria-label="Practice stats">
+          <article class="stat-card">
+            <span>Mastered</span>
+            <strong id="totalSolved">0</strong>
+          </article>
+          <article class="stat-card stat-card-reveal">
+            <span>Due Reviews</span>
+            <button class="stat-reveal-btn" id="dueReviewsRevealBtn" type="button" aria-expanded="false">
+              <strong id="reviewDue">Hidden</strong>
+              <small id="dueReviewsRevealCopy">All that matters is the next one. Click to reveal when you want the count.</small>
+            </button>
+          </article>
+          <article class="stat-card">
+            <span>Blind 75 Attempted</span>
+            <strong id="blindAttempted">0/75</strong>
+          </article>
+          <article class="stat-card">
+            <span>Blind 75 Mastered</span>
+            <strong id="blindMastered">0/75</strong>
+          </article>
+          <article class="stat-card">
+            <span>NeetCode 150 Attempted</span>
+            <strong id="neetcodeAttempted">0/150</strong>
+          </article>
+          <article class="stat-card">
+            <span>NeetCode 150 Mastered</span>
+            <strong id="neetcodeMastered">0/150</strong>
+          </article>
+          <article class="stat-card">
+            <span class="stat-label-with-info">
+              7-Day Activity
+              <button
+                class="info-btn"
+                type="button"
+                aria-label="Problems attempted or reviewed in the last 7 days. Multiple attempts on the same problem count once."
+                title="Problems attempted or reviewed in the last 7 days. Multiple attempts on the same problem count once."
+              >
+                i
+              </button>
+            </span>
+            <strong id="weeklySolved">0</strong>
+          </article>
+        </section>
+
         <section class="panel memory-panel" aria-label="Memory health">
           <div class="section-head">
             <div>
-              <h2>Diagnostics</h2>
-              <p>Memory health signals for understanding backlog pressure, topic risk, and recent recall quality.</p>
+              <h2>Memory</h2>
+              <p>Signals for understanding backlog pressure, topic risk, and recent recall quality.</p>
             </div>
           </div>
 

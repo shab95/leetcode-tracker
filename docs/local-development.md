@@ -213,9 +213,16 @@ The app has client-side routes served by the same `index.html` file:
 
 ```text
 /index.html
+/library
+/memory
 /diagnostics
+/settings
 /data-management
+/leaderboard
 ```
+
+`/diagnostics` remains a backwards-compatible route for the Memory view, and
+`/data-management` remains a backwards-compatible route for Settings.
 
 `server.js` maps those routes back to `index.html`, then `app.js` chooses which view to
 show.

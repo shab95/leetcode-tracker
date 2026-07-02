@@ -11,7 +11,7 @@ hosted mode with Google OAuth and per-user SQLite storage.
 ## What It Does
 
 - Tracks LeetCode/DSA problems, notes, review history, stages, and mastery.
-- Recommends exactly one due review and one new problem on the Dashboard.
+- Recommends exactly one due review and one new problem on the Practice tab.
 - Lets you backfill real graded attempts from the edit modal's History tab.
 - Supports Blind 75 and NeetCode 150 as selectable study lists.
 - Uses grading buttons after an attempt:
@@ -19,13 +19,15 @@ hosted mode with Google OAuth and per-user SQLite storage.
   - `Solved with hints / slow`
   - `Solved cleanly`
 - Hides notes and solution references before grading so they do not become hints.
-- Shows Diagnostics for backlog pressure, attention topics, stage distribution, and
+- Shows Memory for backlog pressure, attention topics, stage distribution, and
   recent grade quality.
 - Provides a Settings page for reminders, CSV import, JSON backup/restore, and list seeding.
 - Includes QA mode with disposable fixture data.
 - Supports an optional private-beta cloud mode for invited Google accounts.
 
 The review algorithm is documented in [docs/review-algorithm.md](docs/review-algorithm.md).
+Product direction and upcoming UX work live in
+[docs/product-roadmap.md](docs/product-roadmap.md).
 
 ## Requirements
 
@@ -90,13 +92,13 @@ To populate the app:
    - `Seed NeetCode 150` to add the built-in NeetCode 150 list.
    - `Import CSV once` if you already have historical tracker data.
    - `Import JSON` if you are restoring from a previous app export.
-3. Return to `Dashboard`.
+3. Return to `Practice`.
 
 You do not need to seed both lists. Seed only the study lists you want to track. If you seed
 both Blind 75 and NeetCode 150, overlapping problems are merged into one row with both
 badges and one shared review history.
 
-The Dashboard's `New problem source` selector controls whether the daily new-problem pick
+The Practice tab's `New problem source` selector controls whether the daily new-problem pick
 comes from Blind 75 or NeetCode 150.
 
 ## Run QA Mode
@@ -210,7 +212,7 @@ NOTIFICATION_CHECK_INTERVAL_MS=60000
 ```
 
 Phone reminders are optional. If `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` are set,
-hosted users can enable a daily Minimum Practice reminder from the Dashboard. Generate
+hosted users can enable a daily Minimum Practice reminder from Settings. Generate
 keys with:
 
 ```bash

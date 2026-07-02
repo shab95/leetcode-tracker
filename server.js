@@ -50,7 +50,20 @@ const PUBLIC_FILES = new Set([
   "/data/blind-75.js",
   "/data/neetcode-150.js",
 ]);
-const APP_ROUTES = new Set(["/", "/index.html", "/diagnostics", "/diagnostics/", "/data-management", "/data-management/"]);
+const APP_ROUTES = new Set([
+  "/",
+  "/index.html",
+  "/library",
+  "/library/",
+  "/memory",
+  "/memory/",
+  "/diagnostics",
+  "/diagnostics/",
+  "/settings",
+  "/settings/",
+  "/data-management",
+  "/data-management/",
+]);
 APP_ROUTES.add("/leaderboard");
 APP_ROUTES.add("/leaderboard/");
 const MIME_TYPES = {

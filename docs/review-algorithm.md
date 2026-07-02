@@ -197,17 +197,19 @@ This keeps the system adaptive without creating a guilt mechanic.
 
 ## Product Modes
 
-The app has two main product modes:
+The app has several product surfaces:
 
-- **Practice Dashboard**: the daily action surface for one due review and one new problem.
-- **Diagnostics**: explanatory memory-health signals for understanding backlog pressure,
+- **Practice**: the daily action surface for one due review and one new problem.
+- **Library**: browsing, filtering, sorting, editing, and manual backfill.
+- **Memory**: explanatory memory-health signals for understanding backlog pressure,
   topic risk, current stages, and recent recall quality.
+- **Settings**: reminders, imports, exports, list seeding, and environment tools.
 
 Direct problem links, such as `Open on LeetCode`, are navigation aids only.
 Opening a problem does not change attempts, stage, review dates, mastery, or saved state.
 
-When a user drills into a topic from Diagnostics, the app may navigate back to the
-Practice Dashboard, apply the topic filter, and scroll to the problem table. This is a
+When a user drills into a topic from Memory, the app may navigate to Library, apply the
+topic filter, and scroll to the problem table. This is a
 navigation aid only; it does not change scheduling or problem state.
 
 The edit dialog may show a read-only review summary with current stage, review timing,
@@ -215,13 +217,13 @@ attempts, green streak, interval, and mastery blockers. This summary is derived 
 problem state and should not persist additional fields.
 
 The edit dialog can separate core problem metadata from solution reference material with
-tabs. Topic editing should use the app's known topic vocabulary so filters and Diagnostics
+tabs. Topic editing should use the app's known topic vocabulary so filters and Memory
 stay consistent. Tab choice and topic-list rendering are UI behavior only; they do not
 change scheduling or mastery rules.
 
 ## Anti-Forgetting Insights
 
-The Diagnostics page may show analytical memory-health signals, but these are explanatory
+The Memory page may show analytical memory-health signals, but these are explanatory
 only. They do not change scheduling, stage movement, mastery, or daily recommendations.
 
 The Memory Health panel should stay compact and calm. Its job is to answer:
@@ -249,7 +251,7 @@ extremely overdue review: +3
 attempted problem still in Learning (Stage 0) or First Recall (Stage 1): +2
 ```
 
-The main Diagnostics card should show attention levels instead of raw scores:
+The main Memory card should show attention levels instead of raw scores:
 
 ```text
 High attention: score >= 40 or extremely overdue count >= 5
@@ -273,7 +275,7 @@ quality appears after the user grades problems in the app.
 
 ## Habit Signals
 
-The Practice Dashboard may show a lightweight Minimum Viable Practice panel. This is a
+The Practice tab may show a lightweight Minimum Viable Practice panel. This is a
 habit-building aid only; it does not change scheduling, stage movement, mastery,
 leaderboard privacy, cloud sync, or saved schema.
 
@@ -304,7 +306,7 @@ Minimum day complete. Momentum protected.
 Comeback day logged. The loop is alive again.
 ```
 
-In hosted mode, the Dashboard may offer an optional phone reminder for Minimum Practice.
+In hosted mode, Settings may offer an optional phone reminder for Minimum Practice.
 The reminder is explanatory and motivational only. It does not affect stage movement,
 mastery, review scheduling, leaderboard metrics, or cloud sync. If enabled, it checks the
 user's selected local reminder time and sends only when no real graded attempt has been
@@ -363,19 +365,19 @@ If a selected study-list pick matches an existing imported CSV row by title or L
 URL, grading that pick may attach the selected list membership to the existing row instead
 of creating a duplicate problem.
 
-If there are many overdue reviews, Diagnostics should use calm copy:
+If there are many overdue reviews, Memory should use calm copy:
 
 ```text
 You are behind, but nothing is broken. Do reviews today and the system will adapt.
 ```
 
-Dashboard backlog counts may be hidden behind a reveal control by default. This is a
+Memory backlog counts may be hidden behind a reveal control by default. This is a
 pressure-reduction UI choice only: the review queue, due-review priority, and scheduling
 rules are unchanged. The visible copy should keep the focus on one review at a time.
 
 ## Recovery Lane
 
-The Practice Dashboard may show a Recovery Lane for up to `3` manually chosen problems.
+The Practice tab may show a Recovery Lane for up to `3` manually chosen problems.
 This is a tiny active focus list for cold or important reviews the user wants to bring
 back online. It is not a separate schedule.
 

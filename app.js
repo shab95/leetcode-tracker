@@ -51,6 +51,7 @@ const els = {
   accountLabel: document.querySelector("#accountLabel"),
   accountMenu: document.querySelector("#accountMenu"),
   appTopbar: document.querySelector("#appTopbar"),
+  appStatusStrip: document.querySelector("#appStatusStrip"),
   authView: document.querySelector("#authView"),
   attentionDialog: document.querySelector("#attentionDialog"),
   backfillDateInput: document.querySelector("#backfillDateInput"),
@@ -101,6 +102,7 @@ const els = {
   leaderboardProfileHelp: document.querySelector("#leaderboardProfileHelp"),
   leaderboardRows: document.querySelector("#leaderboardRows"),
   leaderboardView: document.querySelector("#leaderboardView"),
+  libraryView: document.querySelector("#libraryView"),
   listFilter: document.querySelector("#listFilter"),
   logoutBtn: document.querySelector("#logoutBtn"),
   logoutDeniedBtn: document.querySelector("#logoutDeniedBtn"),
@@ -135,6 +137,7 @@ const els = {
   resetQaBtn: document.querySelector("#resetQaBtn"),
   recoveryCount: document.querySelector("#recoveryCount"),
   recoveryList: document.querySelector("#recoveryList"),
+  recoveryPanel: document.querySelector("#recoveryPanel"),
   recoverySummary: document.querySelector("#recoverySummary"),
   reviewCard: document.querySelector("#reviewCard"),
   reviewDue: document.querySelector("#reviewDue"),
@@ -470,8 +473,10 @@ function renderAuthState(sessionInfo) {
   els.authView.hidden = !needsLogin;
   els.notInvitedView.hidden = !denied;
   els.appTopbar.hidden = !showApp;
+  if (els.appStatusStrip) els.appStatusStrip.hidden = !showApp;
   els.hostedSetup.hidden = true;
   els.dashboardView.hidden = !showApp;
+  if (els.libraryView) els.libraryView.hidden = true;
   els.diagnosticsView.hidden = true;
   if (els.leaderboardView) els.leaderboardView.hidden = true;
   els.dataManagementView.hidden = true;
@@ -580,9 +585,10 @@ function buildSavedMessage(savedAt) {
 function navigateToRoute(route) {
   const paths = {
     dashboard: "/index.html",
-    diagnostics: "/diagnostics",
+    library: "/library",
+    diagnostics: "/memory",
     leaderboard: "/leaderboard",
-    data: "/data-management",
+    data: "/settings",
   };
   const path = paths[route] || paths.dashboard;
   if (window.location.pathname !== path) window.history.pushState({}, "", path);
@@ -591,18 +597,21 @@ function navigateToRoute(route) {
 
 function getCurrentRoute() {
   if (window.location.pathname === "/leaderboard") return canUseLeaderboard() ? "leaderboard" : "dashboard";
-  if (window.location.pathname === "/diagnostics") return "diagnostics";
-  return window.location.pathname === "/data-management" ? "data" : "dashboard";
+  if (window.location.pathname === "/library") return "library";
+  if (window.location.pathname === "/diagnostics" || window.location.pathname === "/memory") return "diagnostics";
+  return window.location.pathname === "/data-management" || window.location.pathname === "/settings" ? "data" : "dashboard";
 }
 
 function renderAppRoute() {
   if (appEnv.authRequired && !isHostedAllowed) return;
   const route = getCurrentRoute();
+  const isLibraryRoute = route === "library";
   const isDataRoute = route === "data";
   const isDiagnosticsRoute = route === "diagnostics";
   const isLeaderboardRoute = route === "leaderboard";
 
-  els.dashboardView.hidden = isDataRoute || isDiagnosticsRoute || isLeaderboardRoute;
+  els.dashboardView.hidden = isLibraryRoute || isDataRoute || isDiagnosticsRoute || isLeaderboardRoute;
+  if (els.libraryView) els.libraryView.hidden = !isLibraryRoute;
   els.diagnosticsView.hidden = !isDiagnosticsRoute;
   if (els.leaderboardView) els.leaderboardView.hidden = !isLeaderboardRoute;
   els.dataManagementView.hidden = !isDataRoute;
@@ -1172,6 +1181,7 @@ function currentPracticeRhythm(practiceDates, today) {
 
 function startMinimumPractice() {
   const hasTodayPick = Boolean(dailyPicks.review || dailyPicks.newProblem);
+  if (!hasTodayPick) navigateToRoute("library");
   const target = hasTodayPick ? els.todayPanel : els.problemsPanel;
 
   target?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1194,6 +1204,8 @@ function renderRecoveryLane() {
   recoveryProblemIds = normalizeRecoveryProblemIds(recoveryProblemIds);
   const recoveryProblems = getRecoveryProblems();
   const dueRecovery = recoveryProblems.filter((problem) => problem.nextReview && isReviewDue(problem.nextReview));
+
+  if (els.recoveryPanel) els.recoveryPanel.hidden = recoveryProblems.length === 0;
 
   els.recoveryCount.textContent = `${recoveryProblems.length}/${RECOVERY_LANE_LIMIT}`;
   els.recoverySummary.textContent =
@@ -1374,7 +1386,7 @@ function filterDashboardByTopic(topic) {
   if (!topic) return;
   els.attentionDialog.close();
   diagnosticsTopicFilter = topic;
-  navigateToRoute("dashboard");
+  navigateToRoute("library");
   els.topicFilter.value = topic;
   render();
   scrollProblemsIntoView();
@@ -1389,7 +1401,7 @@ function clearDiagnosticsTopicFilter() {
 function renderFilterBanner() {
   const isActive = diagnosticsTopicFilter && els.topicFilter.value === diagnosticsTopicFilter;
   els.filterBanner.hidden = !isActive;
-  if (isActive) els.filterBannerText.textContent = `Filtered to ${diagnosticsTopicFilter} from Diagnostics.`;
+  if (isActive) els.filterBannerText.textContent = `Filtered to ${diagnosticsTopicFilter} from Memory.`;
 }
 
 function scrollProblemsIntoView() {

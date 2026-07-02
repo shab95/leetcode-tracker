@@ -121,6 +121,14 @@ input[type="range"],
   color: var(--muted);
 }
 
+.status-strip {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin: -10px 0 18px;
+}
+
 .app-tabs {
   display: inline-flex;
   gap: 4px;
@@ -241,6 +249,16 @@ h3 {
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 14px;
   margin-bottom: 18px;
+}
+
+.memory-stats {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin-bottom: 18px;
+}
+
+.memory-stats .stat-card {
+  min-height: 104px;
+  padding: 16px;
 }
 
 .stat-card {
@@ -800,7 +818,50 @@ h3 {
 
 .daily-panel {
   margin-bottom: 18px;
-  padding: 16px;
+  padding: 18px;
+}
+
+.pick-options {
+  min-width: min(100%, 260px);
+}
+
+.pick-options summary {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7f3eb;
+  color: var(--ink);
+  padding: 0 13px;
+  font-size: 0.82rem;
+  font-weight: 850;
+  cursor: pointer;
+  list-style: none;
+}
+
+.pick-options summary::-webkit-details-marker {
+  display: none;
+}
+
+.pick-options summary::before {
+  margin-right: 7px;
+  color: var(--accent-dark);
+  content: "+";
+  font-weight: 950;
+}
+
+.pick-options[open] summary::before {
+  content: "-";
+}
+
+.pick-options .daily-skip-controls {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 10px;
 }
 
 .section-head {
@@ -847,6 +908,10 @@ h3 {
 }
 
 .data-view {
+  display: grid;
+}
+
+.library-view {
   display: grid;
 }
 
@@ -2136,6 +2201,7 @@ form {
   }
 
   .topbar,
+  .status-strip,
   .table-header {
     align-items: stretch;
     flex-direction: column;
@@ -2143,6 +2209,10 @@ form {
 
   .topbar-actions {
     justify-content: stretch;
+  }
+
+  .status-strip {
+    margin-top: -4px;
   }
 
   .app-tabs {
@@ -2212,7 +2282,12 @@ form {
   }
 
   .section-head .ghost-btn,
+  .pick-options,
   .daily-skip-controls {
+    width: 100%;
+  }
+
+  .pick-options summary {
     width: 100%;
   }
 
