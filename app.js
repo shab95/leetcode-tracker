@@ -4,6 +4,7 @@ const IMPORT_META_KEY = "leetcode-tracker.import.v1";
 const SESSION_KEY = "leetcode-tracker.sessions.v1";
 const RECOVERY_LANE_KEY = "leetcode-tracker.recovery.v1";
 const NOTIFICATION_BANNER_KEY = "leetcode-tracker.notification-banner-seen.v1";
+const THEME_KEY = "leetcode-tracker.theme.v1";
 const EXPORT_VERSION = 3;
 const API_STATE_URL = "/api/state";
 const API_ENV_URL = "/api/env";
@@ -44,6 +45,15 @@ const MASTERY_ATTEMPT_THRESHOLDS = {
 const WEEKLY_PRACTICE_TARGET = 4;
 const RECOVERY_LANE_LIMIT = 3;
 const RECOVERY_GRADUATION_STAGE = 3;
+const LEARNING_SIGNAL_LABELS = {
+  "wrong-pattern": "Wrong pattern",
+  "missed-invariant": "Missed invariant",
+  "edge-case": "Edge case",
+  "implementation-bug": "Syntax / implementation bug",
+  "needed-hint": "Needed hint",
+  "too-slow": "Too slow",
+};
+const LEARNING_SIGNAL_KEYS = Object.keys(LEARNING_SIGNAL_LABELS);
 
 const els = {
   addProblemBtn: document.querySelector("#addProblemBtn"),
@@ -108,10 +118,12 @@ const els = {
   logoutDeniedBtn: document.querySelector("#logoutDeniedBtn"),
   newCard: document.querySelector("#newCard"),
   newMeta: document.querySelector("#newMeta"),
+  newAttemptState: document.querySelector("#newAttemptState"),
   neetcodeAttempted: document.querySelector("#neetcodeAttempted"),
   neetcodeMastered: document.querySelector("#neetcodeMastered"),
   newSourceSelect: document.querySelector("#newSourceSelect"),
   newOpenLink: document.querySelector("#newOpenLink"),
+  newStartAttemptBtn: document.querySelector("#newStartAttemptBtn"),
   newTitle: document.querySelector("#newTitle"),
   notInvitedCopy: document.querySelector("#notInvitedCopy"),
   notInvitedView: document.querySelector("#notInvitedView"),
@@ -125,7 +137,10 @@ const els = {
   postGradeNote: document.querySelector("#postGradeNote"),
   postGradeComplexityField: document.querySelector("#postGradeComplexityField"),
   postGradeComplexityInput: document.querySelector("#postGradeComplexityInput"),
+  postGradeBadge: document.querySelector("#postGradeBadge"),
+  postGradeFeedback: document.querySelector("#postGradeFeedback"),
   postGradeNotesInput: document.querySelector("#postGradeNotesInput"),
+  postGradeTags: document.querySelector("#postGradeTags"),
   postGradeTitle: document.querySelector("#postGradeTitle"),
   problemDialog: document.querySelector("#problemDialog"),
   problemForm: document.querySelector("#problemForm"),
@@ -139,6 +154,7 @@ const els = {
   recoveryList: document.querySelector("#recoveryList"),
   recoveryPanel: document.querySelector("#recoveryPanel"),
   recoverySummary: document.querySelector("#recoverySummary"),
+  reviewAttemptState: document.querySelector("#reviewAttemptState"),
   reviewCard: document.querySelector("#reviewCard"),
   reviewDue: document.querySelector("#reviewDue"),
   reviewInput: document.querySelector("#reviewInput"),
@@ -146,6 +162,7 @@ const els = {
   reviewOpenLink: document.querySelector("#reviewOpenLink"),
   reviewReason: document.querySelector("#reviewReason"),
   reviewRecoveryBtn: document.querySelector("#reviewRecoveryBtn"),
+  reviewStartAttemptBtn: document.querySelector("#reviewStartAttemptBtn"),
   reviewSummaryStats: document.querySelector("#reviewSummaryStats"),
   reviewTitle: document.querySelector("#reviewTitle"),
   recentGradeChart: document.querySelector("#recentGradeChart"),
@@ -185,6 +202,7 @@ const els = {
   totalSolved: document.querySelector("#totalSolved"),
   timeComplexityInput: document.querySelector("#timeComplexityInput"),
   testNotificationBtn: document.querySelector("#testNotificationBtn"),
+  themeStatus: document.querySelector("#themeStatus"),
   disableNotificationsBtn: document.querySelector("#disableNotificationsBtn"),
   undoGradeBtn: document.querySelector("#undoGradeBtn"),
   urlInput: document.querySelector("#urlInput"),
@@ -197,6 +215,7 @@ const dialogTabButtons = document.querySelectorAll("[data-dialog-tab]");
 const dialogTabPanels = document.querySelectorAll("[data-dialog-panel]");
 const tableSortButtons = document.querySelectorAll("[data-table-sort]");
 const tableSortHeaders = document.querySelectorAll("[data-sort-column]");
+const themeModeInputs = document.querySelectorAll("input[name='themeMode']");
 
 let problems = [];
 let importMeta = null;
@@ -211,6 +230,7 @@ let currentUser = null;
 let isHostedAllowed = true;
 let diagnosticsTopicFilter = "";
 let pendingNoteProblemId = "";
+let pendingNoteHistoryEntryId = "";
 let lastGradeUndo = null;
 let tableSort = { column: "nextReview", direction: "asc" };
 let dueReviewsVisible = false;
@@ -223,6 +243,9 @@ let leaderboardSort = {
 };
 let notificationConfig = { available: false, configured: false, vapidPublicKey: "", settings: null, reason: "" };
 let currentPushSubscription = null;
+const themeMedia = window.matchMedia?.("(prefers-color-scheme: dark)");
+
+applyThemePreference(loadThemePreference());
 
 els.addProblemBtn.addEventListener("click", () => openDialog());
 els.addBackfillBtn.addEventListener("click", addBackfillAttempt);
@@ -263,6 +286,7 @@ els.recoveryList?.addEventListener("click", (event) => {
   if (removeButton) removeFromRecoveryLane(removeButton.dataset.recoveryRemove);
 });
 els.reviewRecoveryBtn?.addEventListener("click", () => addToRecoveryLane(dailyPicks.review?.id));
+els.reviewStartAttemptBtn?.addEventListener("click", () => startAttempt("review"));
 els.seedBlindBtn.addEventListener("click", seedBlind75);
 els.seedNeetcodeBtn.addEventListener("click", seedNeetcode150);
 els.setupImportJsonBtn?.addEventListener("click", () => els.jsonImportInput.click());
@@ -272,6 +296,7 @@ els.savePostGradeNoteBtn.addEventListener("click", savePostGradeNote);
 els.skipNewBtn.addEventListener("click", () => skipDailyPick("new"));
 els.skipPostGradeNoteBtn.addEventListener("click", clearPostGradeNote);
 els.skipReviewBtn.addEventListener("click", () => skipDailyPick("review"));
+els.newStartAttemptBtn?.addEventListener("click", () => startAttempt("new"));
 els.undoGradeBtn.addEventListener("click", undoLastGrade);
 els.viewAllTopicsBtn.addEventListener("click", openAttentionDialog);
 document.querySelectorAll("[data-leaderboard-view]").forEach((button) => {
@@ -331,8 +356,64 @@ els.topicFilter.addEventListener("input", () => {
 });
 els.testNotificationBtn?.addEventListener("click", sendTestNotification);
 els.notificationTimeInput?.addEventListener("change", saveNotificationSettings);
+themeModeInputs.forEach((input) => {
+  input.addEventListener("change", () => {
+    if (input.checked) setThemePreference(input.value);
+  });
+});
+const handleSystemThemeChange = () => {
+  if (loadThemePreference() === "system") applyThemePreference("system");
+};
+if (themeMedia?.addEventListener) {
+  themeMedia.addEventListener("change", handleSystemThemeChange);
+} else if (themeMedia?.addListener) {
+  themeMedia.addListener(handleSystemThemeChange);
+}
 
 initApp();
+
+function loadThemePreference() {
+  try {
+    const value = localStorage.getItem(THEME_KEY);
+    return ["system", "light", "dark"].includes(value) ? value : "system";
+  } catch {
+    return "system";
+  }
+}
+
+function setThemePreference(mode) {
+  const nextMode = ["system", "light", "dark"].includes(mode) ? mode : "system";
+  try {
+    localStorage.setItem(THEME_KEY, nextMode);
+  } catch {
+    // Theme is a browser preference only; if storage is unavailable, still apply it for this page.
+  }
+  applyThemePreference(nextMode);
+}
+
+function applyThemePreference(mode) {
+  const preference = ["system", "light", "dark"].includes(mode) ? mode : "system";
+  const resolvedTheme = preference === "system" ? (themeMedia?.matches ? "dark" : "light") : preference;
+  document.documentElement.dataset.themePreference = preference;
+  document.documentElement.dataset.theme = resolvedTheme;
+  document.documentElement.style.colorScheme = resolvedTheme;
+
+  const metaTheme = document.querySelector("meta[name='theme-color']");
+  if (metaTheme) metaTheme.setAttribute("content", resolvedTheme === "dark" ? "#0c1110" : "#f7f8f6");
+
+  themeModeInputs.forEach((input) => {
+    input.checked = input.value === preference;
+  });
+
+  if (els.themeStatus) {
+    const labels = {
+      system: `Following your system setting (${resolvedTheme}).`,
+      light: "Light mode selected.",
+      dark: "Dark mode selected.",
+    };
+    els.themeStatus.textContent = labels[preference];
+  }
+}
 
 async function initApp() {
   setSaveStatus("loading", "Loading saved data...");
@@ -1188,8 +1269,8 @@ function startMinimumPractice() {
 
   if (hasTodayPick) {
     window.setTimeout(() => {
-      const firstEnabledGrade = els.todayPanel?.querySelector(".grade-btn:not(:disabled)");
-      firstEnabledGrade?.focus({ preventScroll: true });
+      const firstStart = dailyPicks.review ? els.reviewStartAttemptBtn : els.newStartAttemptBtn;
+      firstStart?.focus({ preventScroll: true });
     }, 350);
   } else {
     window.setTimeout(() => {
@@ -1542,7 +1623,7 @@ function renderDailyPicks(options = {}) {
 
   const reviewText = dailyPicks.review ? dailyPicks.review.title : "no due review";
   const newText = dailyPicks.newProblem ? dailyPicks.newProblem.title : `no new ${getSelectedStudyList().label} pick`;
-  els.todaySummary.textContent = `Review: ${reviewText}. New: ${newText}.`;
+  els.todaySummary.textContent = `${reviewText} + ${newText}.`;
 }
 
 function renderSkipControls() {
@@ -1569,6 +1650,7 @@ function renderRecommendationCard(type, item) {
   const openLink = type === "review" ? els.reviewOpenLink : els.newOpenLink;
   const buttons = card.querySelectorAll("[data-grade]");
   const recoveryButton = type === "review" ? els.reviewRecoveryBtn : null;
+  resetAttemptState(type);
 
   if (!item) {
     card.dataset.problemId = "";
@@ -1577,10 +1659,18 @@ function renderRecommendationCard(type, item) {
       type === "review"
         ? "Nothing is due today. New graded work will schedule future reviews."
         : `Seed ${getSelectedStudyList().label} or add more problems when you want a larger queue.`;
-    if (type === "review") els.reviewReason.textContent = "";
+    if (type === "review") {
+      els.reviewReason.textContent = "";
+      setReviewReasonVisibility(false);
+    }
     openLink.hidden = true;
     openLink.removeAttribute("href");
-    if (recoveryButton) recoveryButton.hidden = true;
+    if (recoveryButton) {
+      recoveryButton.hidden = true;
+      recoveryButton.classList.remove("is-passive");
+      recoveryButton.removeAttribute("aria-disabled");
+    }
+    setAttemptUnavailable(type);
     buttons.forEach((button) => (button.disabled = true));
     return;
   }
@@ -1588,13 +1678,19 @@ function renderRecommendationCard(type, item) {
   card.dataset.problemId = item.id || "";
   card.dataset.slug = item.titleSlug || "";
   title.textContent = item.title;
-  meta.textContent = [
-    item.topic || "General",
-    item.difficulty || "Medium",
-    type === "review" ? reviewTimingLabel(item.nextReview) : `Next unattempted ${getSelectedStudyList().label}`,
-    `Stage: ${stageName(item.stage)}`,
-  ].join(" | ");
-  if (type === "review") els.reviewReason.textContent = explainReviewPick(item);
+  meta.innerHTML = renderRecommendationMeta([
+    { label: "Topic", value: item.topic || "General" },
+    { label: "Difficulty", value: item.difficulty || "Medium" },
+    {
+      label: type === "review" ? "Timing" : "Source",
+      value: type === "review" ? reviewTimingLabel(item.nextReview) : `Next unattempted ${getSelectedStudyList().label}`,
+    },
+    { label: "Stage", value: stageName(item.stage) },
+  ]);
+  if (type === "review") {
+    els.reviewReason.textContent = explainReviewPick(item);
+    setReviewReasonVisibility(Boolean(els.reviewReason.textContent));
+  }
   if (item.url) {
     openLink.href = item.url;
     openLink.hidden = false;
@@ -1606,10 +1702,66 @@ function renderRecommendationCard(type, item) {
     const inRecoveryLane = recoveryProblemIds.includes(item.id);
     const canAddToRecovery = item.id && !inRecoveryLane && clampStage(item.stage) < RECOVERY_GRADUATION_STAGE;
     recoveryButton.textContent = inRecoveryLane ? "In Recovery Lane" : "Add to Recovery Lane";
-    recoveryButton.disabled = inRecoveryLane || !canAddToRecovery;
+    recoveryButton.classList.toggle("is-passive", inRecoveryLane);
+    recoveryButton.disabled = !inRecoveryLane && !canAddToRecovery;
+    recoveryButton.setAttribute("aria-disabled", inRecoveryLane ? "true" : "false");
     recoveryButton.hidden = false;
   }
   buttons.forEach((button) => (button.disabled = false));
+}
+
+function resetAttemptState(type) {
+  const card = type === "review" ? els.reviewCard : els.newCard;
+  const startButton = type === "review" ? els.reviewStartAttemptBtn : els.newStartAttemptBtn;
+  const attemptState = type === "review" ? els.reviewAttemptState : els.newAttemptState;
+  card?.classList.remove("is-attempting");
+  if (startButton) {
+    startButton.hidden = false;
+    startButton.disabled = false;
+  }
+  if (attemptState) attemptState.hidden = true;
+}
+
+function setAttemptUnavailable(type) {
+  const startButton = type === "review" ? els.reviewStartAttemptBtn : els.newStartAttemptBtn;
+  const attemptState = type === "review" ? els.reviewAttemptState : els.newAttemptState;
+  if (startButton) {
+    startButton.hidden = false;
+    startButton.disabled = true;
+  }
+  if (attemptState) attemptState.hidden = true;
+}
+
+function startAttempt(type) {
+  const item = type === "review" ? dailyPicks.review : dailyPicks.newProblem;
+  if (!item) return;
+  const card = type === "review" ? els.reviewCard : els.newCard;
+  const startButton = type === "review" ? els.reviewStartAttemptBtn : els.newStartAttemptBtn;
+  const attemptState = type === "review" ? els.reviewAttemptState : els.newAttemptState;
+  card?.classList.add("is-attempting");
+  if (startButton) startButton.hidden = true;
+  if (attemptState) attemptState.hidden = false;
+  window.setTimeout(() => {
+    card?.querySelector(".grade-btn:not(:disabled)")?.focus({ preventScroll: true });
+  }, 80);
+}
+
+function setReviewReasonVisibility(isVisible) {
+  const reasonDetail = els.reviewReason?.closest(".pick-reason-detail");
+  if (reasonDetail) reasonDetail.hidden = !isVisible;
+}
+
+function renderRecommendationMeta(items) {
+  return items
+    .map(
+      (item) => `
+        <span>
+          <small>${escapeHtml(item.label)}</small>
+          <strong>${escapeHtml(item.value)}</strong>
+        </span>
+      `,
+    )
+    .join("");
 }
 
 function explainReviewPick(item) {
@@ -1643,20 +1795,37 @@ function renderRows(rows) {
     const reviewClass = isReviewDue(problem.nextReview) ? "review-due" : "";
     const titleNode = `<button type="button" data-edit="${problem.id}">${escapeHtml(problem.title)}</button>`;
     const openNode = problem.url
-      ? `<a class="icon-btn row-open-link" href="${escapeAttr(problem.url)}" target="_blank" rel="noreferrer" aria-label="Open ${escapeAttr(problem.title)} on LeetCode">Open</a>`
+      ? `<a class="icon-btn row-open-link row-action-btn row-action-primary" href="${escapeAttr(problem.url)}" target="_blank" rel="noreferrer" aria-label="Open ${escapeAttr(problem.title)} on LeetCode">LeetCode</a>`
       : "";
     const recoveryNode =
       clampStage(problem.stage) < RECOVERY_GRADUATION_STAGE && !recoveryProblemIds.includes(problem.id)
-        ? `<button class="icon-btn" type="button" data-recovery-add="${escapeAttr(problem.id)}" aria-label="Add ${escapeAttr(problem.title)} to Recovery Lane">Recover</button>`
+        ? `<button class="icon-btn row-action-btn recovery-row-btn" type="button" data-recovery-add="${escapeAttr(problem.id)}" aria-label="Add ${escapeAttr(problem.title)} to Recovery Lane">Recover</button>`
         : "";
     const memberships = renderMembershipBadges(problem);
+    const attempts = Number(problem.completionCount || 0);
+    const compactMeta = [
+      problem.difficulty,
+      problem.topic || "General",
+      `${attempts} ${attempts === 1 ? "attempt" : "attempts"}`,
+      formatDate(problem.nextReview),
+    ]
+      .filter(Boolean)
+      .map((item) => `<span>${escapeHtml(item)}</span>`)
+      .join("");
+    const compactSignals = `
+      <span class="stage-pill">${stageName(problem.stage)}</span>
+      <span class="pill status-${problem.status}">${statusLabel(problem.status)}</span>
+      <span class="review-date ${reviewClass}">${formatDate(problem.nextReview)}</span>
+    `;
 
     tr.innerHTML = `
       <td>
         <div class="problem-title">
           ${titleNode}
+          <span class="problem-meta-compact">${compactMeta}</span>
           <span class="notes-preview">${escapeHtml(problem.notes || "No notes yet")}</span>
           ${memberships}
+          <span class="row-mobile-signals">${compactSignals}</span>
         </div>
       </td>
       <td><span class="pill status-${problem.status}">${statusLabel(problem.status)}</span></td>
@@ -1664,12 +1833,12 @@ function renderRows(rows) {
       <td><span class="difficulty-${problem.difficulty}">${problem.difficulty}</span></td>
       <td>${escapeHtml(problem.topic || "General")}</td>
       <td>${Number(problem.completionCount || 0)}</td>
-      <td class="${reviewClass}">${formatDate(problem.nextReview)}</td>
+      <td><span class="review-date ${reviewClass}">${formatDate(problem.nextReview)}</span></td>
       <td>
         <div class="row-actions">
           ${openNode}
           ${recoveryNode}
-          <button class="icon-btn" type="button" data-edit="${problem.id}" aria-label="Edit ${escapeAttr(problem.title)}">Edit</button>
+          <button class="icon-btn row-action-btn" type="button" data-edit="${problem.id}" aria-label="Edit ${escapeAttr(problem.title)}">Details</button>
         </div>
       </td>
     `;
@@ -1996,7 +2165,7 @@ function applyGrade(id, grade, undoContext = {}) {
   const today = toIsoDate(new Date());
   const now = new Date().toISOString();
 
-  let gradeMessage = "";
+  let gradeTransition = null;
 
   problems = problems.map((problem) => {
     if (problem.id !== id) return problem;
@@ -2023,7 +2192,7 @@ function applyGrade(id, grade, undoContext = {}) {
       intervalDays: transition.intervalDays,
       nextReview: transition.nextReview,
     };
-    gradeMessage = buildGradeMessage(grade, transition);
+    gradeTransition = transition;
     const nextProblem = normalizeProblem({
       ...problem,
       status: "review",
@@ -2054,8 +2223,7 @@ function applyGrade(id, grade, undoContext = {}) {
       sessionsSnapshot: undoContext.sessionsSnapshot || cloneState(sessions),
       recoverySnapshot: undoContext.recoverySnapshot || cloneState(recoveryProblemIds),
     };
-    const graduationMessage = maybeGraduateRecoveryProblem(gradedProblem);
-    if (graduationMessage) gradeMessage = `${gradeMessage} ${graduationMessage}`;
+    maybeGraduateRecoveryProblem(gradedProblem);
     sessions = [
       {
         date: today,
@@ -2074,8 +2242,20 @@ function applyGrade(id, grade, undoContext = {}) {
 
   persist();
   render();
-  if (els.gradeResult) els.gradeResult.textContent = gradeMessage;
+  if (els.gradeResult && gradeTransition) els.gradeResult.textContent = buildGradeResultSummary(gradeTransition);
+  celebrateRep(undoContext.attemptType || "");
   showPostGradeNotePrompt(gradedProblem);
+}
+
+function celebrateRep(attemptType) {
+  if (!els.todayPanel) return;
+  els.todayPanel.classList.remove("is-rep-complete");
+  window.requestAnimationFrame(() => {
+    els.todayPanel.classList.add("is-rep-complete");
+  });
+  window.setTimeout(() => {
+    els.todayPanel.classList.remove("is-rep-complete");
+  }, 1600);
 }
 
 function undoLastGrade() {
@@ -2098,17 +2278,49 @@ function undoLastGrade() {
 function showPostGradeNotePrompt(problem) {
   if (!problem) return;
   const shouldShowComplexity = problem.lastGrade === "green" || problem.lastGrade === "yellow";
+  const latestEntry = [...(problem.reviewHistory || [])].reverse().find((entry) => isProperGrade(entry.grade));
   pendingNoteProblemId = problem.id;
-  els.postGradeTitle.textContent = `Add a quick note for ${problem.title}?`;
-  els.postGradeNotesInput.value = problem.notes || "";
+  pendingNoteHistoryEntryId = latestEntry?.id || "";
+  const feedback = postGradeFeedbackFor(problem.lastGrade);
+  els.postGradeBadge.textContent = feedback.badge;
+  els.postGradeFeedback.textContent = feedback.copy;
+  els.postGradeTitle.textContent = `Leave one note for ${problem.title}?`;
+  els.postGradeNotesInput.value = latestEntry?.note || problem.notes || "";
+  setSelectedPostGradeTags(latestEntry?.tags || []);
   els.postGradeComplexityInput.checked = Boolean(problem.complexityKnown);
   els.postGradeComplexityField.hidden = !shouldShowComplexity;
   els.postGradeNote.hidden = false;
 }
 
+function postGradeFeedbackFor(grade) {
+  const feedback = {
+    red: {
+      badge: "Minimum day complete",
+      copy: "Good signal. We will bring it back sooner.",
+    },
+    yellow: {
+      badge: "Minimum day complete",
+      copy: "Useful rep. The path is getting clearer.",
+    },
+    green: {
+      badge: "Minimum day complete",
+      copy: "Clean recall logged. Momentum protected.",
+    },
+  };
+  return feedback[grade] || { badge: "Minimum day complete", copy: "Momentum protected." };
+}
+
+function buildGradeResultSummary(transition) {
+  const held = transition.heldForEarly || transition.heldForOverdue;
+  const lead = held ? "Stage held." : "Next review";
+  return held ? `${lead} Next review ${formatDate(transition.nextReview)}.` : `${lead} ${formatDate(transition.nextReview)}.`;
+}
+
 function clearPostGradeNote() {
   pendingNoteProblemId = "";
+  pendingNoteHistoryEntryId = "";
   els.postGradeNotesInput.value = "";
+  setSelectedPostGradeTags([]);
   els.postGradeComplexityInput.checked = false;
   els.postGradeComplexityField.hidden = true;
   els.postGradeNote.hidden = true;
@@ -2116,6 +2328,7 @@ function clearPostGradeNote() {
 
 function savePostGradeNote() {
   const note = els.postGradeNotesInput.value.trim();
+  const tags = getSelectedPostGradeTags();
   if (!pendingNoteProblemId) return;
 
   const now = new Date().toISOString();
@@ -2125,6 +2338,11 @@ function savePostGradeNote() {
       ? normalizeProblem({
           ...problem,
           notes: note,
+          reviewHistory: updateHistoryEntryWithLearningSignals(problem.reviewHistory || [], {
+            historyEntryId: pendingNoteHistoryEntryId,
+            note,
+            tags,
+          }),
           complexityKnown: shouldUpdateComplexity ? els.postGradeComplexityInput.checked : problem.complexityKnown,
           updatedAt: now,
         })
@@ -2134,29 +2352,44 @@ function savePostGradeNote() {
   persist();
   clearPostGradeNote();
   render();
-  if (els.gradeResult) els.gradeResult.textContent = note ? "Note saved." : "Note cleared.";
+  const savedSignals = tags.length > 0;
+  if (els.gradeResult) {
+    els.gradeResult.textContent = note || savedSignals ? "Future-you signal saved." : "Future-you signal cleared.";
+  }
 }
 
-function buildGradeMessage(grade, transition) {
-  const gradeLabels = {
-    red: "Could not solve",
-    yellow: "Solved with hints / slow",
-    green: "Solved cleanly",
-  };
-  const movement =
-    transition.newStage > transition.previousStage
-      ? `advanced to ${stageName(transition.newStage)}`
-      : transition.newStage < transition.previousStage
-        ? `moved to ${stageName(transition.newStage)}`
-        : `stayed at ${stageName(transition.newStage)}`;
-  const holdNote = transition.heldForEarly
-    ? " Held because this was before the scheduled review date."
-    : transition.heldForOverdue
-      ? ` Held because it was ${transition.daysOverdue} days overdue.`
-      : transition.daysOverdue > 0
-        ? ` It was ${transition.daysOverdue} days overdue.`
-        : "";
-  return `${gradeLabels[grade]}: ${movement}. Next review ${formatDate(transition.nextReview)}.${holdNote}`;
+function getSelectedPostGradeTags() {
+  if (!els.postGradeTags) return [];
+  return Array.from(els.postGradeTags.querySelectorAll("input[type='checkbox']:checked"))
+    .map((input) => input.value)
+    .filter((value) => LEARNING_SIGNAL_KEYS.includes(value));
+}
+
+function setSelectedPostGradeTags(tags = []) {
+  if (!els.postGradeTags) return;
+  const selected = new Set(Array.isArray(tags) ? tags.filter((tag) => LEARNING_SIGNAL_KEYS.includes(tag)) : []);
+  els.postGradeTags.querySelectorAll("input[type='checkbox']").forEach((input) => {
+    input.checked = selected.has(input.value);
+  });
+}
+
+function updateHistoryEntryWithLearningSignals(history, { historyEntryId, note, tags }) {
+  const cleanTags = Array.isArray(tags) ? tags.filter((tag) => LEARNING_SIGNAL_KEYS.includes(tag)) : [];
+  const fallbackIndex = historyEntryId
+    ? -1
+    : history.map((entry, index) => (isProperGrade(entry.grade) ? index : -1)).filter((index) => index >= 0).at(-1);
+  const nextHistory = history.map((entry, index) => {
+    const isTarget = historyEntryId
+      ? entry.id === historyEntryId
+      : index === fallbackIndex;
+    if (!isTarget) return entry;
+    return {
+      ...entry,
+      note,
+      tags: cleanTags,
+    };
+  });
+  return nextHistory;
 }
 
 function getGradeTransition({ grade, currentStage, currentGreenStreak = 0, scheduledReview = "", attemptDate }) {
@@ -2323,6 +2556,7 @@ function renderHistoryTab(problem) {
           <strong>${escapeHtml(formatDate(entry.date))}</strong>
           <span>${escapeHtml(historyGradeLabel(entry.grade))}</span>
           ${entry.note ? `<p>${escapeHtml(entry.note)}</p>` : ""}
+          ${renderLearningSignalTags(entry.tags)}
         </div>
         <div class="history-row-meta">
           <small>${escapeHtml(historyStageSummary(entry))}</small>
@@ -2455,6 +2689,20 @@ function historyEntryKey(entry) {
     entry.nextReview || "",
     entry.note || "",
   ].join("|");
+}
+
+function renderLearningSignalTags(tags = []) {
+  const cleanTags = Array.isArray(tags) ? tags.filter((tag) => LEARNING_SIGNAL_KEYS.includes(tag)) : [];
+  if (cleanTags.length === 0) return "";
+  return `
+    <div class="history-tags" aria-label="Learning signals">
+      ${cleanTags.map((tag) => `<span>${escapeHtml(learningSignalLabel(tag))}</span>`).join("")}
+    </div>
+  `;
+}
+
+function learningSignalLabel(tag) {
+  return LEARNING_SIGNAL_LABELS[tag] || tag;
 }
 
 function rebuildProblemFromHistory(problem) {

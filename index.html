@@ -6,6 +6,22 @@
     <meta name="theme-color" content="#226a5f" />
     <title>DSA Anti-Forgetting Tracker</title>
     <link rel="manifest" href="/manifest.webmanifest" />
+    <script>
+      (() => {
+        try {
+          const key = "leetcode-tracker.theme.v1";
+          const saved = localStorage.getItem(key);
+          const preference = ["system", "light", "dark"].includes(saved) ? saved : "system";
+          const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+          const resolved = preference === "system" && prefersDark ? "dark" : preference === "dark" ? "dark" : "light";
+          document.documentElement.dataset.themePreference = preference;
+          document.documentElement.dataset.theme = resolved;
+          document.documentElement.style.colorScheme = resolved;
+        } catch {
+          document.documentElement.dataset.theme = "light";
+        }
+      })();
+    </script>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -25,7 +41,7 @@
       </section>
 
       <section class="topbar" id="appTopbar">
-        <div>
+        <div class="brand-lockup">
           <p class="eyebrow">Anti-forgetting practice</p>
           <h1>DSA Tracker</h1>
         </div>
@@ -73,7 +89,8 @@
           <div class="section-head">
             <div>
               <span class="habit-label">Practice</span>
-              <h2>Daily Rep</h2>
+              <h2>Today</h2>
+              <p class="daily-intent">One review. One optional new problem.</p>
               <p id="todaySummary">1 review and 1 new problem by default.</p>
             </div>
             <details class="pick-options">
@@ -112,11 +129,42 @@
             <p class="grading-timebox">Default time boxes: review 10-20 min; new Easy 20 min, Medium 30 min, Hard 45 min.</p>
           </details>
           <div class="post-grade-note" id="postGradeNote" hidden>
-            <div>
-              <strong id="postGradeTitle">Add a quick gotcha or pattern note?</strong>
-              <p>Capture what mattered after the attempt so the next review stays honest.</p>
+            <div class="post-grade-celebration">
+              <span id="postGradeBadge">Today complete</span>
+              <p id="postGradeFeedback">Momentum protected.</p>
             </div>
-            <textarea id="postGradeNotesInput" rows="3" placeholder="Pattern, mistake, edge case, complexity reminder..."></textarea>
+            <div class="post-grade-note-copy">
+              <strong id="postGradeTitle">Leave one note for future you?</strong>
+              <p>Optional, but useful: pattern, mistake, edge case, or complexity reminder.</p>
+            </div>
+            <fieldset class="post-grade-tags" id="postGradeTags">
+              <legend>What made this rep hard?</legend>
+              <label>
+                <input type="checkbox" value="wrong-pattern" />
+                <span>Wrong pattern</span>
+              </label>
+              <label>
+                <input type="checkbox" value="missed-invariant" />
+                <span>Missed invariant</span>
+              </label>
+              <label>
+                <input type="checkbox" value="edge-case" />
+                <span>Edge case</span>
+              </label>
+              <label>
+                <input type="checkbox" value="implementation-bug" />
+                <span>Syntax / implementation bug</span>
+              </label>
+              <label>
+                <input type="checkbox" value="needed-hint" />
+                <span>Needed hint</span>
+              </label>
+              <label>
+                <input type="checkbox" value="too-slow" />
+                <span>Too slow</span>
+              </label>
+            </fieldset>
+            <textarea id="postGradeNotesInput" rows="3" placeholder="Future-you note: what should I remember next time?"></textarea>
             <label class="readiness-check post-grade-complexity" id="postGradeComplexityField">
               <input id="postGradeComplexityInput" type="checkbox" />
               <span>
@@ -136,12 +184,43 @@
               <span class="card-label">Review</span>
               <h3 id="reviewTitle">No due review</h3>
               <p id="reviewMeta">Import your CSV or grade problems to build the queue.</p>
-              <p class="pick-reason" id="reviewReason"></p>
+              <details class="pick-reason-detail">
+                <summary>Why this review?</summary>
+                <p class="pick-reason" id="reviewReason"></p>
+              </details>
               <div class="recommend-card-links">
                 <a class="ghost-btn open-problem-link" id="reviewOpenLink" href="#" target="_blank" rel="noreferrer" hidden>Open on LeetCode</a>
-                <button class="ghost-btn open-problem-link" id="reviewRecoveryBtn" type="button" hidden>Add to Recovery Lane</button>
+                <button class="ghost-btn open-problem-link recovery-state-action" id="reviewRecoveryBtn" type="button" hidden>Add to Recovery Lane</button>
               </div>
+              <div class="attempt-tools">
+                <button class="primary-btn start-attempt-btn" id="reviewStartAttemptBtn" type="button">Start review</button>
+                <span class="attempt-state" id="reviewAttemptState" hidden>
+                  <strong>Review started</strong>
+                  <span>10-20 min target</span>
+                </span>
+              </div>
+              <p class="leetcode-timer-nudge">
+                Use LeetCode's stopwatch while solving. Review target: 10-20 min.
+              </p>
               <p class="grade-guidance">Grade the full attempt: idea, code, edge cases, and explanation.</p>
+              <details class="grade-helper">
+                <summary>Not sure which grade?</summary>
+                <p class="grade-helper-rule">Tiny syntax/API slip you fixed quickly? Still clean. If it made you stall or look it up, mark slow.</p>
+                <div class="grade-helper-grid">
+                  <article>
+                    <strong>Could not solve</strong>
+                    <p>Needed the solution, did not reach working code, or could not explain the core idea afterward.</p>
+                  </article>
+                  <article>
+                    <strong>Solved with hints / slow</strong>
+                    <p>Needed hints, ran over the time box, debugged heavily, or an implementation/API issue blocked momentum.</p>
+                  </article>
+                  <article>
+                    <strong>Solved cleanly</strong>
+                    <p>Solved independently, tested important edge cases, and can explain the idea and complexity.</p>
+                  </article>
+                </div>
+              </details>
               <div class="grade-actions" data-card="review">
                 <button class="grade-btn red" type="button" data-grade="red">Could not solve</button>
                 <button class="grade-btn yellow" type="button" data-grade="yellow">Solved with hints / slow</button>
@@ -150,11 +229,39 @@
             </article>
 
             <article class="recommend-card secondary-rep-card" id="newCard">
-              <span class="card-label">Optional new rep</span>
+              <span class="card-label">New</span>
               <h3 id="newTitle">Blind 75 queue ready</h3>
               <p id="newMeta">The next unfinished Blind 75 problem will appear here.</p>
               <a class="ghost-btn open-problem-link" id="newOpenLink" href="#" target="_blank" rel="noreferrer" hidden>Open on LeetCode</a>
-              <p class="grade-guidance">If you have more energy, add one new problem to the loop.</p>
+              <div class="attempt-tools">
+                <button class="ghost-btn start-attempt-btn" id="newStartAttemptBtn" type="button">Start new</button>
+                <span class="attempt-state" id="newAttemptState" hidden>
+                  <strong>New attempt started</strong>
+                  <span>Use the difficulty time box</span>
+                </span>
+              </div>
+              <p class="leetcode-timer-nudge">
+                Use LeetCode's stopwatch while solving. Easy 20 min, Medium 30 min, Hard 45 min.
+              </p>
+              <p class="grade-guidance">Grade the full attempt: idea, code, edge cases, and explanation.</p>
+              <details class="grade-helper">
+                <summary>Not sure which grade?</summary>
+                <p class="grade-helper-rule">Tiny syntax/API slip you fixed quickly? Still clean. If it made you stall or look it up, mark slow.</p>
+                <div class="grade-helper-grid">
+                  <article>
+                    <strong>Could not solve</strong>
+                    <p>Needed the solution, did not reach working code, or could not explain the core idea afterward.</p>
+                  </article>
+                  <article>
+                    <strong>Solved with hints / slow</strong>
+                    <p>Needed hints, ran over the time box, debugged heavily, or an implementation/API issue blocked momentum.</p>
+                  </article>
+                  <article>
+                    <strong>Solved cleanly</strong>
+                    <p>Solved independently, tested important edge cases, and can explain the idea and complexity.</p>
+                  </article>
+                </div>
+              </details>
               <div class="grade-actions" data-card="new">
                 <button class="grade-btn red" type="button" data-grade="red">Could not solve</button>
                 <button class="grade-btn yellow" type="button" data-grade="yellow">Solved with hints / slow</button>
@@ -479,6 +586,27 @@
                 </div>
               </dl>
               <p class="import-meta" id="importMeta">No CSV imported yet.</p>
+            </article>
+
+            <article class="data-card theme-card">
+              <span class="data-card-label">Appearance</span>
+              <h3>Theme</h3>
+              <p class="data-card-copy">Choose a steady look, or let the tracker follow your device.</p>
+              <div class="theme-options" role="radiogroup" aria-label="Theme preference">
+                <label>
+                  <input type="radio" name="themeMode" value="system" checked />
+                  <span>System</span>
+                </label>
+                <label>
+                  <input type="radio" name="themeMode" value="light" />
+                  <span>Light</span>
+                </label>
+                <label>
+                  <input type="radio" name="themeMode" value="dark" />
+                  <span>Dark</span>
+                </label>
+              </div>
+              <small class="theme-status" id="themeStatus">Following your system setting.</small>
             </article>
 
             <article class="data-card">

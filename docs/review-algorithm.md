@@ -85,6 +85,10 @@ New Medium: about 30 minutes
 New Hard: about 45 minutes
 ```
 
+The app may remind the user to use LeetCode's built-in stopwatch while solving. The timer
+is a practice aid only; the tracker does not store elapsed time or use it directly in the
+scheduling algorithm.
+
 Use `Could not solve` when the user needed the solution, could not reach working code, or
 could not explain the core idea after the time box. Use `Solved with hints / slow` when
 the user needed hints, recognized the pattern but struggled to derive it, exceeded the
@@ -92,10 +96,33 @@ target time, or got there with heavy debugging. Use `Solved cleanly` only when t
 solved without hints, coded a working answer, tested important edge cases, and can explain
 time and space complexity.
 
+The grade answers how independently the user completed the attempt. Learning-signal tags
+answer why the attempt was difficult. For example, wrong syntax, a language mistake, or a
+buggy loop implementation should use the `syntax / implementation bug` tag; the grade
+still depends on whether the user solved independently, needed hints, or could not solve.
+
 Problem notes should not appear on the Today cards before grading, because notes can act
 as hints and weaken the recall test. After grading, the app may prompt for a short note
 about the gotcha, pattern, edge case, or complexity reminder. Saving or skipping that note
 does not change stage movement or scheduling.
+
+The post-grade prompt may also offer optional learning-signal tags:
+
+- wrong pattern
+- missed invariant
+- edge case
+- syntax / implementation bug
+- needed hint
+- too slow
+
+These tags are stored on the specific review-history entry. They explain what made a rep
+hard and can appear in the History tab or future Memory views. They do not affect stage
+movement, mastery, scheduling, leaderboard metrics, or reminder behavior.
+
+After any real grade, the Practice tab may show a calm completion cue such as
+`Today complete. Momentum protected.` plus grade-specific feedback. This message is
+motivational only. The scheduling result, next review date, and any hold reason remain the
+actual algorithm output.
 
 The post-grade prompt may also include an `Undo grade` action. Undo is a safety control for
 the most recent accidental grade in the current session. It restores the problem and recent
