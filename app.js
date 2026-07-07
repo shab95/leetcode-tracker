@@ -5,17 +5,27 @@ const SESSION_KEY = "leetcode-tracker.sessions.v1";
 const RECOVERY_LANE_KEY = "leetcode-tracker.recovery.v1";
 const NOTIFICATION_BANNER_KEY = "leetcode-tracker.notification-banner-seen.v1";
 const THEME_KEY = "leetcode-tracker.theme.v1";
+const LEADERBOARD_TAB_KEY = "leetcode-tracker.show-leaderboard-tab.v1";
 const EXPORT_VERSION = 3;
 const API_STATE_URL = "/api/state";
 const API_ENV_URL = "/api/env";
 const API_RESET_QA_URL = "/api/reset-qa";
 const API_LEADERBOARD_URL = "/api/leaderboard";
 const API_LEADERBOARD_PROFILE_URL = "/api/leaderboard/profile";
+const API_SOCIAL_PROFILE_URL = "/api/social/profile";
+const API_FRIEND_PULSE_URL = "/api/friend-pulse";
+const API_FRIEND_PULSE_SEARCH_URL = "/api/friend-pulse/search";
 const API_NOTIFICATIONS_CONFIG_URL = "/api/notifications/config";
 const API_NOTIFICATIONS_SUBSCRIBE_URL = "/api/notifications/subscribe";
 const API_NOTIFICATIONS_SETTINGS_URL = "/api/notifications/settings";
 const API_NOTIFICATIONS_UNSUBSCRIBE_URL = "/api/notifications/unsubscribe";
 const API_NOTIFICATIONS_TEST_URL = "/api/notifications/test";
+const DEFAULT_FEATURES = {
+  friendPulse: false,
+  leetcodeImport: false,
+  phoneReminders: false,
+  recoveryLane: false,
+};
 
 const BLIND_75 = window.BLIND_75 || [];
 const NEETCODE_150 = window.NEETCODE_150 || [];
@@ -58,6 +68,7 @@ const LEARNING_SIGNAL_KEYS = Object.keys(LEARNING_SIGNAL_LABELS);
 const els = {
   addProblemBtn: document.querySelector("#addProblemBtn"),
   addBackfillBtn: document.querySelector("#addBackfillBtn"),
+  applyLeetcodeImportBtn: document.querySelector("#applyLeetcodeImportBtn"),
   accountLabel: document.querySelector("#accountLabel"),
   accountMenu: document.querySelector("#accountMenu"),
   appTopbar: document.querySelector("#appTopbar"),
@@ -76,8 +87,10 @@ const els = {
   backlogExtremeCount: document.querySelector("#backlogExtremeCount"),
   backlogOldest: document.querySelector("#backlogOldest"),
   cancelBtn: document.querySelector("#cancelBtn"),
+  cancelLeetcodeImportBtn: document.querySelector("#cancelLeetcodeImportBtn"),
   closeDialogBtn: document.querySelector("#closeDialogBtn"),
   closeAttentionDialogBtn: document.querySelector("#closeAttentionDialogBtn"),
+  closeLeetcodeImportDialogBtn: document.querySelector("#closeLeetcodeImportDialogBtn"),
   clearFilterBtn: document.querySelector("#clearFilterBtn"),
   completionInput: document.querySelector("#completionInput"),
   complexityInput: document.querySelector("#complexityInput"),
@@ -109,9 +122,34 @@ const els = {
   leaderboardHead: document.querySelector("#leaderboardHead"),
   leaderboardNavLink: document.querySelector("#leaderboardNavLink"),
   leaderboardOptInInput: document.querySelector("#leaderboardOptInInput"),
+  leaderboardOptInHelp: document.querySelector("#leaderboardOptInHelp"),
   leaderboardProfileHelp: document.querySelector("#leaderboardProfileHelp"),
   leaderboardRows: document.querySelector("#leaderboardRows"),
+  leaderboardTabStatus: document.querySelector("#leaderboardTabStatus"),
+  leaderboardTabToggle: document.querySelector("#leaderboardTabToggle"),
   leaderboardView: document.querySelector("#leaderboardView"),
+  leetcodeImportDialog: document.querySelector("#leetcodeImportDialog"),
+  leetcodeImportCard: document.querySelector("#leetcodeImportCard"),
+  leetcodeImportPreview: document.querySelector("#leetcodeImportPreview"),
+  leetcodeImportReviewBtn: document.querySelector("#leetcodeImportReviewBtn"),
+  leetcodeImportStatus: document.querySelector("#leetcodeImportStatus"),
+  leetcodeImportSummary: document.querySelector("#leetcodeImportSummary"),
+  pactDisplayNameInput: document.querySelector("#pactDisplayNameInput"),
+  pactsNavLink: document.querySelector("#pactsNavLink"),
+  pactsView: document.querySelector("#pactsView"),
+  friendIncomingList: document.querySelector("#friendIncomingList"),
+  friendOutgoingSummary: document.querySelector("#friendOutgoingSummary"),
+  friendPactList: document.querySelector("#friendPactList"),
+  friendPactManager: document.querySelector("#friendPactManager"),
+  friendPulseList: document.querySelector("#friendPulseList"),
+  friendPulseManageBtn: document.querySelector("#friendPulseManageBtn"),
+  friendPulseNavBadge: document.querySelector("#friendPulseNavBadge"),
+  friendPulsePanel: document.querySelector("#friendPulsePanel"),
+  friendPulseSummary: document.querySelector("#friendPulseSummary"),
+  friendRequestCount: document.querySelector("#friendRequestCount"),
+  friendSearchBtn: document.querySelector("#friendSearchBtn"),
+  friendSearchInput: document.querySelector("#friendSearchInput"),
+  friendSearchResult: document.querySelector("#friendSearchResult"),
   libraryView: document.querySelector("#libraryView"),
   listFilter: document.querySelector("#listFilter"),
   logoutBtn: document.querySelector("#logoutBtn"),
@@ -134,6 +172,7 @@ const els = {
   notificationStatus: document.querySelector("#notificationStatus"),
   notificationTimeInput: document.querySelector("#notificationTimeInput"),
   notesInput: document.querySelector("#notesInput"),
+  pactsOptInInput: document.querySelector("#pactsOptInInput"),
   postGradeNote: document.querySelector("#postGradeNote"),
   postGradeComplexityField: document.querySelector("#postGradeComplexityField"),
   postGradeComplexityInput: document.querySelector("#postGradeComplexityInput"),
@@ -169,6 +208,7 @@ const els = {
   recentGradeEmpty: document.querySelector("#recentGradeEmpty"),
   masteryBlockers: document.querySelector("#masteryBlockers"),
   savePostGradeNoteBtn: document.querySelector("#savePostGradeNoteBtn"),
+  saveLeaderboardOnlyProfileBtn: document.querySelector("#saveLeaderboardOnlyProfileBtn"),
   saveLeaderboardProfileBtn: document.querySelector("#saveLeaderboardProfileBtn"),
   saveStatus: document.querySelector("#saveStatus"),
   searchInput: document.querySelector("#searchInput"),
@@ -190,6 +230,7 @@ const els = {
   skipNewBtn: document.querySelector("#skipNewBtn"),
   skipPostGradeNoteBtn: document.querySelector("#skipPostGradeNoteBtn"),
   skipReviewBtn: document.querySelector("#skipReviewBtn"),
+  socialHandleInput: document.querySelector("#socialHandleInput"),
   sortSelect: document.querySelector("#sortSelect"),
   stageChart: document.querySelector("#stageChart"),
   statusFilter: document.querySelector("#statusFilter"),
@@ -225,7 +266,7 @@ let dailyPicks = { review: null, newProblem: null };
 let skippedDailyPicks = { review: new Set(), new: new Set() };
 let lastServerSavedAt = "";
 let currentRevision = 0;
-let appEnv = { env: "prod", isQa: false, authRequired: false, storageMode: "local" };
+let appEnv = { env: "prod", isQa: false, authRequired: false, storageMode: "local", features: { ...DEFAULT_FEATURES } };
 let currentUser = null;
 let isHostedAllowed = true;
 let diagnosticsTopicFilter = "";
@@ -234,9 +275,29 @@ let pendingNoteHistoryEntryId = "";
 let lastGradeUndo = null;
 let tableSort = { column: "nextReview", direction: "asc" };
 let dueReviewsVisible = false;
-let leaderboardProfile = { displayName: "", optedIn: false };
+let leaderboardProfile = {
+  displayName: "",
+  handle: "",
+  optedIn: false,
+  leaderboardOptedIn: false,
+  pactsOptedIn: false,
+  timezone: "America/New_York",
+};
 let leaderboardData = { rows: [], weekStart: "", today: "" };
+let friendPulseData = {
+  profile: leaderboardProfile,
+  currentUser: { completedToday: false, pactsOptedIn: false },
+  incoming: [],
+  outgoing: [],
+  pacts: [],
+  incomingCount: 0,
+};
+let friendSearchNonce = 0;
 let leaderboardViewMode = "weekly";
+let pendingLeetcodeImportRows = [];
+let pendingLeetcodeImportPlan = null;
+let pendingLeetcodeImportStages = {};
+let pendingLeetcodeImportExcluded = new Set();
 let leaderboardSort = {
   weekly: { column: "practiceDays", direction: "desc" },
   lifetime: { column: "mastered", direction: "desc" },
@@ -249,8 +310,11 @@ applyThemePreference(loadThemePreference());
 
 els.addProblemBtn.addEventListener("click", () => openDialog());
 els.addBackfillBtn.addEventListener("click", addBackfillAttempt);
+els.applyLeetcodeImportBtn?.addEventListener("click", applyLeetcodeProgressImport);
 els.cancelBtn.addEventListener("click", () => els.problemDialog.close());
+els.cancelLeetcodeImportBtn?.addEventListener("click", () => els.leetcodeImportDialog?.close());
 els.closeAttentionDialogBtn.addEventListener("click", () => els.attentionDialog.close());
+els.closeLeetcodeImportDialogBtn?.addEventListener("click", () => els.leetcodeImportDialog?.close());
 els.clearFilterBtn.addEventListener("click", clearDiagnosticsTopicFilter);
 els.closeDialogBtn.addEventListener("click", () => els.problemDialog.close());
 els.csvImportInput.addEventListener("change", importCsv);
@@ -265,14 +329,43 @@ els.historyList.addEventListener("click", (event) => {
 });
 els.habitActionBtn?.addEventListener("click", startMinimumPractice);
 els.jsonImportInput.addEventListener("change", importJson);
+els.leetcodeImportPreview?.addEventListener("click", handleLeetcodeImportPreviewClick);
+els.leetcodeImportPreview?.addEventListener("change", handleLeetcodeImportPreviewChange);
 els.notificationSettingsBtn?.addEventListener("click", openNotificationSettings);
 els.leaderboardHead?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-leaderboard-sort]");
   if (button) sortLeaderboard(button.dataset.leaderboardSort);
 });
-els.leaderboardDisplayNameInput?.addEventListener("input", markLeaderboardProfileDirty);
+els.leaderboardDisplayNameInput?.addEventListener("input", () => {
+  if (els.pactDisplayNameInput) els.pactDisplayNameInput.value = els.leaderboardDisplayNameInput.value;
+  markLeaderboardProfileDirty();
+});
 els.leaderboardOptInInput?.addEventListener("input", markLeaderboardProfileDirty);
+els.leetcodeImportReviewBtn?.addEventListener("click", openLeetcodeImportReview);
+els.pactDisplayNameInput?.addEventListener("input", () => {
+  if (els.leaderboardDisplayNameInput) els.leaderboardDisplayNameInput.value = els.pactDisplayNameInput.value;
+  markLeaderboardProfileDirty();
+});
+els.pactsOptInInput?.addEventListener("input", markLeaderboardProfileDirty);
+els.socialHandleInput?.addEventListener("input", markLeaderboardProfileDirty);
 els.saveLeaderboardProfileBtn?.addEventListener("click", saveLeaderboardProfile);
+els.saveLeaderboardOnlyProfileBtn?.addEventListener("click", saveLeaderboardProfile);
+els.friendPulseManageBtn?.addEventListener("click", () => navigateToRoute("pacts"));
+els.friendSearchBtn?.addEventListener("click", searchFriendPact);
+els.friendSearchInput?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    searchFriendPact();
+  }
+});
+els.friendSearchInput?.addEventListener("input", () => {
+  friendSearchNonce += 1;
+  if (els.friendSearchResult) els.friendSearchResult.innerHTML = "";
+});
+els.friendIncomingList?.addEventListener("click", handleFriendPulseAction);
+els.friendOutgoingSummary?.addEventListener("click", handleFriendPulseAction);
+els.friendPactList?.addEventListener("click", handleFriendPulseAction);
+els.friendSearchResult?.addEventListener("click", handleFriendPulseAction);
 els.logoutBtn?.addEventListener("click", logout);
 els.logoutDeniedBtn?.addEventListener("click", logout);
 els.newSourceSelect.addEventListener("input", () => {
@@ -320,6 +413,7 @@ routeLinks.forEach((link) => {
   });
 });
 window.addEventListener("popstate", renderAppRoute);
+window.addEventListener("message", handleLeetcodeExtensionMessage);
 
 document.querySelectorAll(".grade-actions").forEach((group) => {
   group.addEventListener("click", (event) => {
@@ -360,6 +454,9 @@ themeModeInputs.forEach((input) => {
   input.addEventListener("change", () => {
     if (input.checked) setThemePreference(input.value);
   });
+});
+els.leaderboardTabToggle?.addEventListener("change", () => {
+  setLeaderboardTabPreference(Boolean(els.leaderboardTabToggle.checked));
 });
 const handleSystemThemeChange = () => {
   if (loadThemePreference() === "system") applyThemePreference("system");
@@ -415,6 +512,44 @@ function applyThemePreference(mode) {
   }
 }
 
+function loadLeaderboardTabPreference() {
+  try {
+    return localStorage.getItem(LEADERBOARD_TAB_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function setLeaderboardTabPreference(showTab) {
+  try {
+    localStorage.setItem(LEADERBOARD_TAB_KEY, showTab ? "true" : "false");
+  } catch {
+    // This is a local navigation preference only.
+  }
+  syncLeaderboardTabPreference();
+  renderAuthState({ authRequired: appEnv.authRequired, authenticated: true, allowed: isHostedAllowed, user: currentUser });
+  renderAppRoute();
+}
+
+function syncLeaderboardTabPreference() {
+  const showTab = loadLeaderboardTabPreference();
+  if (els.leaderboardTabToggle) {
+    els.leaderboardTabToggle.checked = showTab;
+    els.leaderboardTabToggle.disabled = !canUseLeaderboard();
+  }
+  if (els.leaderboardTabStatus) {
+    els.leaderboardTabStatus.textContent = !canUseLeaderboard()
+      ? "Leaderboard is available in hosted and QA mode."
+      : showTab
+        ? "Leaderboard is visible in navigation."
+        : "Leaderboard is hidden from navigation. Your opt-in setting is unchanged.";
+  }
+}
+
+function canShowLeaderboardTab() {
+  return canUseLeaderboard() && loadLeaderboardTabPreference();
+}
+
 async function initApp() {
   setSaveStatus("loading", "Loading saved data...");
   appEnv = await loadAppEnv();
@@ -424,10 +559,12 @@ async function initApp() {
   renderAuthState(sessionInfo);
   if (appEnv.authRequired && (!sessionInfo.authenticated || !sessionInfo.allowed)) return;
   await loadLeaderboardProfile();
-  await loadNotificationConfig();
+  if (canUseFriendPulse()) await loadFriendPulseData();
+  if (canUsePhoneReminders()) await loadNotificationConfig();
 
   renderQaTools();
   renderDataManagementInfo();
+  syncLeaderboardTabPreference();
   const localProblems = appEnv.authRequired ? [] : loadProblemsFromStorage();
   const localImportMeta = appEnv.authRequired ? null : loadJson(IMPORT_META_KEY, null);
   const localSessions = appEnv.authRequired ? [] : loadJson(SESSION_KEY, []);
@@ -528,10 +665,43 @@ async function loadAppEnv() {
   try {
     const response = await fetch(API_ENV_URL, { cache: "no-store" });
     if (!response.ok) throw new Error("Environment unavailable");
-    return await response.json();
+    return normalizeAppEnv(await response.json());
   } catch {
-    return { env: "prod", isQa: false };
+    return normalizeAppEnv({ env: "prod", isQa: false });
   }
+}
+
+function normalizeAppEnv(env) {
+  return {
+    env: env?.env || "prod",
+    isQa: Boolean(env?.isQa),
+    authRequired: Boolean(env?.authRequired),
+    storageMode: env?.storageMode || "local",
+    features: {
+      ...DEFAULT_FEATURES,
+      ...(env?.features || {}),
+    },
+  };
+}
+
+function isFeatureEnabled(feature) {
+  return Boolean(appEnv.features?.[feature]);
+}
+
+function canUseFriendPulse() {
+  return isFeatureEnabled("friendPulse") && canUseLeaderboard();
+}
+
+function canUseLeetcodeImport() {
+  return isFeatureEnabled("leetcodeImport");
+}
+
+function canUsePhoneReminders() {
+  return isFeatureEnabled("phoneReminders");
+}
+
+function canUseRecoveryLane() {
+  return isFeatureEnabled("recoveryLane");
 }
 
 async function loadSessionInfo() {
@@ -560,6 +730,7 @@ function renderAuthState(sessionInfo) {
   if (els.libraryView) els.libraryView.hidden = true;
   els.diagnosticsView.hidden = true;
   if (els.leaderboardView) els.leaderboardView.hidden = true;
+  if (els.pactsView) els.pactsView.hidden = true;
   els.dataManagementView.hidden = true;
 
   if (denied) {
@@ -571,7 +742,8 @@ function renderAuthState(sessionInfo) {
     els.accountMenu.hidden = !appEnv.authRequired || !sessionInfo.user;
     els.accountLabel.textContent = sessionInfo.user?.email || "";
   }
-  if (els.leaderboardNavLink) els.leaderboardNavLink.hidden = !canUseLeaderboard() || !showApp;
+  if (els.leaderboardNavLink) els.leaderboardNavLink.hidden = !canShowLeaderboardTab() || !showApp;
+  if (els.pactsNavLink) els.pactsNavLink.hidden = !canUseFriendPulse() || !showApp;
 }
 
 async function logout() {
@@ -638,6 +810,7 @@ function saveRemoteState() {
       lastServerSavedAt = result.savedAt || new Date().toISOString();
       currentRevision = Number(result.revision || currentRevision);
       setSaveStatus("saved", buildSavedMessage(lastServerSavedAt));
+      if (canUseFriendPulse()) loadFriendPulseData().then(renderFriendPulse);
     })
     .catch((error) => {
       if (error.isConflict) {
@@ -664,20 +837,25 @@ function buildSavedMessage(savedAt) {
 }
 
 function navigateToRoute(route) {
+  let targetRoute = route;
+  if (route === "pacts" && !canUseFriendPulse()) targetRoute = "dashboard";
+  if (route === "leaderboard" && !canShowLeaderboardTab()) targetRoute = "dashboard";
   const paths = {
     dashboard: "/index.html",
     library: "/library",
     diagnostics: "/memory",
     leaderboard: "/leaderboard",
+    pacts: "/pacts",
     data: "/settings",
   };
-  const path = paths[route] || paths.dashboard;
+  const path = paths[targetRoute] || paths.dashboard;
   if (window.location.pathname !== path) window.history.pushState({}, "", path);
   renderAppRoute();
 }
 
 function getCurrentRoute() {
-  if (window.location.pathname === "/leaderboard") return canUseLeaderboard() ? "leaderboard" : "dashboard";
+  if (window.location.pathname === "/leaderboard") return canShowLeaderboardTab() ? "leaderboard" : "dashboard";
+  if (window.location.pathname === "/pacts") return canUseFriendPulse() ? "pacts" : "dashboard";
   if (window.location.pathname === "/library") return "library";
   if (window.location.pathname === "/diagnostics" || window.location.pathname === "/memory") return "diagnostics";
   return window.location.pathname === "/data-management" || window.location.pathname === "/settings" ? "data" : "dashboard";
@@ -685,34 +863,55 @@ function getCurrentRoute() {
 
 function renderAppRoute() {
   if (appEnv.authRequired && !isHostedAllowed) return;
+  if (window.location.pathname === "/leaderboard" && !canShowLeaderboardTab()) {
+    window.history.replaceState({}, "", "/index.html");
+  }
+  if (window.location.pathname === "/pacts" && !canUseFriendPulse()) {
+    window.history.replaceState({}, "", "/index.html");
+  }
   const route = getCurrentRoute();
   const isLibraryRoute = route === "library";
   const isDataRoute = route === "data";
   const isDiagnosticsRoute = route === "diagnostics";
   const isLeaderboardRoute = route === "leaderboard";
+  const isPactsRoute = route === "pacts";
 
-  els.dashboardView.hidden = isLibraryRoute || isDataRoute || isDiagnosticsRoute || isLeaderboardRoute;
+  els.dashboardView.hidden = isLibraryRoute || isDataRoute || isDiagnosticsRoute || isLeaderboardRoute || isPactsRoute;
   if (els.libraryView) els.libraryView.hidden = !isLibraryRoute;
   els.diagnosticsView.hidden = !isDiagnosticsRoute;
   if (els.leaderboardView) els.leaderboardView.hidden = !isLeaderboardRoute;
+  if (els.pactsView) els.pactsView.hidden = !isPactsRoute;
   els.dataManagementView.hidden = !isDataRoute;
   els.addProblemBtn.classList.toggle("is-invisible", isDataRoute);
   els.addProblemBtn.setAttribute("aria-hidden", isDataRoute ? "true" : "false");
   els.addProblemBtn.tabIndex = isDataRoute ? -1 : 0;
 
-  if (isLeaderboardRoute) {
-    loadLeaderboardData().then(renderLeaderboard);
+  if (isLeaderboardRoute || isPactsRoute) {
+    const loaders = [loadLeaderboardData()];
+    if (canUseFriendPulse()) loaders.push(loadFriendPulseData());
+    Promise.all(loaders).then(() => {
+      renderLeaderboard();
+      renderFriendPulse();
+      renderFriendPactManager();
+    });
   }
 
+  let activeRouteLink = null;
   routeLinks.forEach((link) => {
     const isActive = link.dataset.route === route;
     link.classList.toggle("active", isActive);
     if (isActive) {
       link.setAttribute("aria-current", "page");
+      activeRouteLink = link;
     } else {
       link.removeAttribute("aria-current");
     }
   });
+  if (activeRouteLink) {
+    requestAnimationFrame(() => {
+      activeRouteLink.scrollIntoView({ block: "nearest", inline: "center" });
+    });
+  }
 }
 
 function renderDataManagementInfo() {
@@ -731,17 +930,51 @@ function renderDataManagementInfo() {
         ? "data/qa-backups/"
         : "data/backups/";
   }
+  renderLeetcodeImportControls();
+}
+
+function renderLeetcodeImportControls() {
+  if (els.leetcodeImportCard) els.leetcodeImportCard.hidden = !canUseLeetcodeImport();
 }
 
 async function loadLeaderboardProfile() {
   if (!canUseLeaderboard()) return;
 
   try {
-    const response = await fetch(API_LEADERBOARD_PROFILE_URL, { cache: "no-store" });
+    const response = await fetch(API_SOCIAL_PROFILE_URL, { cache: "no-store" });
     if (!response.ok) throw new Error("Leaderboard profile unavailable");
-    leaderboardProfile = await response.json();
+    leaderboardProfile = normalizeSocialProfile(await response.json());
   } catch {
-    leaderboardProfile = { displayName: "", optedIn: false };
+    leaderboardProfile = normalizeSocialProfile({});
+  }
+}
+
+async function loadFriendPulseData() {
+  if (!canUseFriendPulse()) {
+    friendPulseData = {
+      profile: leaderboardProfile,
+      currentUser: { completedToday: false, pactsOptedIn: false },
+      incoming: [],
+      outgoing: [],
+      pacts: [],
+      incomingCount: 0,
+    };
+    return;
+  }
+
+  try {
+    const response = await fetch(API_FRIEND_PULSE_URL, { cache: "no-store" });
+    if (!response.ok) throw new Error("Friend Pulse unavailable");
+    friendPulseData = await response.json();
+  } catch {
+    friendPulseData = {
+      profile: leaderboardProfile,
+      currentUser: { completedToday: false, pactsOptedIn: false },
+      incoming: [],
+      outgoing: [],
+      pacts: [],
+      incomingCount: 0,
+    };
   }
 }
 
@@ -759,37 +992,112 @@ async function loadLeaderboardData() {
 
 async function saveLeaderboardProfile() {
   if (!canUseLeaderboard()) return;
-  const displayName = els.leaderboardDisplayNameInput.value.trim();
-  const optedIn = els.leaderboardOptInInput.checked;
+  const displayName = (
+    els.leaderboardDisplayNameInput?.value ||
+    els.pactDisplayNameInput?.value ||
+    leaderboardProfile.displayName ||
+    ""
+  ).trim();
+  const handle = canUseFriendPulse()
+    ? normalizeClientHandle(els.socialHandleInput?.value || "")
+    : leaderboardProfile.handle || "";
+  const leaderboardOptedIn = Boolean(els.leaderboardOptInInput?.checked);
+  const pactsOptedIn = canUseFriendPulse()
+    ? Boolean(els.pactsOptInInput?.checked)
+    : Boolean(leaderboardProfile.pactsOptedIn);
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York";
+  const shouldValidatePactProfile = canUseFriendPulse() && pactsOptedIn;
 
-  if (optedIn && displayName.length < 2) {
-    els.leaderboardProfileHelp.textContent = "Choose a display name before opting in.";
+  if ((leaderboardOptedIn || shouldValidatePactProfile) && displayName.length < 2) {
+    setSocialProfileHelp("Choose a display name before opting in.");
+    return;
+  }
+
+  if (shouldValidatePactProfile && !/^[a-z]{3,24}$/.test(handle)) {
+    setSocialProfileHelp("Choose a handle with 3-24 letters only before enabling pacts.");
     return;
   }
 
   try {
-    const response = await fetch(API_LEADERBOARD_PROFILE_URL, {
+    setSocialSaveButtons("Saving...", true);
+    const payload = { displayName, leaderboardOptedIn, timezone };
+    if (canUseFriendPulse()) {
+      payload.handle = handle;
+      payload.pactsOptedIn = pactsOptedIn;
+    }
+    const response = await fetch(API_SOCIAL_PROFILE_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ displayName, optedIn }),
+      body: JSON.stringify(payload),
     });
-    if (!response.ok) throw new Error("Profile save failed");
-    leaderboardProfile = await response.json();
-    els.leaderboardProfileHelp.textContent = leaderboardProfile.optedIn
-      ? "You are opted in. Only aggregate stats are shared."
-      : "You are opted out and hidden from leaderboard rows.";
-    els.saveLeaderboardProfileBtn.textContent = "Saved";
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Profile save failed");
+    leaderboardProfile = normalizeSocialProfile(result);
+    setSocialProfileHelp(canUseFriendPulse()
+      ? leaderboardProfile.pactsOptedIn
+        ? "Daily pacts are on. Friends can see whether you showed up today."
+        : "Daily pacts let people find your @handle and see whether you showed up today."
+      : "Leaderboard preferences saved. Only aggregate practice stats are shared when you opt in.");
+    if (els.leaderboardOptInHelp) {
+      els.leaderboardOptInHelp.textContent = leaderboardProfile.leaderboardOptedIn
+        ? "Leaderboard is on. Your aggregate practice stats are visible."
+        : "Leaderboard is off. Your aggregate practice stats are hidden.";
+    }
+    setSocialSaveButtons("Saved", false);
     await loadLeaderboardData();
+    if (canUseFriendPulse()) await loadFriendPulseData();
     renderLeaderboard();
-  } catch {
-    els.leaderboardProfileHelp.textContent = "Could not save leaderboard profile. Try again.";
-    els.saveLeaderboardProfileBtn.textContent = "Save profile";
+    renderFriendPulse();
+  } catch (error) {
+    setSocialProfileHelp(error.message || "Could not save social profile. Try again.");
+    setSocialSaveButtons(null, false);
+  } finally {
+    setSocialSaveButtonsDisabled(false);
   }
 }
 
 function markLeaderboardProfileDirty() {
-  if (!els.saveLeaderboardProfileBtn) return;
-  els.saveLeaderboardProfileBtn.textContent = "Save profile";
+  setSocialSaveButtons(null, false);
+}
+
+function setSocialSaveButtons(label, disabled) {
+  [
+    [els.saveLeaderboardProfileBtn, label || "Save profile"],
+    [els.saveLeaderboardOnlyProfileBtn, label || "Save leaderboard"],
+  ].forEach(([button, text]) => {
+    if (!button) return;
+    button.textContent = text;
+    button.disabled = Boolean(disabled);
+  });
+}
+
+function setSocialSaveButtonsDisabled(disabled) {
+  [els.saveLeaderboardProfileBtn, els.saveLeaderboardOnlyProfileBtn].forEach((button) => {
+    if (button) button.disabled = Boolean(disabled);
+  });
+}
+
+function setSocialProfileHelp(message) {
+  if (els.leaderboardProfileHelp) els.leaderboardProfileHelp.textContent = message;
+  if (els.leaderboardOptInHelp) els.leaderboardOptInHelp.textContent = message;
+}
+
+function normalizeSocialProfile(profile) {
+  const leaderboardOptedIn = profile.leaderboardOptedIn === undefined
+    ? Boolean(profile.optedIn)
+    : Boolean(profile.leaderboardOptedIn);
+  return {
+    displayName: profile.displayName || "",
+    handle: profile.handle || "",
+    optedIn: leaderboardOptedIn,
+    leaderboardOptedIn,
+    pactsOptedIn: Boolean(profile.pactsOptedIn),
+    timezone: profile.timezone || "America/New_York",
+  };
+}
+
+function normalizeClientHandle(value) {
+  return String(value || "").trim().replace(/^@/, "").toLowerCase();
 }
 
 async function loadNotificationConfig() {
@@ -803,6 +1111,14 @@ async function loadNotificationConfig() {
 }
 
 function renderNotificationControls() {
+  if (!canUsePhoneReminders()) {
+    if (els.notificationSettingsCard) els.notificationSettingsCard.hidden = true;
+    if (els.notificationBanner) els.notificationBanner.hidden = true;
+    if (els.settingsNotificationNudge) els.settingsNotificationNudge.hidden = true;
+    return;
+  }
+
+  if (els.notificationSettingsCard) els.notificationSettingsCard.hidden = false;
   if (els.settingsNotificationNudge) {
     els.settingsNotificationNudge.hidden = notificationBannerRecentlySeen();
   }
@@ -849,6 +1165,7 @@ function supportsPushNotifications() {
 }
 
 function openNotificationSettings() {
+  if (!canUsePhoneReminders()) return;
   localStorage.setItem(notificationBannerStorageKey(), new Date().toISOString());
   if (els.notificationBanner) els.notificationBanner.hidden = true;
   navigateToRoute("data");
@@ -1013,6 +1330,7 @@ function render() {
   renderStats();
   renderDailyPicks();
   renderMinimumPractice();
+  renderFriendPulse();
   renderRecoveryLane();
   renderMemoryHealth();
   renderRows(getFilteredProblems());
@@ -1022,15 +1340,29 @@ function render() {
 function renderLeaderboard() {
   if (!els.leaderboardView || !canUseLeaderboard()) return;
 
-  els.leaderboardDisplayNameInput.value = leaderboardProfile.displayName || "";
-  els.leaderboardOptInInput.checked = Boolean(leaderboardProfile.optedIn);
-  els.leaderboardProfileHelp.textContent = leaderboardProfile.optedIn
-    ? "You are opted in. Only aggregate stats are shared."
-    : "Choose a display name and opt in when you want to appear on the board.";
+  if (els.leaderboardDisplayNameInput) els.leaderboardDisplayNameInput.value = leaderboardProfile.displayName || "";
+  if (els.pactDisplayNameInput) els.pactDisplayNameInput.value = leaderboardProfile.displayName || "";
+  if (els.socialHandleInput) els.socialHandleInput.value = leaderboardProfile.handle ? `@${leaderboardProfile.handle}` : "";
+  if (els.leaderboardOptInInput) els.leaderboardOptInInput.checked = Boolean(leaderboardProfile.leaderboardOptedIn);
+  if (els.pactsOptInInput) els.pactsOptInInput.checked = Boolean(leaderboardProfile.pactsOptedIn);
+  if (els.leaderboardProfileHelp) {
+    els.leaderboardProfileHelp.textContent = canUseFriendPulse()
+      ? leaderboardProfile.pactsOptedIn
+        ? "Daily pacts are on. Problem names, grades, notes, and history stay private."
+        : "Daily pacts let people find your @handle and see whether you showed up today."
+      : "Show aggregate practice stats with your display name. Problem names, grades, notes, and history stay private.";
+  }
+  if (els.leaderboardOptInHelp) {
+    els.leaderboardOptInHelp.textContent = leaderboardProfile.leaderboardOptedIn
+      ? "Leaderboard is on. Your aggregate practice stats are visible."
+      : "Show aggregate practice stats with your display name. Problem names, grades, notes, and history stay private.";
+  }
 
   document.querySelectorAll("[data-leaderboard-view]").forEach((button) => {
     button.classList.toggle("is-active", button.dataset.leaderboardView === leaderboardViewMode);
   });
+
+  renderFriendPactManager();
 
   const columns = leaderboardColumns(leaderboardViewMode);
   const rows = sortedLeaderboardRows();
@@ -1059,6 +1391,7 @@ function renderLeaderboard() {
         <td>${index + 1}</td>
         <td>
           <strong>${escapeHtml(row.displayName)}</strong>
+          ${canUseFriendPulse() && row.handle ? `<span class="leaderboard-handle">@${escapeHtml(row.handle)}</span>` : ""}
           ${row.isCurrentUser ? `<span class="leaderboard-you">You</span>` : ""}
         </td>
         ${columns.map((column) => `<td>${escapeHtml(formatLeaderboardValue(column, row[leaderboardViewMode][column.key]))}</td>`).join("")}
@@ -1141,6 +1474,223 @@ function sortLeaderboard(column) {
 function formatLeaderboardValue(column, value) {
   if (column.key === "cleanRecallRate") return `${Number(value || 0)}%`;
   return String(Number(value || 0));
+}
+
+function renderFriendPulse() {
+  if (!els.friendPulsePanel || !canUseFriendPulse()) {
+    if (els.friendPulsePanel) els.friendPulsePanel.hidden = true;
+    if (els.friendPulseNavBadge) els.friendPulseNavBadge.hidden = true;
+    return;
+  }
+
+  const pactsOptedIn = Boolean(friendPulseData.currentUser?.pactsOptedIn || leaderboardProfile.pactsOptedIn);
+  const incomingCount = Number(friendPulseData.incomingCount || 0);
+  if (els.friendPulseNavBadge) {
+    els.friendPulseNavBadge.hidden = incomingCount <= 0;
+    els.friendPulseNavBadge.textContent = String(incomingCount);
+  }
+
+  els.friendPulsePanel.hidden = false;
+  const currentStatus = friendPulseData.currentUser?.completedToday ? "Done today" : "Open";
+  const pacts = friendPulseData.pacts || [];
+  els.friendPulseSummary.textContent = pactsOptedIn
+    ? `${currentStatus}. ${pacts.length ? "Your pact circle is here too." : "Find a pact friend when you want social momentum."}`
+    : "Enable daily pacts on Pacts to let friends see whether you showed up today.";
+
+  const currentRow = `
+    <div class="friend-pulse-row is-you">
+      <div>
+        <strong>You</strong>
+        <span>${escapeHtml(leaderboardProfile.handle ? `@${leaderboardProfile.handle}` : "Set a handle on Pacts")}</span>
+      </div>
+      ${pactsOptedIn
+        ? renderFriendCompletionPill(Boolean(friendPulseData.currentUser?.completedToday), false)
+        : `<span class="friend-status-pill paused">Private</span>`}
+    </div>
+  `;
+
+  const pactRows = pacts.length
+    ? pacts.map((pact) => `
+      <div class="friend-pulse-row">
+        <div>
+          <strong>${escapeHtml(pact.displayName)}</strong>
+          <span>@${escapeHtml(pact.handle)}${pact.paused ? " · paused" : ""}</span>
+        </div>
+        ${pact.paused ? `<span class="friend-status-pill paused">Paused</span>` : renderFriendCompletionPill(Boolean(pact.completedToday), false)}
+      </div>
+    `).join("")
+    : `<p class="friend-pulse-empty">${pactsOptedIn ? "No pact friends yet. Find someone on Pacts." : "Daily pacts are off right now."}</p>`;
+
+  els.friendPulseList.innerHTML = `${currentRow}${pactRows}`;
+}
+
+function renderFriendCompletionPill(done, short = false) {
+  return `<span class="friend-status-pill ${done ? "done" : "open"}">${done ? (short ? "Done" : "Showed up") : "Open"}</span>`;
+}
+
+function renderFriendPactManager() {
+  if (!els.friendPactManager || !canUseFriendPulse()) return;
+  const incoming = friendPulseData.incoming || [];
+  const outgoing = friendPulseData.outgoing || [];
+  const pacts = friendPulseData.pacts || [];
+  const pactsOptedIn = Boolean(leaderboardProfile.pactsOptedIn);
+
+  if (els.friendRequestCount) els.friendRequestCount.textContent = String(incoming.length);
+  if (els.friendIncomingList) {
+    els.friendIncomingList.innerHTML = incoming.length
+      ? incoming.map((request) => `
+        <div class="friend-request-row">
+          <div>
+            <strong>${escapeHtml(request.displayName)}</strong>
+            <span>@${escapeHtml(request.handle)} wants to start a daily pact.</span>
+          </div>
+          <div class="friend-request-actions">
+            <button class="primary-btn small-btn" type="button" data-friend-accept="${escapeAttr(request.id)}">Accept</button>
+            <button class="ghost-btn small-btn" type="button" data-friend-decline="${escapeAttr(request.id)}">Decline</button>
+          </div>
+        </div>
+      `).join("")
+      : `<p class="friend-pulse-empty">${pactsOptedIn ? "No incoming pact requests." : "Enable daily pacts to receive requests."}</p>`;
+  }
+
+  if (els.friendPactList) {
+    els.friendPactList.innerHTML = pacts.length
+      ? pacts.map((pact) => `
+        <div class="friend-request-row">
+          <div>
+            <strong>${escapeHtml(pact.displayName)}</strong>
+            <span>@${escapeHtml(pact.handle)} · ${pact.paused ? "paused" : pact.completedToday ? "showed up today" : "still open"}</span>
+          </div>
+          <div class="friend-request-actions">
+            ${pact.paused ? `<span class="friend-status-pill paused">Paused</span>` : renderFriendCompletionPill(Boolean(pact.completedToday), true)}
+            <button class="ghost-btn small-btn" type="button" data-friend-remove="${escapeAttr(pact.id)}">Remove</button>
+          </div>
+        </div>
+      `).join("")
+      : `<p class="friend-pulse-empty">No active pact friends yet.</p>`;
+  }
+
+  if (els.friendOutgoingSummary) {
+    els.friendOutgoingSummary.innerHTML = outgoing.length
+      ? `
+        <span class="friend-pulse-muted">Outgoing requests</span>
+        <span class="friend-outgoing-list">
+          ${outgoing.map((request) => `
+            <span class="friend-outgoing-item">
+              <span>@${escapeHtml(request.handle)} pending</span>
+              <button class="ghost-btn small-btn" type="button" data-friend-retract="${escapeAttr(request.id)}">Retract</button>
+            </span>
+          `).join("")}
+        </span>
+      `
+      : "";
+  }
+}
+
+async function searchFriendPact() {
+  if (!canUseFriendPulse() || !els.friendSearchResult) return;
+  const handle = normalizeClientHandle(els.friendSearchInput?.value || "");
+  const nonce = friendSearchNonce + 1;
+  friendSearchNonce = nonce;
+  if (!/^[a-z]{3,24}$/.test(handle)) {
+    els.friendSearchResult.innerHTML = `<p class="friend-pulse-empty">Enter an exact handle with 3-24 letters.</p>`;
+    return;
+  }
+
+  els.friendSearchResult.innerHTML = `<p class="friend-pulse-empty">Searching @${escapeHtml(handle)}...</p>`;
+  try {
+    const response = await fetch(`${API_FRIEND_PULSE_SEARCH_URL}?handle=${encodeURIComponent(handle)}`, { cache: "no-store" });
+    if (!response.ok) throw new Error("Search failed");
+    const result = await response.json();
+    if (nonce !== friendSearchNonce) return;
+    const match = result.results?.[0];
+    els.friendSearchResult.innerHTML = match
+      ? renderFriendSearchMatch(match)
+      : `<p class="friend-pulse-empty">No pact-enabled user found for @${escapeHtml(handle)}.</p>`;
+  } catch {
+    if (nonce !== friendSearchNonce) return;
+    els.friendSearchResult.innerHTML = `<p class="friend-pulse-empty">Could not search right now.</p>`;
+  }
+}
+
+function renderFriendSearchMatch(match) {
+  const status = match.status || "available";
+  let action = `<span class="friend-status-pill open">${escapeHtml(statusLabel(status))}</span>`;
+  if (status === "available" && leaderboardProfile.pactsOptedIn) {
+    action = `<button class="primary-btn small-btn" type="button" data-friend-request="${escapeAttr(match.handle)}">Request pact</button>`;
+  } else if (status === "available") {
+    action = `<span class="friend-status-pill paused">Enable pacts first</span>`;
+  }
+  return `
+    <div class="friend-request-row">
+      <div>
+        <strong>${escapeHtml(match.displayName)}</strong>
+        <span>@${escapeHtml(match.handle)}</span>
+      </div>
+      ${action}
+    </div>
+  `;
+}
+
+function statusLabel(status) {
+  const labels = {
+    active: "Active",
+    pending: "Pending",
+    incoming: "Respond",
+    paused: "Paused",
+    available: "Available",
+    unavailable: "Unavailable",
+  };
+  return labels[status] || "Unavailable";
+}
+
+async function handleFriendPulseAction(event) {
+  if (!canUseFriendPulse()) return;
+  const requestButton = event.target.closest("[data-friend-request]");
+  const acceptButton = event.target.closest("[data-friend-accept]");
+  const declineButton = event.target.closest("[data-friend-decline]");
+  const retractButton = event.target.closest("[data-friend-retract]");
+  const removeButton = event.target.closest("[data-friend-remove]");
+  if (!requestButton && !acceptButton && !declineButton && !retractButton && !removeButton) return;
+  const actionButton = requestButton || acceptButton || declineButton || retractButton || removeButton;
+  if (actionButton.disabled) return;
+
+  let url = "";
+  if (requestButton) url = `${API_FRIEND_PULSE_URL}/requests`;
+  if (acceptButton) url = `${API_FRIEND_PULSE_URL}/requests/${encodeURIComponent(acceptButton.dataset.friendAccept)}/accept`;
+  if (declineButton) url = `${API_FRIEND_PULSE_URL}/requests/${encodeURIComponent(declineButton.dataset.friendDecline)}/decline`;
+  if (retractButton) url = `${API_FRIEND_PULSE_URL}/requests/${encodeURIComponent(retractButton.dataset.friendRetract)}/retract`;
+  if (removeButton) url = `${API_FRIEND_PULSE_URL}/pacts/${encodeURIComponent(removeButton.dataset.friendRemove)}/remove`;
+
+  try {
+    actionButton.disabled = true;
+    actionButton.setAttribute("aria-busy", "true");
+    const body = requestButton ? JSON.stringify({ handle: requestButton.dataset.friendRequest }) : null;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: body ? { "Content-Type": "application/json" } : {},
+      body,
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || "Friend Pulse action failed");
+    await loadFriendPulseData();
+    await loadLeaderboardData();
+    renderFriendPulse();
+    renderLeaderboard();
+    if (els.friendSearchResult && requestButton) {
+      els.friendSearchResult.innerHTML = `<p class="friend-pulse-empty">Pact request sent.</p>`;
+    } else if (els.friendSearchResult && (retractButton || removeButton || acceptButton || declineButton)) {
+      friendSearchNonce += 1;
+      els.friendSearchResult.innerHTML = "";
+    }
+  } catch (error) {
+    if (els.friendSearchResult && requestButton) {
+      els.friendSearchResult.innerHTML = `<p class="friend-pulse-empty">${escapeHtml(error.message || "Could not update pact. Try again.")}</p>`;
+    } else if (actionButton) {
+      actionButton.disabled = false;
+      actionButton.removeAttribute("aria-busy");
+    }
+  }
 }
 
 function sortArrow(direction) {
@@ -1281,6 +1831,10 @@ function startMinimumPractice() {
 
 function renderRecoveryLane() {
   if (!els.recoveryList) return;
+  if (!canUseRecoveryLane()) {
+    if (els.recoveryPanel) els.recoveryPanel.hidden = true;
+    return;
+  }
 
   recoveryProblemIds = normalizeRecoveryProblemIds(recoveryProblemIds);
   const recoveryProblems = getRecoveryProblems();
@@ -1337,6 +1891,7 @@ function nextRecoveryTiming(recoveryProblems) {
 }
 
 function addToRecoveryLane(id) {
+  if (!canUseRecoveryLane()) return;
   const problem = problems.find((item) => item.id === id);
   if (!problem) return;
 
@@ -1362,6 +1917,7 @@ function addToRecoveryLane(id) {
 }
 
 function removeFromRecoveryLane(id, options = {}) {
+  if (!canUseRecoveryLane()) return;
   const problem = problems.find((item) => item.id === id);
   const nextIds = recoveryProblemIds.filter((problemId) => problemId !== id);
   if (nextIds.length === recoveryProblemIds.length) return;
@@ -1373,6 +1929,7 @@ function removeFromRecoveryLane(id, options = {}) {
 }
 
 function maybeGraduateRecoveryProblem(problem) {
+  if (!canUseRecoveryLane()) return "";
   if (!problem || !recoveryProblemIds.includes(problem.id)) return "";
   if (clampStage(problem.stage) < RECOVERY_GRADUATION_STAGE) return "";
 
@@ -1699,13 +2256,19 @@ function renderRecommendationCard(type, item) {
     openLink.removeAttribute("href");
   }
   if (recoveryButton) {
-    const inRecoveryLane = recoveryProblemIds.includes(item.id);
-    const canAddToRecovery = item.id && !inRecoveryLane && clampStage(item.stage) < RECOVERY_GRADUATION_STAGE;
-    recoveryButton.textContent = inRecoveryLane ? "In Recovery Lane" : "Add to Recovery Lane";
-    recoveryButton.classList.toggle("is-passive", inRecoveryLane);
-    recoveryButton.disabled = !inRecoveryLane && !canAddToRecovery;
-    recoveryButton.setAttribute("aria-disabled", inRecoveryLane ? "true" : "false");
-    recoveryButton.hidden = false;
+    if (!canUseRecoveryLane()) {
+      recoveryButton.hidden = true;
+      recoveryButton.classList.remove("is-passive");
+      recoveryButton.removeAttribute("aria-disabled");
+    } else {
+      const inRecoveryLane = recoveryProblemIds.includes(item.id);
+      const canAddToRecovery = item.id && !inRecoveryLane && clampStage(item.stage) < RECOVERY_GRADUATION_STAGE;
+      recoveryButton.textContent = inRecoveryLane ? "In Recovery Lane" : "Add to Recovery Lane";
+      recoveryButton.classList.toggle("is-passive", inRecoveryLane);
+      recoveryButton.disabled = !inRecoveryLane && !canAddToRecovery;
+      recoveryButton.setAttribute("aria-disabled", inRecoveryLane ? "true" : "false");
+      recoveryButton.hidden = false;
+    }
   }
   buttons.forEach((button) => (button.disabled = false));
 }
@@ -1798,7 +2361,7 @@ function renderRows(rows) {
       ? `<a class="icon-btn row-open-link row-action-btn row-action-primary" href="${escapeAttr(problem.url)}" target="_blank" rel="noreferrer" aria-label="Open ${escapeAttr(problem.title)} on LeetCode">LeetCode</a>`
       : "";
     const recoveryNode =
-      clampStage(problem.stage) < RECOVERY_GRADUATION_STAGE && !recoveryProblemIds.includes(problem.id)
+      canUseRecoveryLane() && clampStage(problem.stage) < RECOVERY_GRADUATION_STAGE && !recoveryProblemIds.includes(problem.id)
         ? `<button class="icon-btn row-action-btn recovery-row-btn" type="button" data-recovery-add="${escapeAttr(problem.id)}" aria-label="Add ${escapeAttr(problem.title)} to Recovery Lane">Recover</button>`
         : "";
     const memberships = renderMembershipBadges(problem);
@@ -2031,6 +2594,7 @@ function getDailyPicks(options = {}) {
 
 function getNextReviewPick() {
   const dueReviews = getDueReviews().filter((problem) => !skippedDailyPicks.review.has(problem.id));
+  if (!canUseRecoveryLane()) return dueReviews[0] || null;
   return dueReviews.find((problem) => recoveryProblemIds.includes(problem.id)) || dueReviews[0] || null;
 }
 
@@ -3214,6 +3778,432 @@ function importJson(event) {
   reader.readAsText(file);
 }
 
+function handleLeetcodeExtensionMessage(event) {
+  if (event.origin !== window.location.origin) return;
+  const payload = event.data || {};
+  if (payload.source !== "leetcode-progress-extension" || payload.type !== "LEETCODE_PROGRESS_CAPTURED") return;
+  if (!canUseLeetcodeImport()) return;
+
+  const rows = Array.isArray(payload.rows) ? payload.rows : [];
+  pendingLeetcodeImportRows = rows;
+  pendingLeetcodeImportStages = {};
+  pendingLeetcodeImportExcluded = new Set();
+  pendingLeetcodeImportPlan = buildLeetcodeImportPlan(rows);
+  updateLeetcodeImportStatus(payload.capturedAt || new Date().toISOString());
+
+  if (window.location.pathname === "/settings" || window.location.pathname === "/data-management") {
+    openLeetcodeImportReview();
+  } else {
+    els.gradeResult.textContent = `Captured ${rows.length} LeetCode history rows. Open Settings to review the import.`;
+  }
+}
+
+function updateLeetcodeImportStatus(capturedAt) {
+  if (!els.leetcodeImportStatus) return;
+  const count = pendingLeetcodeImportRows.length;
+  if (count === 0) {
+    els.leetcodeImportStatus.textContent = "No captured LeetCode history yet.";
+    return;
+  }
+  els.leetcodeImportStatus.textContent = `Captured ${count} rows from LeetCode${capturedAt ? ` at ${formatDateTime(capturedAt)}` : ""}. Review before importing.`;
+}
+
+function openLeetcodeImportReview() {
+  if (!canUseLeetcodeImport()) return;
+  if (!els.leetcodeImportDialog) return;
+  pendingLeetcodeImportPlan = buildLeetcodeImportPlan(pendingLeetcodeImportRows);
+  seedLeetcodeImportStageSelections(pendingLeetcodeImportPlan);
+  renderLeetcodeImportReview(pendingLeetcodeImportPlan);
+  els.leetcodeImportDialog.showModal();
+}
+
+function buildLeetcodeImportPlan(rows = []) {
+  const seen = new Set();
+  const candidates = [];
+  let invalid = 0;
+  let duplicateRows = 0;
+
+  rows.forEach((row) => {
+    const candidate = normalizeLeetcodeProgressRow(row);
+    if (!candidate) {
+      invalid += 1;
+      return;
+    }
+
+    const rowKey = [candidate.slug, candidate.date, candidate.result].join("|");
+    if (seen.has(rowKey)) {
+      duplicateRows += 1;
+      return;
+    }
+    seen.add(rowKey);
+    candidates.push(candidate);
+  });
+
+  let matched = 0;
+  let created = 0;
+  let alreadyImported = 0;
+
+  const plannedCandidates = candidates.map((candidate) => {
+    const existing = findProblemBySlug(candidate.slug) || findProblemByTitle(candidate.title);
+    const duplicate = existing ? hasLeetcodeImportedEntry(existing, candidate) : false;
+    if (duplicate) alreadyImported += 1;
+    else if (existing) matched += 1;
+    else created += 1;
+    return {
+      ...candidate,
+      importKey: leetcodeImportCandidateKey(candidate),
+      importStage: defaultLeetcodeImportStage(candidate),
+      action: duplicate ? "duplicate" : existing ? "merge" : "create",
+      existingTitle: existing?.title || "",
+    };
+  });
+
+  return {
+    candidates: plannedCandidates,
+    importable: plannedCandidates.filter((candidate) => candidate.action !== "duplicate"),
+    matched,
+    created,
+    alreadyImported,
+    duplicateRows,
+    invalid,
+    totalRows: rows.length,
+  };
+}
+
+function leetcodeImportCandidateKey(candidate) {
+  return [candidate.slug, candidate.date, candidate.result || "LeetCode history"].join("|");
+}
+
+function defaultLeetcodeImportStage() {
+  return 1;
+}
+
+function selectedLeetcodeImportStage(candidate) {
+  return clampLeetcodeImportStage(pendingLeetcodeImportStages[candidate.importKey] ?? candidate.importStage ?? defaultLeetcodeImportStage(candidate));
+}
+
+function isLeetcodeImportIncluded(candidate) {
+  return candidate.action !== "duplicate" && !pendingLeetcodeImportExcluded.has(candidate.importKey);
+}
+
+function clampLeetcodeImportStage(stage) {
+  return Math.round(clamp(Number(stage || 0), 0, 2));
+}
+
+function renderLeetcodeImportReview(plan) {
+  const summary = plan || buildLeetcodeImportPlan([]);
+  const includedRows = summary.importable.filter(isLeetcodeImportIncluded);
+  const excludedCount = pendingLeetcodeImportExcluded.size;
+  els.applyLeetcodeImportBtn.disabled = includedRows.length === 0;
+  els.leetcodeImportSummary.innerHTML = `
+    <div>
+      <strong>${summary.totalRows}</strong>
+      <span>Rows captured</span>
+    </div>
+    <div>
+      <strong>${summary.matched}</strong>
+      <span>Existing problems</span>
+    </div>
+    <div>
+      <strong>${summary.created}</strong>
+      <span>New problems</span>
+    </div>
+    <div>
+      <strong>${summary.alreadyImported + summary.duplicateRows + summary.invalid + excludedCount}</strong>
+      <span>Skipped</span>
+    </div>
+  `;
+
+  if (summary.totalRows === 0) {
+    els.leetcodeImportPreview.innerHTML = `
+      <div class="history-empty">
+        <strong>No captured rows yet</strong>
+        <span>Load the unpacked Chrome extension, open LeetCode progress, and choose Capture Practice History.</span>
+      </div>
+    `;
+    return;
+  }
+
+  const previewRows = summary.candidates;
+  els.leetcodeImportPreview.innerHTML = `
+    <div class="leetcode-import-note">
+      <div>
+        <strong>${includedRows.length} rows ready to import</strong>
+        <span>Default: Stage 1. Remove anything you do not want in the tracker; Accepted is not treated as Solved cleanly.</span>
+      </div>
+      <div class="leetcode-import-bulk" aria-label="Bulk import stage">
+        <button class="ghost-btn" type="button" data-leetcode-import-stage-all="0">All Stage 0</button>
+        <button class="ghost-btn" type="button" data-leetcode-import-stage-all="1">All Stage 1</button>
+        <button class="ghost-btn" type="button" data-leetcode-import-stage-all="2">All Stage 2</button>
+      </div>
+    </div>
+    ${previewRows
+      .map((candidate) => `
+        <div class="leetcode-import-row ${isLeetcodeImportIncluded(candidate) ? "" : "is-excluded"}">
+          <div>
+            <strong>${escapeHtml(candidate.title)}</strong>
+            <span>${escapeHtml(formatDate(candidate.date))} · ${escapeHtml(candidate.result || "LeetCode history")} · ${escapeHtml(candidate.difficulty)}</span>
+          </div>
+          <div class="leetcode-import-row-actions">
+            ${candidate.action === "duplicate" ? "" : renderLeetcodeImportStageSelect(candidate)}
+            ${candidate.action === "duplicate" ? "" : renderLeetcodeImportIncludeButton(candidate)}
+            <em>${escapeHtml(leetcodeImportActionLabel(candidate))}</em>
+          </div>
+        </div>
+      `)
+      .join("")}
+  `;
+}
+
+function renderLeetcodeImportIncludeButton(candidate) {
+  const included = isLeetcodeImportIncluded(candidate);
+  return `
+    <button
+      class="ghost-btn leetcode-import-toggle"
+      type="button"
+      data-leetcode-import-toggle="${escapeAttr(candidate.importKey)}"
+      aria-pressed="${included ? "false" : "true"}"
+    >
+      ${included ? "Remove" : "Restore"}
+    </button>
+  `;
+}
+
+function renderLeetcodeImportStageSelect(candidate) {
+  const selectedStage = selectedLeetcodeImportStage(candidate);
+  const disabled = isLeetcodeImportIncluded(candidate) ? "" : " disabled";
+  return `
+    <label class="leetcode-import-stage">
+      <span>Import as</span>
+      <select data-leetcode-import-stage="${escapeAttr(candidate.importKey)}"${disabled}>
+        ${[0, 1, 2]
+          .map((stage) => `
+            <option value="${stage}" ${stage === selectedStage ? "selected" : ""}>${escapeHtml(stageName(stage))}</option>
+          `)
+          .join("")}
+      </select>
+    </label>
+  `;
+}
+
+function seedLeetcodeImportStageSelections(plan) {
+  (plan?.importable || []).forEach((candidate) => {
+    if (pendingLeetcodeImportStages[candidate.importKey] == null) {
+      pendingLeetcodeImportStages[candidate.importKey] = candidate.importStage;
+    }
+  });
+}
+
+function handleLeetcodeImportPreviewClick(event) {
+  if (!canUseLeetcodeImport()) return;
+  const button = event.target.closest("[data-leetcode-import-stage-all]");
+  if (button) {
+    const stage = clampLeetcodeImportStage(button.dataset.leetcodeImportStageAll);
+    (pendingLeetcodeImportPlan?.importable || []).filter(isLeetcodeImportIncluded).forEach((candidate) => {
+      pendingLeetcodeImportStages[candidate.importKey] = stage;
+    });
+    renderLeetcodeImportReview(pendingLeetcodeImportPlan);
+    return;
+  }
+
+  const toggle = event.target.closest("[data-leetcode-import-toggle]");
+  if (!toggle) return;
+  const key = toggle.dataset.leetcodeImportToggle;
+  if (pendingLeetcodeImportExcluded.has(key)) pendingLeetcodeImportExcluded.delete(key);
+  else pendingLeetcodeImportExcluded.add(key);
+  renderLeetcodeImportReview(pendingLeetcodeImportPlan);
+}
+
+function handleLeetcodeImportPreviewChange(event) {
+  if (!canUseLeetcodeImport()) return;
+  const select = event.target.closest("[data-leetcode-import-stage]");
+  if (!select) return;
+  pendingLeetcodeImportStages[select.dataset.leetcodeImportStage] = clampLeetcodeImportStage(select.value);
+}
+
+function leetcodeImportActionLabel(candidate) {
+  if (!isLeetcodeImportIncluded(candidate) && candidate.action !== "duplicate") return "Removed";
+  const action = candidate.action;
+  if (action === "merge") return "Merge";
+  if (action === "create") return "Create";
+  return "Skip";
+}
+
+function applyLeetcodeProgressImport() {
+  if (!canUseLeetcodeImport()) return;
+  const plan = pendingLeetcodeImportPlan || buildLeetcodeImportPlan(pendingLeetcodeImportRows);
+  const includedRows = plan.importable.filter(isLeetcodeImportIncluded);
+  if (includedRows.length === 0) return;
+
+  const now = new Date().toISOString();
+  let added = 0;
+  includedRows.forEach((candidate) => {
+    if (upsertLeetcodeImportedProblem({ ...candidate, importStage: selectedLeetcodeImportStage(candidate) }, now)) added += 1;
+  });
+
+  importMeta = {
+    importedAt: toIsoDate(new Date()),
+    sourceFileName: "LeetCode Progress extension",
+    rowCount: added,
+    schemaVersion: EXPORT_VERSION,
+  };
+  persist();
+  persistImportMeta();
+  render();
+  els.leetcodeImportDialog.close();
+  updateLeetcodeImportStatus(now);
+  window.postMessage({ source: "dsa-tracker", type: "LEETCODE_PROGRESS_APPLIED" }, window.location.origin);
+  alert(`Imported ${added} LeetCode history rows as historical context.`);
+}
+
+function upsertLeetcodeImportedProblem(candidate, now) {
+  const existing = findProblemBySlug(candidate.slug) || findProblemByTitle(candidate.title);
+  const builtInPlan = findBuiltInPlan(candidate.slug, candidate.title);
+  const entry = buildLeetcodeImportedEntry(candidate);
+
+  if (existing) {
+    if (hasLeetcodeImportedEntry(existing, candidate)) return false;
+    const nextHistory = [...(existing.reviewHistory || []), entry].sort((a, b) => dateValue(a.date) - dateValue(b.date));
+    const hasProperHistory = nextHistory.some((item) => isProperGrade(item.grade));
+    const baseProblem = {
+      ...existing,
+      titleSlug: existing.titleSlug || candidate.slug,
+      url: existing.url || candidate.url,
+      difficulty: existing.difficulty || candidate.difficulty,
+      topic: existing.topic || builtInPlan?.topic || "General",
+      listMemberships: mergeMemberships(existing.listMemberships, getBuiltInMemberships(candidate.slug, candidate.title)),
+      firstAttemptAt: earliestHistoryDate(nextHistory) || existing.firstAttemptAt,
+      reviewHistory: nextHistory,
+      importStage: candidate.importStage,
+      completionCount: Math.max(Number(existing.completionCount || 0), nextHistory.length),
+      updatedAt: now,
+    };
+    const nextProblem = hasProperHistory ? normalizeProblem(baseProblem) : normalizeImportedOnlyProblem(baseProblem);
+    problems = problems.map((problem) => (problem.id === existing.id ? nextProblem : problem));
+    return true;
+  }
+
+  problems.push(normalizeImportedOnlyProblem({
+    id: crypto.randomUUID(),
+    title: builtInPlan?.title || candidate.title,
+    titleSlug: builtInPlan?.slug || candidate.slug,
+    url: builtInPlan?.url || candidate.url,
+    difficulty: normalizeDifficulty(candidate.difficulty || builtInPlan?.difficulty),
+    topic: builtInPlan?.topic || "General",
+    notes: "",
+    source: "leetcode-progress",
+    listMemberships: getBuiltInMemberships(candidate.slug, candidate.title),
+    reviewHistory: [entry],
+    importStage: candidate.importStage,
+    createdAt: now,
+    updatedAt: now,
+  }));
+  return true;
+}
+
+function normalizeImportedOnlyProblem(problem) {
+  const history = [...(problem.reviewHistory || [])].sort((a, b) => dateValue(a.date) - dateValue(b.date));
+  const latest = history.at(-1);
+  const count = history.length;
+  const stage = problem.importStage == null ? inferStageFromCount(count) : clampLeetcodeImportStage(problem.importStage);
+  const intervalDays = STAGES[stage].intervalDays;
+  const nextReview = latest?.date ? toIsoDate(addDays(parseIsoDate(latest.date), intervalDays)) : "";
+
+  return normalizeProblem({
+    ...problem,
+    status: count > 0 ? "review" : "todo",
+    firstAttemptAt: earliestHistoryDate(history) || problem.firstAttemptAt,
+    completionCount: count,
+    stage,
+    greenStreak: 0,
+    currentIntervalDays: intervalDays,
+    lastReviewedAt: latest?.date || "",
+    lastGrade: latest ? "imported" : "",
+    nextReview,
+    masteredAt: "",
+    solvedAt: "",
+  });
+}
+
+function buildLeetcodeImportedEntry(candidate) {
+  return {
+    id: crypto.randomUUID(),
+    date: candidate.date,
+    grade: "imported",
+    source: "leetcode-progress",
+    result: candidate.result,
+    submissions: candidate.submissions,
+    previousStage: null,
+    newStage: candidate.importStage,
+    wasOverdue: false,
+    daysOverdue: 0,
+    intervalDays: null,
+    note: `LeetCode result: ${candidate.result || "history"}${candidate.submissions ? ` · ${candidate.submissions} submissions` : ""}`,
+  };
+}
+
+function hasLeetcodeImportedEntry(problem, candidate) {
+  return (problem.reviewHistory || []).some((entry) =>
+    entry.source === "leetcode-progress" &&
+    normalizeDate(entry.date) === candidate.date &&
+    String(entry.result || "").toLowerCase() === candidate.result.toLowerCase()
+  );
+}
+
+function normalizeLeetcodeProgressRow(row = {}) {
+  const title = String(row.title || "").trim();
+  const url = safeUrl(row.url || (row.slug ? `https://leetcode.com/problems/${row.slug}/` : ""));
+  const slug = canonicalSlug(row.slug || slugFromUrl(url) || slugifyTitle(title));
+  const date = normalizeLeetcodeProgressDate(row.date || row.submittedAt || "");
+  if (!title || !slug || !date) return null;
+
+  return {
+    title,
+    slug,
+    url: url || `https://leetcode.com/problems/${slug}/`,
+    date,
+    result: String(row.result || "LeetCode history").trim(),
+    difficulty: normalizeDifficulty(normalizeLeetcodeDifficulty(row.difficulty)),
+    submissions: Number(row.submissions || 0) || 0,
+  };
+}
+
+function normalizeLeetcodeDifficulty(value) {
+  const difficulty = String(value || "").trim();
+  if (/^med\.?$/i.test(difficulty)) return "Medium";
+  return difficulty;
+}
+
+function normalizeLeetcodeProgressDate(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const numeric = text.match(/(\d{4})[./-](\d{1,2})[./-](\d{1,2})/);
+  if (numeric) {
+    const [, year, month, day] = numeric;
+    return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  }
+
+  const monthDay = text.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2})(?:,\s*(\d{4}))?/i);
+  if (!monthDay) return normalizeDate(text);
+
+  const monthNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+  const month = monthNames.indexOf(monthDay[1].slice(0, 3).toLowerCase());
+  const day = Number(monthDay[2]);
+  let year = Number(monthDay[3] || new Date().getFullYear());
+  const parsed = new Date(year, month, day);
+  if (!monthDay[3] && parsed > addDays(dateOnly(new Date()), 7)) {
+    year -= 1;
+  }
+  return toIsoDate(new Date(year, month, day));
+}
+
+function earliestHistoryDate(history = []) {
+  return history
+    .map((entry) => normalizeDate(entry.date))
+    .filter(Boolean)
+    .sort((a, b) => dateValue(a) - dateValue(b))[0] || "";
+}
+
 function parseCsv(text) {
   const rows = [];
   let row = [];
@@ -3417,7 +4407,7 @@ function applyMasteryStatus(problem) {
 }
 
 function isMasteryEligible(problem) {
-  const attempts = Number(problem.completionCount || 0);
+  const attempts = countMasteryEligibleAttempts(problem);
   const threshold = MASTERY_ATTEMPT_THRESHOLDS[problem.difficulty] || MASTERY_ATTEMPT_THRESHOLDS.Medium;
   const recent = (problem.reviewHistory || []).slice(-3);
   const hasRecentRed = recent.some((entry) => entry.grade === "red");
@@ -3434,6 +4424,16 @@ function isMasteryEligible(problem) {
     !hasRecentRed &&
     Boolean(problem.complexityKnown)
   );
+}
+
+function countMasteryEligibleAttempts(problem) {
+  const history = Array.isArray(problem.reviewHistory) ? problem.reviewHistory : [];
+  if (history.length === 0) return Number(problem.completionCount || 0);
+
+  return history.filter((entry) => {
+    if (isProperGrade(entry.grade)) return true;
+    return entry.grade === "imported" && entry.source !== "leetcode-progress";
+  }).length;
 }
 
 function getBlindOrder(problem) {

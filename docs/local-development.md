@@ -96,6 +96,19 @@ VAPID_PRIVATE_KEY
 VAPID_SUBJECT=https://your-hosted-app.example.com
 ```
 
+Optional experiment flags:
+
+```text
+FEATURE_PHONE_REMINDERS=true
+FEATURE_FRIEND_PULSE=true
+FEATURE_LEETCODE_IMPORT=true
+FEATURE_RECOVERY_LANE=true
+```
+
+All experiment flags default to off. The default product should stay focused on Practice, Library,
+Memory, Leaderboard, and Settings. Turn these flags on only when actively testing or
+shipping the experiment.
+
 `VAPID_SUBJECT` must be a real contact value, such as `mailto:you@example.com` or the
 hosted `https://...` origin. Avoid fake `.local` values because push services may reject
 their signed tokens.
@@ -113,9 +126,9 @@ Hosted mode does not read or write `data/tracker-state.json`. Local state and ho
 are intentionally separate. To move progress online, export JSON from local mode and import
 it after signing in to hosted mode.
 
-Phone reminders are only available in hosted mode when VAPID keys are configured. Local
-and QA file-backed servers show the reminder controls as unavailable because they do not
-have authenticated cloud users or push subscriptions.
+Phone reminders are only available when `FEATURE_PHONE_REMINDERS=true` in hosted mode and
+VAPID keys are configured. Local and QA file-backed servers hide reminder controls because
+they do not have authenticated cloud users or push subscriptions.
 
 ## API Endpoints
 
@@ -201,6 +214,16 @@ rows to `sessions` using the backfilled attempt date, because they are app-enter
 activity. Imported CSV history remains historical context only and does not create session
 activity.
 
+LeetCode imports from the optional Chrome extension use the same historical lane as CSV
+import. The extension first reads LeetCode's signed-in submissions API and falls back to
+rendered progress pages if needed. Captured rows add or merge problem records and
+`grade: "imported"` history entries, but they do not create `sessions`, real
+red/yellow/green grades, habit completion, Friend Pulse completion, or leaderboard weekly
+activity. The import review defaults rows to `First Recall (Stage 1)` for initial
+scheduling, and the user can bulk or individually override rows to
+`Learning (Stage 0)` or `Pattern (Stage 2)` before applying. Individual rows can also be
+removed from the pending import; removed rows are skipped and do not change app state.
+
 The replay uses the same spaced-repetition transition as Today grading. Clean attempts
 before the scheduled review date are stored with `heldForEarly: true`, keep the existing
 `nextReview`, and do not increase `greenStreak`. Extremely overdue clean attempts are
@@ -224,8 +247,18 @@ The app has client-side routes served by the same `index.html` file:
 `/diagnostics` remains a backwards-compatible route for the Memory view, and
 `/data-management` remains a backwards-compatible route for Settings.
 
+When `FEATURE_FRIEND_PULSE=true`, the app also serves:
+
+```text
+/pacts
+```
+
 `server.js` maps those routes back to `index.html`, then `app.js` chooses which view to
 show.
+
+Leaderboard APIs are available only in hosted mode and QA mode. Friend Pulse APIs are also
+behind `FEATURE_FRIEND_PULSE=true`. Local production mode returns `404` for social
+endpoints so a plain local JSON tracker does not accidentally expose social surfaces.
 
 ## Safe Git Data Policy
 

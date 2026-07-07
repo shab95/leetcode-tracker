@@ -21,9 +21,10 @@ hosted mode with Google OAuth and per-user SQLite storage.
 - Hides notes and solution references before grading so they do not become hints.
 - Shows Memory for backlog pressure, attention topics, stage distribution, and
   recent grade quality.
-- Provides a Settings page for reminders, CSV import, JSON backup/restore, and list seeding.
+- Provides a Settings page for CSV import, JSON backup/restore, list seeding, and optional experiments.
 - Includes QA mode with disposable fixture data.
 - Supports an optional private-beta cloud mode for invited Google accounts.
+- Keeps experimental motivation features behind flags so the default app stays focused.
 
 The review algorithm is documented in [docs/review-algorithm.md](docs/review-algorithm.md).
 Product direction and upcoming UX work live in
@@ -137,16 +138,27 @@ Use `Settings -> Reset QA data` to restore QA to the fixture state.
 
 ## Settings
 
-Open `Settings` in the top navigation for reminders and rare/admin actions:
+Open `Settings` in the top navigation for rare/admin actions:
 
-- `Phone Reminder`: installs and enables optional Minimum Practice nudges in hosted mode.
 - `Import CSV once`: migrates an existing tracker CSV into app state.
+- `Import from LeetCode history`: reviews progress rows captured by the optional Chrome
+  extension and imports them as historical context.
 - `Seed Blind 75`: adds/merges built-in Blind 75 problems.
 - `Seed NeetCode 150`: adds/merges built-in NeetCode 150 problems.
 - `Export JSON`: downloads a full backup of the current state.
 - `Import JSON`: restores a previously exported state.
 
 Imported solved CSV rows count as prior attempts, not automatic mastery.
+LeetCode progress imports follow the same idea: Accepted submissions are not treated as
+`Solved cleanly`, failed submissions are not treated as real missed solves, and no imported
+row counts toward Minimum Practice, Friend Pulse, leaderboard weekly stats, or mastery
+green streaks.
+
+During import review, LeetCode rows default to `First Recall (Stage 1)` as a starting
+confidence level. You can change all rows to `Learning (Stage 0)` or `Pattern (Stage 2)`,
+remove rows you do not want to track, or override individual rows before applying the
+import. These choices only seed the initial review schedule; they still do not create
+clean solves or mastery credit.
 
 You can also backfill individual attempts from a problem's `Edit -> History` tab. Manual
 backfill is for attempts completed outside the app and uses real grades only, so the review
@@ -156,6 +168,26 @@ Early clean solves are recorded, but they do not advance the review stage until 
 scheduled review date arrives. This keeps the app honest about spaced recall: practicing
 early can help, but it does not prove durability. Early missed or slow solves still update
 the schedule immediately because they reveal weakness.
+
+### Optional Chrome Extension Import
+
+The unpacked extension in `extension/leetcode-history/` can capture LeetCode submission
+history while you are already logged in to LeetCode. You can click it from any Chrome tab.
+It first reads LeetCode's signed-in submissions API, then falls back to briefly opening
+LeetCode progress pages in the background if the API is unavailable.
+
+To install it locally:
+
+1. Open Chrome at `chrome://extensions`.
+2. Enable `Developer mode`.
+3. Choose `Load unpacked`.
+4. Select `extension/leetcode-history`.
+5. Sign in to LeetCode in that Chrome profile.
+6. Click the extension's `Capture Practice History` action from any Chrome tab.
+7. Open tracker `Settings`, review the captured rows, remove anything irrelevant, choose
+   the starting stage if needed, and import them.
+
+The extension does not ask for LeetCode credentials and does not capture submitted code.
 
 ## Safety Notes
 
@@ -209,15 +241,39 @@ VAPID_PUBLIC_KEY
 VAPID_PRIVATE_KEY
 VAPID_SUBJECT=https://your-hosted-app.example.com
 NOTIFICATION_CHECK_INTERVAL_MS=60000
+FEATURE_PHONE_REMINDERS=false
+FEATURE_FRIEND_PULSE=false
+FEATURE_LEETCODE_IMPORT=false
+FEATURE_RECOVERY_LANE=false
 ```
 
-Phone reminders are optional. If `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` are set,
-hosted users can enable a daily Minimum Practice reminder from Settings. Generate
-keys with:
+### Experimental Feature Flags
+
+The default hosted app keeps the main practice loop clean. These experiments are hidden
+unless explicitly enabled:
+
+- `FEATURE_PHONE_REMINDERS=true`: hosted push reminders for incomplete Minimum Practice
+  days. Requires valid `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`.
+- `FEATURE_FRIEND_PULSE=true`: the `Pacts` tab, exact-handle search, pact requests, and
+  Friend Pulse panel.
+- `FEATURE_LEETCODE_IMPORT=true`: the Settings card and review flow for importing LeetCode
+  progress captured by the Chrome extension.
+- `FEATURE_RECOVERY_LANE=true`: the manual Recovery Lane focus list and its priority rule.
+
+Phone reminders require VAPID keys. Generate keys with:
 
 ```bash
 npx web-push generate-vapid-keys
 ```
+
+When Friend Pulse is enabled, hosted users can opt into social features from `Pacts`:
+
+- `Show on leaderboard` shares aggregate practice stats only.
+- `Allow daily pacts` lets other opted-in users find an exact `@handle` and request a
+  daily pact.
+- Pending outgoing pact requests can be retracted from `Pacts`.
+- Friend Pulse pacts show only whether each person completed Minimum Practice today.
+  Problem names, grades, notes, timestamps, and raw history stay private.
 
 Set `VAPID_SUBJECT` to a real contact value, either `mailto:you@example.com` or the
 hosted `https://...` origin. Do not use fake `.local` values; some push services reject

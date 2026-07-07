@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "DSA Tracker LeetCode Import",
+  "version": "0.1.0",
+  "description": "Capture LeetCode progress history and import it into DSA Tracker as historical context.",
+  "permissions": ["storage", "tabs", "scripting"],
+  "host_permissions": [
+    "https://leetcode.com/*",
+    "https://leetcode.com/progress/*",
+    "https://leetcode.com/problems/*",
+    "https://leetcode-tracker-production-4cb5.up.railway.app/*",
+    "http://127.0.0.1:5174/*",
+    "http://localhost:5174/*"
+  ],
+  "action": {
+    "default_title": "Capture LeetCode history",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://leetcode-tracker-production-4cb5.up.railway.app/*",
+        "http://127.0.0.1:5174/*",
+        "http://localhost:5174/*"
+      ],
+      "js": ["tracker-bridge.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

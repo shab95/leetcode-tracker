@@ -1,9 +1,10 @@
 # Product Roadmap
 
 This roadmap is about the product shape, not the review algorithm itself. The tracker
-should still keep full history, stages, notes, memory signals, settings, reminders, and
-leaderboard data. The main product change is that the first screen should feel like a
-practice launchpad instead of a management dashboard.
+should still keep full history, stages, notes, memory signals, settings, and leaderboard
+data. Experimental motivation surfaces such as reminders, pacts, and Recovery Lane should
+stay feature-flagged until they clearly reduce friction. The main product change is that
+the first screen should feel like a practice launchpad instead of a management dashboard.
 
 The core question for the app is:
 
@@ -35,10 +36,10 @@ Refocus the first screen around starting work.
 
 - Put the daily practice surface before stats and tables.
 - Rename the main tab to `Practice` and the main practice section to `Daily Rep`.
-- Keep one review and one new problem, but make the review/recovery action feel primary.
+- Keep one review and one new problem, and make the next review action feel primary.
 - Move the problem table and heavy browsing controls to a separate `Library` route.
 - Move stats to `Memory` so they stay useful without becoming the front door.
-- Hide empty Recovery Lane UI.
+- Keep Recovery Lane hidden by default behind `FEATURE_RECOVERY_LANE`.
 - Keep due review counts de-emphasized so a large backlog does not become the first thing
   the user sees.
 - Tuck skip/source controls into a smaller `Change pick` area.
@@ -161,7 +162,7 @@ Practice should render in this order:
 
 1. Daily practice surface.
 2. Minimum Practice habit panel.
-3. Recovery Lane only if there are active recovery problems.
+3. Recovery Lane only when `FEATURE_RECOVERY_LANE=true` and there are active recovery problems.
 
 Practice should not show the full problem table or stats grid by default.
 
@@ -223,9 +224,10 @@ The Library should contain:
 
 This keeps the tracker powerful without making Practice feel like a spreadsheet.
 
-### Recovery Lane
+### Recovery Lane Experiment
 
-Recovery Lane should only appear when it is useful:
+Recovery Lane should stay behind `FEATURE_RECOVERY_LANE`. If enabled, it should only
+appear when it is useful:
 
 - Show it if there are manually pinned recovery problems.
 - Hide it if empty.
@@ -240,7 +242,7 @@ Recovery Lane should only appear when it is useful:
 - Existing table actions still work from Library.
 - Daily grading still saves state and updates habit/stats.
 - Skip controls and new source still work.
-- Recovery Lane is hidden when empty.
+- Recovery Lane is hidden when the flag is off or when it is empty.
 - `/memory` and `/diagnostics` open Memory.
 - `/settings` and `/data-management` open Settings.
 - `npm run check` passes.

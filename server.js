@@ -40,6 +40,12 @@ const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "";
 const VAPID_SUBJECT = process.env.VAPID_SUBJECT || "";
 const NOTIFICATION_CHECK_INTERVAL_MS = Number(process.env.NOTIFICATION_CHECK_INTERVAL_MS || 60_000);
 const NOTIFICATIONS_CONFIGURED = Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
+const FEATURES = Object.freeze({
+  friendPulse: readFeatureFlag("FEATURE_FRIEND_PULSE"),
+  leetcodeImport: readFeatureFlag("FEATURE_LEETCODE_IMPORT"),
+  phoneReminders: readFeatureFlag("FEATURE_PHONE_REMINDERS"),
+  recoveryLane: readFeatureFlag("FEATURE_RECOVERY_LANE"),
+});
 const PUBLIC_FILES = new Set([
   "/index.html",
   "/app.js",
@@ -66,6 +72,10 @@ const APP_ROUTES = new Set([
 ]);
 APP_ROUTES.add("/leaderboard");
 APP_ROUTES.add("/leaderboard/");
+if (FEATURES.friendPulse) {
+  APP_ROUTES.add("/pacts");
+  APP_ROUTES.add("/pacts/");
+}
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -132,13 +142,34 @@ class SqliteSessionStore extends session.Store {
 
 validateConfig();
 
-if (NOTIFICATIONS_CONFIGURED) {
+if (FEATURES.phoneReminders && NOTIFICATIONS_CONFIGURED) {
   webPush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 }
 
 const allowedEmails = parseAllowedEmails(process.env.ALLOWED_EMAILS);
 const db = IS_HOSTED ? initDatabase(SQLITE_PATH) : null;
-let qaLeaderboardProfile = { displayName: "QA You", optedIn: true };
+let qaLeaderboardProfile = {
+  displayName: "QA You",
+  handle: "qayou",
+  optedIn: true,
+  leaderboardOptedIn: true,
+  pactsOptedIn: true,
+  timezone: "America/New_York",
+};
+const qaFriendPulse = {
+  nextRequestId: 4,
+  nextPactId: 4,
+  incoming: [
+    { id: "qa-request-1", displayName: "Maya QA", handle: "maya", status: "pending" },
+  ],
+  outgoing: [
+    { id: "qa-request-2", displayName: "Alex QA", handle: "alex", status: "pending" },
+  ],
+  pacts: [
+    { id: "qa-pact-1", displayName: "Sam QA", handle: "sam", completedToday: true, paused: false },
+    { id: "qa-pact-2", displayName: "Riya QA", handle: "riya", completedToday: false, paused: true },
+  ],
+};
 const app = express();
 
 app.set("trust proxy", 1);
@@ -177,6 +208,7 @@ app.get("/api/env", (request, response) => {
     isQa: IS_QA,
     authRequired: AUTH_REQUIRED,
     storageMode: IS_HOSTED ? "cloud" : "local",
+    features: FEATURES,
   });
 });
 
@@ -265,29 +297,91 @@ app.get("/api/leaderboard/profile", requireLeaderboardAccess, (request, response
   }
 
   ensureLeaderboardBaseline(request.user.id);
-  response.json(getLeaderboardProfile(request.user.id));
+  response.json(getSocialProfile(request.user.id));
 });
 
 app.post("/api/leaderboard/profile", requireLeaderboardAccess, (request, response) => {
-  const profile = request.body || {};
-  const optedIn = Boolean(profile.optedIn);
-  const displayName = String(profile.displayName || "").trim().slice(0, 40);
+  handleSaveSocialProfile(request, response);
+});
 
-  if (optedIn && displayName.length < 2) {
-    response.status(400).json({ error: "Display name is required to opt in" });
-    return;
-  }
-
+app.get("/api/social/profile", requireLeaderboardAccess, (request, response) => {
   if (isQaLeaderboardRequest()) {
-    qaLeaderboardProfile = { displayName: displayName || "QA You", optedIn };
     response.json(qaLeaderboardProfile);
     return;
   }
 
-  saveLeaderboardProfile(request.user.id, displayName, optedIn);
   ensureLeaderboardBaseline(request.user.id);
-  response.json(getLeaderboardProfile(request.user.id));
+  response.json(getSocialProfile(request.user.id));
 });
+
+app.post("/api/social/profile", requireLeaderboardAccess, (request, response) => {
+  handleSaveSocialProfile(request, response);
+});
+
+function handleSaveSocialProfile(request, response) {
+  const profile = request.body || {};
+  const existingProfile = isQaLeaderboardRequest()
+    ? qaLeaderboardProfile
+    : request.user?.id
+      ? getSocialProfile(request.user.id)
+      : {};
+  const leaderboardOptedIn = profile.leaderboardOptedIn === undefined
+    ? profile.optedIn === undefined
+      ? Boolean(existingProfile.leaderboardOptedIn || existingProfile.optedIn)
+      : Boolean(profile.optedIn)
+    : Boolean(profile.leaderboardOptedIn);
+  const pactsOptedIn = FEATURES.friendPulse
+    ? profile.pactsOptedIn === undefined
+      ? Boolean(existingProfile.pactsOptedIn)
+      : Boolean(profile.pactsOptedIn)
+    : Boolean(existingProfile.pactsOptedIn);
+  const displayName = String(profile.displayName ?? existingProfile.displayName ?? "").trim().slice(0, 40);
+  const timezone = normalizeNotificationTimezone(profile.timezone);
+  const submittedHandle = profile.handle === undefined ? existingProfile.handle || "" : profile.handle || "";
+  const handleValidation = FEATURES.friendPulse
+    ? normalizeSocialHandle(submittedHandle)
+    : { ok: true, handle: existingProfile.handle || "" };
+  const handle = handleValidation.handle;
+  const shouldValidatePactProfile = FEATURES.friendPulse && pactsOptedIn;
+
+  if ((leaderboardOptedIn || shouldValidatePactProfile) && displayName.length < 2) {
+    response.status(400).json({ error: "Display name is required to opt in" });
+    return;
+  }
+
+  if (!handleValidation.ok) {
+    response.status(400).json({ error: handleValidation.error });
+    return;
+  }
+
+  if (shouldValidatePactProfile && !handle) {
+    response.status(400).json({ error: "Handle is required to enable daily pacts" });
+    return;
+  }
+
+  if (isQaLeaderboardRequest()) {
+    qaLeaderboardProfile = {
+      displayName: displayName || "QA You",
+      handle: handle || qaLeaderboardProfile.handle || "qayou",
+      optedIn: leaderboardOptedIn,
+      leaderboardOptedIn,
+      pactsOptedIn,
+      timezone,
+    };
+    response.json(qaLeaderboardProfile);
+    return;
+  }
+
+  const existingHandleOwner = handle ? getUserIdBySocialHandle(handle) : null;
+  if (existingHandleOwner && existingHandleOwner !== request.user.id) {
+    response.status(409).json({ error: "That handle is already taken" });
+    return;
+  }
+
+  saveSocialProfile(request.user.id, { displayName, handle, leaderboardOptedIn, pactsOptedIn, timezone });
+  ensureLeaderboardBaseline(request.user.id);
+  response.json(getSocialProfile(request.user.id));
+}
 
 app.get("/api/leaderboard", requireLeaderboardAccess, async (request, response, next) => {
   try {
@@ -302,14 +396,95 @@ app.get("/api/leaderboard", requireLeaderboardAccess, async (request, response, 
   }
 });
 
+app.get("/api/friend-pulse", requireFeature("friendPulse"), requireLeaderboardAccess, async (request, response, next) => {
+  try {
+    if (isQaLeaderboardRequest()) {
+      response.json(await getQaFriendPulse());
+      return;
+    }
+
+    response.json(getFriendPulse(request.user.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/friend-pulse/search", requireFeature("friendPulse"), requireLeaderboardAccess, (request, response) => {
+  const handleValidation = normalizeSocialHandle(request.query.handle || request.query.q || "");
+  if (!handleValidation.ok) {
+    response.json({ results: [] });
+    return;
+  }
+
+  if (isQaLeaderboardRequest()) {
+    response.json({ results: getQaFriendSearchResults(handleValidation.handle) });
+    return;
+  }
+
+  response.json({ results: searchFriendByHandle(request.user.id, handleValidation.handle) });
+});
+
+app.post("/api/friend-pulse/requests", requireFeature("friendPulse"), requireLeaderboardAccess, (request, response) => {
+  const body = request.body || {};
+  if (isQaLeaderboardRequest()) {
+    sendQaPactResult(response, createQaPactRequest(body.handle || ""), 201);
+    return;
+  }
+
+  const result = createFriendPactRequest(request.user.id, body.handle || "");
+  response.status(result.status).json(result.body);
+});
+
+app.post("/api/friend-pulse/requests/:id/accept", requireFeature("friendPulse"), requireLeaderboardAccess, (request, response) => {
+  if (isQaLeaderboardRequest()) {
+    sendQaPactResult(response, updateQaPactRequest(request.params.id, "active"));
+    return;
+  }
+
+  const result = updateFriendPactRequest(request.user.id, request.params.id, "active");
+  response.status(result.status).json(result.body);
+});
+
+app.post("/api/friend-pulse/requests/:id/decline", requireFeature("friendPulse"), requireLeaderboardAccess, (request, response) => {
+  if (isQaLeaderboardRequest()) {
+    sendQaPactResult(response, updateQaPactRequest(request.params.id, "declined"));
+    return;
+  }
+
+  const result = updateFriendPactRequest(request.user.id, request.params.id, "declined");
+  response.status(result.status).json(result.body);
+});
+
+app.post("/api/friend-pulse/requests/:id/retract", requireFeature("friendPulse"), requireLeaderboardAccess, (request, response) => {
+  if (isQaLeaderboardRequest()) {
+    sendQaPactResult(response, retractQaPactRequest(request.params.id));
+    return;
+  }
+
+  const result = retractFriendPactRequest(request.user.id, request.params.id);
+  response.status(result.status).json(result.body);
+});
+
+app.post("/api/friend-pulse/pacts/:id/remove", requireFeature("friendPulse"), requireLeaderboardAccess, (request, response) => {
+  if (isQaLeaderboardRequest()) {
+    sendQaPactResult(response, removeQaPact(request.params.id));
+    return;
+  }
+
+  const result = removeFriendPact(request.user.id, request.params.id);
+  response.status(result.status).json(result.body);
+});
+
 app.get("/api/notifications/config", requireAllowedUser, (request, response) => {
-  if (!IS_HOSTED) {
+  if (!FEATURES.phoneReminders || !IS_HOSTED) {
     response.json({
       available: false,
       configured: false,
       vapidPublicKey: "",
       settings: null,
-      reason: "Phone reminders are available in the hosted app.",
+      reason: FEATURES.phoneReminders
+        ? "Phone reminders are available in the hosted app."
+        : "Phone reminders are turned off.",
     });
     return;
   }
@@ -324,7 +499,7 @@ app.get("/api/notifications/config", requireAllowedUser, (request, response) => 
 });
 
 app.post("/api/notifications/subscribe", requireAllowedUser, (request, response) => {
-  if (!IS_HOSTED || !NOTIFICATIONS_CONFIGURED) {
+  if (!FEATURES.phoneReminders || !IS_HOSTED || !NOTIFICATIONS_CONFIGURED) {
     response.status(503).json({ error: "Notifications are not configured" });
     return;
   }
@@ -340,7 +515,7 @@ app.post("/api/notifications/subscribe", requireAllowedUser, (request, response)
 });
 
 app.post("/api/notifications/settings", requireAllowedUser, (request, response) => {
-  if (!IS_HOSTED || !NOTIFICATIONS_CONFIGURED) {
+  if (!FEATURES.phoneReminders || !IS_HOSTED || !NOTIFICATIONS_CONFIGURED) {
     response.status(503).json({ error: "Notifications are not configured" });
     return;
   }
@@ -362,7 +537,7 @@ app.post("/api/notifications/unsubscribe", requireAllowedUser, (request, respons
 
 app.post("/api/notifications/test", requireAllowedUser, async (request, response, next) => {
   try {
-    if (!IS_HOSTED || !NOTIFICATIONS_CONFIGURED) {
+    if (!FEATURES.phoneReminders || !IS_HOSTED || !NOTIFICATIONS_CONFIGURED) {
       response.status(503).json({ error: "Notifications are not configured" });
       return;
     }
@@ -417,6 +592,7 @@ const httpServer = app.listen(PORT, HOST, () => {
   console.log(`Storage mode: ${IS_HOSTED ? "cloud" : "local"}`);
   console.log(`Auth required: ${AUTH_REQUIRED}`);
   console.log(`Host: ${HOST}`);
+  console.log(`Feature flags: ${JSON.stringify(FEATURES)}`);
   if (IS_HOSTED) console.log(`SQLite path: ${SQLITE_PATH}`);
   else console.log(`State file: ${STATE_FILE}`);
   if (IS_HOSTED) {
@@ -426,10 +602,14 @@ const httpServer = app.listen(PORT, HOST, () => {
 });
 httpServer.ref();
 
-if (IS_HOSTED && NOTIFICATIONS_CONFIGURED) {
+if (IS_HOSTED && FEATURES.phoneReminders && NOTIFICATIONS_CONFIGURED) {
   setInterval(() => {
     sendDuePracticeReminders().catch((error) => console.warn(`Reminder check failed: ${error.message}`));
   }, NOTIFICATION_CHECK_INTERVAL_MS).unref();
+}
+
+function readFeatureFlag(name) {
+  return ["1", "true", "yes", "on"].includes(String(process.env[name] || "").trim().toLowerCase());
 }
 
 function validateConfig() {
@@ -448,9 +628,19 @@ function validateConfig() {
     throw new Error(`Hosted mode is missing required env vars: ${missing.join(", ")}`);
   }
 
-  if (NOTIFICATIONS_CONFIGURED && !isValidVapidSubject(VAPID_SUBJECT)) {
+  if (FEATURES.phoneReminders && NOTIFICATIONS_CONFIGURED && !isValidVapidSubject(VAPID_SUBJECT)) {
     throw new Error("Hosted push notifications require VAPID_SUBJECT to be a real mailto: or https:// contact value.");
   }
+}
+
+function requireFeature(feature) {
+  return (request, response, next) => {
+    if (FEATURES[feature]) {
+      next();
+      return;
+    }
+    response.status(404).json({ error: "Feature disabled" });
+  };
 }
 
 function isValidVapidSubject(value) {
@@ -622,9 +812,24 @@ function initDatabase(filePath) {
       user_id INTEGER PRIMARY KEY,
       display_name TEXT NOT NULL DEFAULT '',
       opted_in INTEGER NOT NULL DEFAULT 0,
+      handle TEXT NOT NULL DEFAULT '',
+      leaderboard_opted_in INTEGER NOT NULL DEFAULT 0,
+      pacts_opted_in INTEGER NOT NULL DEFAULT 0,
+      timezone TEXT NOT NULL DEFAULT 'America/New_York',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS friend_pacts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      requester_id INTEGER NOT NULL,
+      receiver_id INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (requester_id) REFERENCES users(id),
+      FOREIGN KEY (receiver_id) REFERENCES users(id)
     );
 
     CREATE TABLE IF NOT EXISTS leaderboard_weekly_baselines (
@@ -651,7 +856,24 @@ function initDatabase(filePath) {
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
   `);
+  ensureColumn(database, "leaderboard_profiles", "handle", "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(database, "leaderboard_profiles", "leaderboard_opted_in", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(database, "leaderboard_profiles", "pacts_opted_in", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(database, "leaderboard_profiles", "timezone", "TEXT NOT NULL DEFAULT 'America/New_York'");
+  database.exec("CREATE UNIQUE INDEX IF NOT EXISTS leaderboard_profiles_handle_unique ON leaderboard_profiles(handle) WHERE handle <> ''");
+  database.exec("CREATE INDEX IF NOT EXISTS friend_pacts_participants_idx ON friend_pacts(requester_id, receiver_id, status)");
+  database.prepare(`
+    UPDATE leaderboard_profiles
+    SET leaderboard_opted_in = opted_in
+    WHERE opted_in = 1 AND leaderboard_opted_in = 0
+  `).run();
   return database;
+}
+
+function ensureColumn(database, tableName, columnName, definition) {
+  const columns = database.prepare(`PRAGMA table_info(${tableName})`).all();
+  if (columns.some((column) => column.name === columnName)) return;
+  database.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
 }
 
 function upsertUser({ googleSub, email, name, pictureUrl, isAllowed }) {
@@ -697,24 +919,71 @@ function publicUser(user) {
   };
 }
 
-function getLeaderboardProfile(userId) {
-  const row = db.prepare("SELECT display_name, opted_in FROM leaderboard_profiles WHERE user_id = ?").get(userId);
+function getSocialProfile(userId) {
+  const row = db.prepare(`
+    SELECT display_name, opted_in, handle, leaderboard_opted_in, pacts_opted_in, timezone
+    FROM leaderboard_profiles
+    WHERE user_id = ?
+  `).get(userId);
+  const leaderboardOptedIn = Boolean(row?.leaderboard_opted_in ?? row?.opted_in);
   return {
     displayName: row?.display_name || "",
-    optedIn: Boolean(row?.opted_in),
+    handle: row?.handle || "",
+    optedIn: leaderboardOptedIn,
+    leaderboardOptedIn,
+    pactsOptedIn: Boolean(row?.pacts_opted_in),
+    timezone: row?.timezone || "America/New_York",
   };
 }
 
-function saveLeaderboardProfile(userId, displayName, optedIn) {
+function saveSocialProfile(userId, profile) {
   const now = new Date().toISOString();
   db.prepare(`
-    INSERT INTO leaderboard_profiles (user_id, display_name, opted_in, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO leaderboard_profiles (
+      user_id,
+      display_name,
+      opted_in,
+      handle,
+      leaderboard_opted_in,
+      pacts_opted_in,
+      timezone,
+      created_at,
+      updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(user_id) DO UPDATE SET
       display_name = excluded.display_name,
       opted_in = excluded.opted_in,
+      handle = excluded.handle,
+      leaderboard_opted_in = excluded.leaderboard_opted_in,
+      pacts_opted_in = excluded.pacts_opted_in,
+      timezone = excluded.timezone,
       updated_at = excluded.updated_at
-  `).run(userId, displayName, optedIn ? 1 : 0, now, now);
+  `).run(
+    userId,
+    profile.displayName,
+    profile.leaderboardOptedIn ? 1 : 0,
+    profile.handle || "",
+    profile.leaderboardOptedIn ? 1 : 0,
+    profile.pactsOptedIn ? 1 : 0,
+    profile.timezone || "America/New_York",
+    now,
+    now,
+  );
+}
+
+function getUserIdBySocialHandle(handle) {
+  const row = db.prepare("SELECT user_id FROM leaderboard_profiles WHERE handle = ?").get(handle);
+  return row ? Number(row.user_id) : null;
+}
+
+function normalizeSocialHandle(value) {
+  const handle = String(value || "").trim().replace(/^@/, "").toLowerCase();
+  if (!handle) return { ok: true, handle: "" };
+  if (!/^[a-z]{3,24}$/.test(handle)) {
+    return { ok: false, handle, error: "Handle must be 3-24 letters only" };
+  }
+  return { ok: true, handle };
 }
 
 function getLeaderboard(currentUserId) {
@@ -725,11 +994,13 @@ function getLeaderboard(currentUserId) {
     SELECT
       users.id AS user_id,
       leaderboard_profiles.display_name,
+      leaderboard_profiles.handle,
+      leaderboard_profiles.pacts_opted_in,
       tracker_state.state_json
     FROM leaderboard_profiles
     JOIN users ON users.id = leaderboard_profiles.user_id
     JOIN tracker_state ON tracker_state.user_id = users.id
-    WHERE leaderboard_profiles.opted_in = 1
+    WHERE leaderboard_profiles.leaderboard_opted_in = 1
       AND users.is_allowed = 1
   `).all();
 
@@ -741,6 +1012,7 @@ function getLeaderboard(currentUserId) {
     return {
       userId: row.user_id === currentUserId ? "me" : crypto.createHash("sha256").update(String(row.user_id)).digest("hex").slice(0, 12),
       displayName: row.display_name,
+      handle: FEATURES.friendPulse && row.pacts_opted_in ? row.handle || "" : "",
       isCurrentUser: row.user_id === currentUserId,
       weekly: stats.weekly,
       lifetime: stats.lifetime,
@@ -766,6 +1038,7 @@ async function getQaLeaderboard() {
     {
       userId: "qa-alex",
       displayName: "Alex QA",
+      handle: FEATURES.friendPulse ? "alex" : "",
       isCurrentUser: false,
       weekly: {
         practiceDays: 5,
@@ -785,6 +1058,7 @@ async function getQaLeaderboard() {
     {
       userId: "qa-maya",
       displayName: "Maya QA",
+      handle: FEATURES.friendPulse ? "maya" : "",
       isCurrentUser: false,
       weekly: {
         practiceDays: 3,
@@ -804,6 +1078,7 @@ async function getQaLeaderboard() {
     {
       userId: "qa-sam",
       displayName: "Sam QA",
+      handle: FEATURES.friendPulse ? "sam" : "",
       isCurrentUser: false,
       weekly: {
         practiceDays: 6,
@@ -826,6 +1101,7 @@ async function getQaLeaderboard() {
     rows.unshift({
       userId: "qa-current",
       displayName: qaLeaderboardProfile.displayName || "QA You",
+      handle: FEATURES.friendPulse ? qaLeaderboardProfile.handle || "qayou" : "",
       isCurrentUser: true,
       weekly: currentStats.weekly,
       lifetime: currentStats.lifetime,
@@ -833,6 +1109,343 @@ async function getQaLeaderboard() {
   }
 
   return { weekStart, weekEnd, today, rows };
+}
+
+async function getQaFriendPulse() {
+  const state = await getLocalState();
+  const today = todayInTimeZone();
+  return {
+    profile: qaLeaderboardProfile,
+    currentUser: {
+      displayName: qaLeaderboardProfile.displayName || "QA You",
+      handle: qaLeaderboardProfile.handle || "qayou",
+      completedToday: getActivitySessions(state).some((session) => isProperGrade(session.grade) && normalizeDate(session.date) === today),
+      pactsOptedIn: Boolean(qaLeaderboardProfile.pactsOptedIn),
+    },
+    incoming: qaLeaderboardProfile.pactsOptedIn ? qaFriendPulse.incoming.filter((request) => request.status === "pending") : [],
+    outgoing: qaLeaderboardProfile.pactsOptedIn ? qaFriendPulse.outgoing.filter((request) => request.status === "pending") : [],
+    pacts: qaLeaderboardProfile.pactsOptedIn ? qaFriendPulse.pacts.filter((pact) => pact.status !== "removed") : [],
+    incomingCount: qaLeaderboardProfile.pactsOptedIn
+      ? qaFriendPulse.incoming.filter((request) => request.status === "pending").length
+      : 0,
+  };
+}
+
+function getQaFriendSearchResults(handle) {
+  const users = [
+    { userId: "qa-alex", displayName: "Alex QA", handle: "alex" },
+    { userId: "qa-maya", displayName: "Maya QA", handle: "maya" },
+    { userId: "qa-riya", displayName: "Riya QA", handle: "riya" },
+    { userId: "qa-sam", displayName: "Sam QA", handle: "sam" },
+  ];
+  return users
+    .filter((user) => user.handle === handle)
+    .map((user) => {
+      const pact = qaFriendPulse.pacts.find((item) =>
+        item.handle === user.handle && !["removed", "declined"].includes(item.status),
+      );
+      const outgoing = qaFriendPulse.outgoing.find((request) =>
+        request.handle === user.handle && request.status === "pending",
+      );
+      const incoming = qaFriendPulse.incoming.find((request) =>
+        request.handle === user.handle && request.status === "pending",
+      );
+      const status = pact
+        ? pact.paused ? "paused" : "active"
+        : incoming
+          ? "incoming"
+          : outgoing
+            ? "pending"
+            : "available";
+      return { ...user, status };
+    });
+}
+
+function createQaPactRequest(target) {
+  const rawTarget = String(target || "").trim();
+  const handleValidation = normalizeSocialHandle(rawTarget);
+  if (!handleValidation.ok) return { error: "Enter an exact handle with 3-24 letters." };
+  const handle = handleValidation.handle;
+  const result = getQaFriendSearchResults(handle)[0];
+  if (!result) return { error: "User is unavailable" };
+  if (result.status && result.status !== "available") return { ok: true, status: result.status };
+  const request = {
+    id: `qa-request-${qaFriendPulse.nextRequestId++}`,
+    displayName: result.displayName,
+    handle: result.handle,
+    status: "pending",
+  };
+  qaFriendPulse.outgoing.push(request);
+  return request;
+}
+
+function updateQaPactRequest(id, status) {
+  const request = qaFriendPulse.incoming.find((item) => item.id === id && item.status === "pending");
+  if (!request) return { error: "Request not found" };
+  request.status = status;
+  if (status === "active") {
+    qaFriendPulse.pacts.push({
+      id: `qa-pact-${qaFriendPulse.nextPactId++}`,
+      displayName: request.displayName,
+      handle: request.handle,
+      completedToday: false,
+      paused: false,
+      status: "active",
+    });
+  }
+  return { ok: true };
+}
+
+function retractQaPactRequest(id) {
+  const request = qaFriendPulse.outgoing.find((item) => item.id === id && item.status === "pending");
+  if (!request) return { error: "Request not found" };
+  request.status = "removed";
+  return { ok: true, status: "removed" };
+}
+
+function removeQaPact(id) {
+  const pact = qaFriendPulse.pacts.find((item) => item.id === id);
+  if (!pact) return { error: "Pact not found" };
+  pact.status = "removed";
+  return { ok: true };
+}
+
+function sendQaPactResult(response, result, successStatus = 200) {
+  if (result?.error) {
+    response.status(404).json(result);
+    return;
+  }
+  response.status(successStatus).json(result);
+}
+
+function getFriendPulse(currentUserId) {
+  const profile = getSocialProfile(currentUserId);
+  const currentUserCompleted = userCompletedToday(currentUserId, profile.timezone);
+
+  if (!profile.pactsOptedIn) {
+    return {
+      profile,
+      currentUser: {
+        displayName: profile.displayName,
+        handle: profile.handle,
+        completedToday: currentUserCompleted,
+        pactsOptedIn: false,
+      },
+      incoming: [],
+      outgoing: [],
+      pacts: [],
+      incomingCount: 0,
+    };
+  }
+
+  const incoming = db.prepare(`
+    SELECT friend_pacts.id, leaderboard_profiles.display_name, leaderboard_profiles.handle
+    FROM friend_pacts
+    JOIN users ON users.id = friend_pacts.requester_id
+    JOIN leaderboard_profiles ON leaderboard_profiles.user_id = users.id
+    WHERE friend_pacts.receiver_id = ?
+      AND friend_pacts.status = 'pending'
+      AND users.is_allowed = 1
+      AND leaderboard_profiles.pacts_opted_in = 1
+  `).all(currentUserId).map((row) => ({
+    id: String(row.id),
+    displayName: row.display_name,
+    handle: row.handle,
+    status: "pending",
+  }));
+
+  const outgoing = db.prepare(`
+    SELECT friend_pacts.id, leaderboard_profiles.display_name, leaderboard_profiles.handle
+    FROM friend_pacts
+    JOIN users ON users.id = friend_pacts.receiver_id
+    JOIN leaderboard_profiles ON leaderboard_profiles.user_id = users.id
+    WHERE friend_pacts.requester_id = ?
+      AND friend_pacts.status = 'pending'
+      AND users.is_allowed = 1
+      AND leaderboard_profiles.pacts_opted_in = 1
+  `).all(currentUserId).map((row) => ({
+    id: String(row.id),
+    displayName: row.display_name,
+    handle: row.handle,
+    status: "pending",
+  }));
+
+  const pactRows = db.prepare(`
+    SELECT
+      friend_pacts.id,
+      other_users.id AS friend_id,
+      other_profiles.display_name,
+      other_profiles.handle,
+      other_profiles.pacts_opted_in,
+      other_profiles.timezone
+    FROM friend_pacts
+    JOIN users AS other_users ON other_users.id = CASE
+      WHEN friend_pacts.requester_id = ? THEN friend_pacts.receiver_id
+      ELSE friend_pacts.requester_id
+    END
+    JOIN leaderboard_profiles AS other_profiles ON other_profiles.user_id = other_users.id
+    WHERE (friend_pacts.requester_id = ? OR friend_pacts.receiver_id = ?)
+      AND friend_pacts.status = 'active'
+      AND other_users.is_allowed = 1
+  `).all(currentUserId, currentUserId, currentUserId);
+
+  const pacts = pactRows.map((row) => {
+    const paused = !Boolean(row.pacts_opted_in);
+    return {
+      id: String(row.id),
+      userId: publicSocialUserId(row.friend_id),
+      displayName: row.display_name,
+      handle: row.handle,
+      completedToday: paused ? false : userCompletedToday(row.friend_id, row.timezone),
+      paused,
+      status: paused ? "paused" : "active",
+    };
+  });
+
+  return {
+    profile,
+    currentUser: {
+      displayName: profile.displayName,
+      handle: profile.handle,
+      completedToday: currentUserCompleted,
+      pactsOptedIn: true,
+    },
+    incoming,
+    outgoing,
+    pacts,
+    incomingCount: incoming.length,
+  };
+}
+
+function searchFriendByHandle(currentUserId, handle) {
+  const row = db.prepare(`
+    SELECT users.id, leaderboard_profiles.display_name, leaderboard_profiles.handle
+    FROM leaderboard_profiles
+    JOIN users ON users.id = leaderboard_profiles.user_id
+    WHERE leaderboard_profiles.handle = ?
+      AND leaderboard_profiles.pacts_opted_in = 1
+      AND users.is_allowed = 1
+      AND users.id <> ?
+    LIMIT 1
+  `).get(handle, currentUserId);
+
+  if (!row) return [];
+  return [{
+    userId: publicSocialUserId(row.id),
+    displayName: row.display_name,
+    handle: row.handle,
+    status: friendRelationStatus(currentUserId, row.id),
+  }];
+}
+
+function createFriendPactRequest(currentUserId, rawHandle) {
+  const profile = getSocialProfile(currentUserId);
+  if (!profile.pactsOptedIn || !profile.handle) {
+    return { status: 400, body: { error: "Enable daily pacts and choose a handle first" } };
+  }
+
+  const handleValidation = normalizeSocialHandle(rawHandle || "");
+  if (!handleValidation.ok) {
+    return { status: 400, body: { error: "Enter an exact handle with 3-24 letters." } };
+  }
+
+  const targetUserId = getUserIdBySocialHandle(handleValidation.handle);
+  if (!targetUserId || targetUserId === currentUserId) {
+    return { status: 404, body: { error: "User is unavailable" } };
+  }
+
+  const target = getSocialProfile(targetUserId);
+  const targetUser = getUserById(targetUserId);
+  if (!targetUser?.is_allowed || !target.pactsOptedIn) {
+    return { status: 404, body: { error: "User is unavailable" } };
+  }
+
+  const existing = getPactBetweenUsers(currentUserId, targetUserId);
+  if (existing && ["pending", "active"].includes(existing.status)) {
+    return { status: 409, body: { error: "A pact already exists", status: existing.status } };
+  }
+
+  const now = new Date().toISOString();
+  if (existing) {
+    db.prepare(`
+      UPDATE friend_pacts
+      SET requester_id = ?, receiver_id = ?, status = 'pending', updated_at = ?
+      WHERE id = ?
+    `).run(currentUserId, targetUserId, now, existing.id);
+    return { status: 201, body: { ok: true, id: String(existing.id), status: "pending" } };
+  }
+
+  const result = db.prepare(`
+    INSERT INTO friend_pacts (requester_id, receiver_id, status, created_at, updated_at)
+    VALUES (?, ?, 'pending', ?, ?)
+  `).run(currentUserId, targetUserId, now, now);
+  return { status: 201, body: { ok: true, id: String(result.lastInsertRowid), status: "pending" } };
+}
+
+function updateFriendPactRequest(currentUserId, id, status) {
+  const row = db.prepare("SELECT * FROM friend_pacts WHERE id = ? AND receiver_id = ? AND status = 'pending'").get(id, currentUserId);
+  if (!row) return { status: 404, body: { error: "Request not found" } };
+  if (status === "active" && !getSocialProfile(currentUserId).pactsOptedIn) {
+    return { status: 400, body: { error: "Enable daily pacts before accepting" } };
+  }
+  if (status === "active") {
+    const requester = getUserById(row.requester_id);
+    const requesterProfile = getSocialProfile(row.requester_id);
+    if (!requester?.is_allowed || !requesterProfile.pactsOptedIn || !requesterProfile.handle) {
+      db.prepare("UPDATE friend_pacts SET status = 'removed', updated_at = ? WHERE id = ?").run(new Date().toISOString(), id);
+      return { status: 410, body: { error: "This request is no longer available" } };
+    }
+  }
+  db.prepare("UPDATE friend_pacts SET status = ?, updated_at = ? WHERE id = ?").run(status, new Date().toISOString(), id);
+  return { status: 200, body: { ok: true, status } };
+}
+
+function retractFriendPactRequest(currentUserId, id) {
+  const row = db.prepare("SELECT * FROM friend_pacts WHERE id = ? AND requester_id = ? AND status = 'pending'").get(id, currentUserId);
+  if (!row) return { status: 404, body: { error: "Request not found" } };
+  db.prepare("UPDATE friend_pacts SET status = 'removed', updated_at = ? WHERE id = ?").run(new Date().toISOString(), id);
+  return { status: 200, body: { ok: true, status: "removed" } };
+}
+
+function removeFriendPact(currentUserId, id) {
+  const row = db.prepare(`
+    SELECT * FROM friend_pacts
+    WHERE id = ?
+      AND status = 'active'
+      AND (requester_id = ? OR receiver_id = ?)
+  `).get(id, currentUserId, currentUserId);
+  if (!row) return { status: 404, body: { error: "Pact not found" } };
+  db.prepare("UPDATE friend_pacts SET status = 'removed', updated_at = ? WHERE id = ?").run(new Date().toISOString(), id);
+  return { status: 200, body: { ok: true } };
+}
+
+function getPactBetweenUsers(userA, userB) {
+  return db.prepare(`
+    SELECT *
+    FROM friend_pacts
+    WHERE (requester_id = ? AND receiver_id = ?)
+       OR (requester_id = ? AND receiver_id = ?)
+    ORDER BY updated_at DESC, id DESC
+    LIMIT 1
+  `).get(userA, userB, userB, userA);
+}
+
+function friendRelationStatus(currentUserId, targetUserId) {
+  const row = getPactBetweenUsers(currentUserId, targetUserId);
+  if (!row || ["declined", "removed"].includes(row.status)) return "available";
+  if (row.status === "active") return "active";
+  if (row.status === "pending" && row.requester_id === currentUserId) return "pending";
+  if (row.status === "pending" && row.receiver_id === currentUserId) return "incoming";
+  return row.status;
+}
+
+function publicSocialUserId(userId) {
+  return crypto.createHash("sha256").update(String(userId)).digest("hex").slice(0, 12);
+}
+
+function userCompletedToday(userId, timezone) {
+  const localDate = todayInTimeZone(normalizeNotificationTimezone(timezone));
+  return minimumPracticeComplete(userId, localDate);
 }
 
 function ensureLeaderboardBaseline(userId, state = null, weekStart = currentWeekStart(), today = todayInTimeZone()) {
@@ -1155,7 +1768,7 @@ function deletePushSubscription(userId, endpoint) {
 }
 
 async function sendDuePracticeReminders() {
-  if (!IS_HOSTED || !NOTIFICATIONS_CONFIGURED) return;
+  if (!FEATURES.phoneReminders || !IS_HOSTED || !NOTIFICATIONS_CONFIGURED) return;
 
   const rows = db.prepare(`
     SELECT push_subscriptions.*, users.email
@@ -1314,7 +1927,7 @@ function isAttempted(problem) {
 }
 
 function isMastered(problem, today) {
-  const attempts = Number(problem.completionCount || 0);
+  const attempts = countMasteryEligibleAttempts(problem);
   const threshold = masteryAttemptThreshold(problem.difficulty);
   const recent = (problem.reviewHistory || []).slice(-3);
   const hasRecentRed = recent.some((entry) => entry.grade === "red");
@@ -1329,6 +1942,16 @@ function isMastered(problem, today) {
     daysSinceFirstAttempt >= 14 &&
     Boolean(problem.complexityKnown)
   );
+}
+
+function countMasteryEligibleAttempts(problem) {
+  const history = Array.isArray(problem.reviewHistory) ? problem.reviewHistory : [];
+  if (history.length === 0) return Number(problem.completionCount || 0);
+
+  return history.filter((entry) => {
+    if (["red", "yellow", "green"].includes(entry.grade)) return true;
+    return entry.grade === "imported" && entry.source !== "leetcode-progress";
+  }).length;
 }
 
 function masteryAttemptThreshold(difficulty) {
@@ -1352,9 +1975,9 @@ function currentWeekStart() {
   return addDaysIso(today, -daysSinceMonday);
 }
 
-function todayInTimeZone() {
+function todayInTimeZone(timezone = "America/New_York") {
   const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/New_York",
+    timeZone: normalizeNotificationTimezone(timezone),
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

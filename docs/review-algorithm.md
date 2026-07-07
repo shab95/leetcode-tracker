@@ -149,6 +149,22 @@ real grade are also recorded as app sessions on the attempt date, so same-week b
 can appear in Recent Grades and leaderboard weekly activity. Imported CSV rows do not
 create sessions.
 
+LeetCode imports from the optional Chrome extension follow the same historical context
+rule. The extension prefers LeetCode's signed-in submissions API and can fall back to the
+rendered progress page. Captured Accepted, Wrong Answer, or other result rows are stored
+as `imported` history only. Accepted is not automatically `Solved cleanly`, failed
+submissions are not automatically missed solves, and imported LeetCode rows do not count
+for Minimum Practice, Friend Pulse, leaderboard weekly stats, mastery green streak, or
+Recent Grades.
+When reviewing a LeetCode import, the default starting schedule is
+`First Recall (Stage 1)`. The user may bulk-change imported rows to
+`Learning (Stage 0)` or `Pattern (Stage 2)`, or override individual rows before applying
+the import. The user may also remove individual rows from the pending import; removed rows
+are skipped and do not change state. These import choices are initial scheduling context
+only; they are not real grades and do not create green streak, mastery, session, pact, or
+leaderboard credit.
+Real scheduling confidence still comes from Today-card grades or manual graded backfills.
+
 Clean solves only prove spaced recall when they happen on or after the scheduled review
 date. A clean solve before the scheduled review date is still recorded as history, but it
 holds the current stage, keeps the existing next review date, and does not increase the
@@ -230,7 +246,8 @@ The app has several product surfaces:
 - **Library**: browsing, filtering, sorting, editing, and manual backfill.
 - **Memory**: explanatory memory-health signals for understanding backlog pressure,
   topic risk, current stages, and recent recall quality.
-- **Settings**: reminders, imports, exports, list seeding, and environment tools.
+- **Settings**: imports, exports, list seeding, environment tools, and optional
+  feature-flagged experiments such as reminders.
 
 Direct problem links, such as `Open on LeetCode`, are navigation aids only.
 Opening a problem does not change attempts, stage, review dates, mastery, or saved state.
@@ -333,11 +350,37 @@ Minimum day complete. Momentum protected.
 Comeback day logged. The loop is alive again.
 ```
 
-In hosted mode, Settings may offer an optional phone reminder for Minimum Practice.
-The reminder is explanatory and motivational only. It does not affect stage movement,
-mastery, review scheduling, leaderboard metrics, or cloud sync. If enabled, it checks the
-user's selected local reminder time and sends only when no real graded attempt has been
-recorded for that local date.
+In hosted mode, Settings may offer an optional phone reminder for Minimum Practice when
+`FEATURE_PHONE_REMINDERS=true` and server push keys are configured. The reminder is
+explanatory and motivational only. It does not affect stage movement, mastery, review
+scheduling, leaderboard metrics, or cloud sync. If enabled, it checks the user's selected
+local reminder time and sends only when no real graded attempt has been recorded for that
+local date.
+
+## Friend Pulse
+
+Hosted mode may include opt-in daily pacts when `FEATURE_FRIEND_PULSE=true`. Friend Pulse
+is social motivation only; it does not affect scheduling, stage movement, mastery,
+leaderboard calculations, reminders, or saved tracker state shape.
+
+Friend Pulse completion uses the same Minimum Practice signal: any real graded attempt on
+the user's profile-local date completes the day. Today-card grades and manual graded
+backfills count. Imported CSV history, ungraded notes, and future-dated backfills do not
+count.
+
+Privacy rules:
+
+- Users must choose a display name and letters-only `@handle` before enabling daily pacts.
+- Exact-handle search returns only users who enabled daily pacts.
+- Pact friends can see only display name, handle, and whether Minimum Practice is open or
+  complete today.
+- Problem names, grades, notes, timestamps, emails, and raw history must not be exposed in
+  Friend Pulse responses.
+- If either user disables daily pacts, active pact records remain stored but are paused in
+  the UI until both users opt back in.
+- Pending outgoing pact requests can be retracted.
+- Removing, declining, or retracting a pact does not permanently block either person. A
+  later exact handle search can start a fresh pending request.
 
 ## Mastery Rule
 
@@ -377,10 +420,13 @@ This is intentionally lightweight. A fuller interview-readiness checklist can co
 
 The daily dashboard should prioritize:
 
-1. Due Recovery Lane reviews.
+1. Due Recovery Lane reviews, only when `FEATURE_RECOVERY_LANE=true`.
 2. Other overdue reviews.
 3. Other reviews due today.
 4. One new unattempted problem from the selected study list.
+
+When Recovery Lane is disabled, old `recoveryLane` state may remain in saved data but it
+must not affect recommendation priority or the Practice UI.
 
 The default new-problem source is Blind 75, so the standard daily rhythm is:
 
@@ -404,9 +450,9 @@ rules are unchanged. The visible copy should keep the focus on one review at a t
 
 ## Recovery Lane
 
-The Practice tab may show a Recovery Lane for up to `3` manually chosen problems.
-This is a tiny active focus list for cold or important reviews the user wants to bring
-back online. It is not a separate schedule.
+When `FEATURE_RECOVERY_LANE=true`, the Practice tab may show a Recovery Lane for up to `3`
+manually chosen problems. This is a tiny active focus list for cold or important reviews
+the user wants to bring back online. It is not a separate schedule.
 
 Rules:
 

@@ -51,6 +51,7 @@
             <a href="/library" data-route="library">Library</a>
             <a href="/memory" data-route="diagnostics">Memory</a>
             <a href="/leaderboard" data-route="leaderboard" id="leaderboardNavLink" hidden>Leaderboard</a>
+            <a href="/pacts" data-route="pacts" id="pactsNavLink" hidden>Pacts <span class="nav-nudge" id="friendPulseNavBadge" hidden>0</span></a>
             <a href="/settings" data-route="data">Settings <span class="nav-nudge" id="settingsNotificationNudge" hidden>new</span></a>
           </nav>
           <button class="primary-btn" id="addProblemBtn" type="button">
@@ -296,7 +297,19 @@
           <button class="ghost-btn" id="habitActionBtn" type="button">Start with today's picks</button>
         </section>
 
-        <section class="panel recovery-panel" id="recoveryPanel" aria-label="Recovery lane">
+        <section class="panel friend-pulse-panel" id="friendPulsePanel" aria-label="Friend Pulse" hidden>
+          <div class="section-head friend-pulse-head">
+            <div>
+              <span class="habit-label">Friend Pulse</span>
+              <h2>Daily pact</h2>
+              <p id="friendPulseSummary">Friends can help make one honest rep feel easier to start.</p>
+            </div>
+            <button class="ghost-btn small-btn" id="friendPulseManageBtn" type="button">Manage pacts</button>
+          </div>
+          <div class="friend-pulse-list" id="friendPulseList"></div>
+        </section>
+
+        <section class="panel recovery-panel" id="recoveryPanel" aria-label="Recovery lane" hidden>
           <div class="section-head recovery-head">
             <div>
               <span class="habit-label">Recovery Lane</span>
@@ -502,6 +515,76 @@
         </section>
       </section>
 
+      <section class="pacts-view" id="pactsView" hidden>
+        <section class="panel leaderboard-panel pacts-panel" aria-label="Pacts">
+          <div class="section-head">
+            <div>
+              <h2>Pacts</h2>
+              <p>Find friends by exact handle and keep a daily show-up pulse together.</p>
+            </div>
+          </div>
+
+          <article class="leaderboard-profile">
+            <div>
+              <span class="data-card-label">Profile</span>
+              <h3>Pact identity</h3>
+              <p id="leaderboardProfileHelp">Daily pacts let people find your @handle and see whether you showed up today. Problem names, grades, notes, and history stay private.</p>
+            </div>
+            <div class="leaderboard-profile-controls">
+              <label class="field">
+                <span>Display name</span>
+                <input id="pactDisplayNameInput" maxlength="40" placeholder="shab" />
+              </label>
+              <label class="field">
+                <span>Handle</span>
+                <input id="socialHandleInput" maxlength="25" placeholder="@shab" autocomplete="off" />
+              </label>
+              <label class="toggle-row">
+                <input id="pactsOptInInput" type="checkbox" />
+                <span>Allow daily pacts</span>
+              </label>
+              <button class="primary-btn" id="saveLeaderboardProfileBtn" type="button">Save profile</button>
+            </div>
+          </article>
+
+          <section class="friend-pact-manager" id="friendPactManager">
+            <article class="friend-pact-card">
+              <div>
+                <span class="data-card-label">Daily pacts</span>
+                <h3>Find a friend</h3>
+                <p>Search exact handles. Pacts share only whether each person showed up today.</p>
+              </div>
+              <div class="friend-search-row">
+                <label class="field">
+                  <span>Find by @handle</span>
+                  <input id="friendSearchInput" maxlength="25" placeholder="@suraj" autocomplete="off" />
+                </label>
+                <button class="ghost-btn" id="friendSearchBtn" type="button">Search</button>
+              </div>
+              <div class="friend-search-result" id="friendSearchResult" aria-live="polite"></div>
+            </article>
+
+            <article class="friend-pact-card">
+              <div class="friend-pact-card-head">
+                <div>
+                  <span class="data-card-label">Requests</span>
+                  <h3>Incoming</h3>
+                </div>
+                <span class="friend-request-count" id="friendRequestCount">0</span>
+              </div>
+              <div class="friend-request-list" id="friendIncomingList" aria-live="polite"></div>
+            </article>
+
+            <article class="friend-pact-card">
+              <span class="data-card-label">Active pacts</span>
+              <h3>Your daily pact friends</h3>
+              <div class="friend-request-list" id="friendPactList" aria-live="polite"></div>
+              <p class="friend-pulse-muted" id="friendOutgoingSummary" aria-live="polite"></p>
+            </article>
+          </section>
+        </section>
+      </section>
+
       <section class="leaderboard-view" id="leaderboardView" hidden>
         <section class="panel leaderboard-panel" aria-label="Leaderboard">
           <div class="section-head">
@@ -511,11 +594,11 @@
             </div>
           </div>
 
-          <article class="leaderboard-profile">
+          <article class="leaderboard-profile leaderboard-opt-in-card">
             <div>
-              <span class="data-card-label">Profile</span>
+              <span class="data-card-label">Leaderboard</span>
               <h3>Public leaderboard identity</h3>
-              <p id="leaderboardProfileHelp">Choose a display name and opt in when you want to appear on the board.</p>
+              <p id="leaderboardOptInHelp">Show aggregate practice stats with your display name. Problem names, grades, notes, and history stay private.</p>
             </div>
             <div class="leaderboard-profile-controls">
               <label class="field">
@@ -524,9 +607,9 @@
               </label>
               <label class="toggle-row">
                 <input id="leaderboardOptInInput" type="checkbox" />
-                <span>Opt in to leaderboard</span>
+                <span>Show on leaderboard</span>
               </label>
-              <button class="primary-btn" id="saveLeaderboardProfileBtn" type="button">Save profile</button>
+              <button class="primary-btn" id="saveLeaderboardOnlyProfileBtn" type="button">Save leaderboard</button>
             </div>
           </article>
 
@@ -554,7 +637,7 @@
           <div class="section-head">
             <div>
               <h2>Settings</h2>
-              <p>Manage reminders, backups, imports, and tracker data.</p>
+              <p>Manage backups, imports, tracker data, and optional experiments.</p>
             </div>
           </div>
 
@@ -610,6 +693,17 @@
             </article>
 
             <article class="data-card">
+              <span class="data-card-label">Navigation</span>
+              <h3>Leaderboard tab</h3>
+              <p class="data-card-copy">Keep the social board tucked away unless you want it in your main navigation.</p>
+              <label class="toggle-row">
+                <input id="leaderboardTabToggle" type="checkbox" />
+                <span>Show Leaderboard tab</span>
+              </label>
+              <small class="theme-status" id="leaderboardTabStatus">Hidden from navigation.</small>
+            </article>
+
+            <article class="data-card">
               <span class="data-card-label">Backup</span>
               <h3>JSON backup</h3>
               <div class="data-actions">
@@ -628,6 +722,16 @@
                 <button class="ghost-btn" id="seedBlindBtn" type="button">Seed Blind 75</button>
                 <button class="ghost-btn" id="seedNeetcodeBtn" type="button">Seed NeetCode 150</button>
               </div>
+            </article>
+
+            <article class="data-card leetcode-import-card" id="leetcodeImportCard">
+              <span class="data-card-label">LeetCode Import</span>
+              <h3>Practice history</h3>
+              <p class="data-card-copy">Capture your LeetCode progress pages with the Chrome extension. Imported rows become historical context, not proof of mastery.</p>
+              <div class="data-actions">
+                <button class="ghost-btn" id="leetcodeImportReviewBtn" type="button">Review captured history</button>
+              </div>
+              <small class="leetcode-import-status" id="leetcodeImportStatus">No captured LeetCode history yet.</small>
             </article>
 
             <article class="data-card notification-card" id="notificationSettingsCard">
@@ -854,6 +958,25 @@
             <button class="ghost-btn" id="cancelBtn" type="button">Cancel</button>
             <button class="primary-btn" type="submit">Save</button>
           </div>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="leetcodeImportDialog">
+      <form method="dialog">
+        <div class="modal-head">
+          <h2>Import LeetCode History</h2>
+          <button class="icon-btn" id="closeLeetcodeImportDialogBtn" type="button" aria-label="Close">x</button>
+        </div>
+
+        <p class="modal-copy">LeetCode history is imported as context, not proof of mastery. Future honest grades inside this tracker still drive scheduling confidence, habit, pacts, and leaderboard stats.</p>
+
+        <div class="leetcode-import-summary" id="leetcodeImportSummary"></div>
+        <div class="leetcode-import-preview" id="leetcodeImportPreview"></div>
+
+        <div class="modal-actions">
+          <button class="ghost-btn" id="cancelLeetcodeImportBtn" type="button">Cancel</button>
+          <button class="primary-btn" id="applyLeetcodeImportBtn" type="button">Import history</button>
         </div>
       </form>
     </dialog>
