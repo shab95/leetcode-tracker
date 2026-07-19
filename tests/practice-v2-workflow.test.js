@@ -1,0 +1,130 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+
+const workflow = require("../practice-v2-workflow.js");
+
+function draft(overrides = {}) {
+  return {
+    shared: {
+      elapsedMinutes: "12",
+      timeTracked: true,
+      note: "Watch the invariant.",
+      complexityKnown: true,
+      ...overrides.shared,
+    },
+    independent: { friction: "none", ...overrides.independent },
+    nonIndependent: {
+      assistance: "hint",
+      blocker: "strategy",
+      ...overrides.nonIndependent,
+    },
+  };
+}
+
+test("ready-to-reflection navigation is reversible without discarding drafts", () => {
+  let runtime = workflow.createRuntime({
+    recommendation: { public: { problemId: "two-sum" } },
+    reflectionDrafts: draft(),
+  });
+
+  for (const event of ["begin", "finish", "continue"]) {
+    const result = workflow.transition(runtime, event);
+    assert.equal(result.ok, true);
+    runtime = result.runtime;
+  }
+  assert.equal(runtime.phase, "reflecting");
+
+  runtime = workflow.transition(runtime, "back").runtime;
+  assert.equal(runtime.phase, "grading");
+  runtime = workflow.transition(runtime, "back").runtime;
+  assert.equal(runtime.phase, "attempting");
+  assert.deepEqual(runtime.reflectionDrafts, draft());
+});
+
+test("invalid transitions fail without changing the current phase", () => {
+  const runtime = workflow.createRuntime();
+  const result = workflow.transition(runtime, "save");
+  assert.equal(result.ok, false);
+  assert.equal(result.runtime.phase, "ready");
+});
+
+test("reload recovery returns an interrupted save to reflection", () => {
+  const runtime = workflow.normalizeRuntime({
+    phase: "saving",
+    provisionalGrade: "yellow",
+    reflectionDrafts: draft(),
+  });
+  assert.equal(runtime.phase, "reflecting");
+  assert.equal(runtime.provisionalGrade, "yellow");
+  assert.deepEqual(runtime.reflectionDrafts, draft());
+});
+
+test("red and yellow require assistance, blocker, and stopwatch evidence", () => {
+  const missing = workflow.validateReflection({
+    grade: "yellow",
+    draft: draft({
+      shared: { elapsedMinutes: "" },
+      nonIndependent: { assistance: "", blocker: "" },
+    }),
+    lockedTimeBoxMinutes: 30,
+  });
+  assert.equal(missing.ok, false);
+  assert.ok(missing.errors.elapsedMinutes);
+  assert.ok(missing.errors.assistance);
+  assert.ok(missing.errors.blocker);
+
+  const valid = workflow.validateReflection({
+    grade: "red",
+    draft: draft({ shared: { timeTracked: false, elapsedMinutes: "" } }),
+    lockedTimeBoxMinutes: 30,
+  });
+  assert.equal(valid.ok, true);
+  assert.equal(valid.metadata.timeTracked, false);
+  assert.equal(valid.metadata.durationMinutes, null);
+});
+
+test("a failed independent attempt may record no assistance", () => {
+  const result = workflow.validateReflection({
+    grade: "red",
+    draft: draft({ nonIndependent: { assistance: "none", blocker: "getting-started" } }),
+    lockedTimeBoxMinutes: 30,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.metadata.assistance, "none");
+  assert.equal(result.metadata.blocker, "getting-started");
+});
+
+test("independent evidence normalizes assistance and blockers away", () => {
+  const result = workflow.validateReflection({
+    grade: "green",
+    draft: draft({
+      independent: { friction: "syntax-api" },
+      nonIndependent: { assistance: "solution", blocker: "strategy" },
+    }),
+    lockedTimeBoxMinutes: 20,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.metadata.assistance, "none");
+  assert.equal(result.metadata.blocker, null);
+  assert.equal(result.metadata.friction, "syntax-api");
+});
+
+test("independent grade cannot exceed the locked time box", () => {
+  const result = workflow.validateReflection({
+    grade: "green",
+    draft: draft({ shared: { elapsedMinutes: "31" } }),
+    lockedTimeBoxMinutes: 30,
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.errors.elapsedMinutes, /exceeded the 30-minute time box/i);
+});
+
+test("friction grade may exceed the locked time box", () => {
+  const result = workflow.validateReflection({
+    grade: "yellow",
+    draft: draft({ shared: { elapsedMinutes: "41" } }),
+    lockedTimeBoxMinutes: 30,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.metadata.elapsedMinutes, 41);
+});

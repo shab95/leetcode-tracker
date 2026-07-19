@@ -1,8 +1,8 @@
 # LeetCode Tracker
 
-A local-first DSA anti-forgetting tracker. The app is designed around a simple daily loop:
-do one due review, do one new problem, grade honestly, and let spaced repetition handle
-the next review date.
+A local-first DSA interview-practice tracker. Practice V2 chooses the strongest next rep for
+the user's available time, records honest evidence, and balances coverage, repair, transfer,
+and same-title recall without discarding the existing spaced-repetition history.
 
 The project intentionally stays small: static HTML/CSS/JavaScript plus a Node server.
 By default it saves tracker state to a local JSON file. It can also run in a private-beta
@@ -10,8 +10,9 @@ hosted mode with Google OAuth and per-user SQLite storage.
 
 ## What It Does
 
-- Tracks LeetCode/DSA problems, notes, review history, stages, and mastery.
-- Recommends exactly one due review and one new problem on the Practice tab.
+- Tracks LeetCode/DSA problems, notes, honest attempt evidence, and exact-title review history.
+- Recommends one adaptive next rep based on time, coverage, recent evidence, transfer gaps,
+  and same-title recall pressure when Practice V2 is enabled.
 - Lets you backfill real graded attempts from the edit modal's History tab.
 - Supports Blind 75 and NeetCode 150 as selectable study lists.
 - Uses grading buttons after an attempt:
@@ -19,14 +20,16 @@ hosted mode with Google OAuth and per-user SQLite storage.
   - `Solved with hints / slow`
   - `Solved cleanly`
 - Hides notes and solution references before grading so they do not become hints.
-- Shows Memory for backlog pressure, attention topics, stage distribution, and
-  recent grade quality.
+- Shows Memory for checked, independent, and transfer-supported skill evidence plus recent
+  outcomes and evidence gaps.
 - Provides a Settings page for CSV import, JSON backup/restore, list seeding, and optional experiments.
 - Includes QA mode with disposable fixture data.
 - Supports an optional private-beta cloud mode for invited Google accounts.
 - Keeps experimental motivation features behind flags so the default app stays focused.
 
 The review algorithm is documented in [docs/review-algorithm.md](docs/review-algorithm.md).
+The next adaptive practice flow is specified in
+[docs/practice-v2-spec.md](docs/practice-v2-spec.md).
 Product direction and upcoming UX work live in
 [docs/product-roadmap.md](docs/product-roadmap.md).
 
@@ -148,17 +151,26 @@ Open `Settings` in the top navigation for rare/admin actions:
 - `Export JSON`: downloads a full backup of the current state.
 - `Import JSON`: restores a previously exported state.
 
-Imported solved CSV rows count as prior attempts, not automatic mastery.
+Imported solved CSV rows count as prior exposure, not automatic mastery or trusted review
+evidence. Until a real grade is recorded, Library labels them `Seen, unverified` and keeps
+them out of the due-review backlog.
 LeetCode progress imports follow the same idea: Accepted submissions are not treated as
 `Solved cleanly`, failed submissions are not treated as real missed solves, and no imported
 row counts toward Minimum Practice, Friend Pulse, leaderboard weekly stats, or mastery
 green streaks.
 
-During import review, LeetCode rows default to `First Recall (Stage 1)` as a starting
-confidence level. You can change all rows to `Learning (Stage 0)` or `Pattern (Stage 2)`,
-remove rows you do not want to track, or override individual rows before applying the
-import. These choices only seed the initial review schedule; they still do not create
-clean solves or mastery credit.
+During import review, LeetCode rows can carry a provisional confidence level and you can
+remove rows you do not want to track. After import, use `Library -> Practice now` on a
+`Seen, unverified` problem to run a cold check. That honest attempt creates the trusted
+baseline: red starts at Stage 0, yellow at Stage 1, and green at Stage 2. The cold check
+also records stopwatch minutes, code result, assistance, the main blocker, and a 0-4
+recall score for later analysis. The selected grade stays provisional until you choose
+`Finish cold check`; only then are the grade, evidence, stage, and review date saved
+together. Selected and unfinished cold checks resume after navigation or reload, while
+undo returns a completed check to the unverified state.
+The Practice card shows the time box before you begin: Easy 20 minutes, Medium 30 minutes,
+and Hard 45 minutes. The timer itself is LeetCode's stopwatch; the tracker records its
+final minute value after the grade.
 
 You can also backfill individual attempts from a problem's `Edit -> History` tab. Manual
 backfill is for attempts completed outside the app and uses real grades only, so the review
@@ -245,6 +257,8 @@ FEATURE_PHONE_REMINDERS=false
 FEATURE_FRIEND_PULSE=false
 FEATURE_LEETCODE_IMPORT=false
 FEATURE_RECOVERY_LANE=false
+FEATURE_PRACTICE_V2=false
+FEATURE_PRACTICE_V2_SHADOW=false
 ```
 
 ### Experimental Feature Flags
@@ -252,19 +266,33 @@ FEATURE_RECOVERY_LANE=false
 The default hosted app keeps the main practice loop clean. These experiments are hidden
 unless explicitly enabled:
 
-- `FEATURE_PHONE_REMINDERS=true`: hosted push reminders for incomplete Minimum Practice
+- `FEATURE_PHONE_REMINDERS=true`: hosted push reminders when today's honest rep is still open
   days. Requires valid `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`.
 - `FEATURE_FRIEND_PULSE=true`: the `Pacts` tab, exact-handle search, pact requests, and
   Friend Pulse panel.
 - `FEATURE_LEETCODE_IMPORT=true`: the Settings card and review flow for importing LeetCode
   progress captured by the Chrome extension.
 - `FEATURE_RECOVERY_LANE=true`: the manual Recovery Lane focus list and its priority rule.
+- `FEATURE_PRACTICE_V2_SHADOW=true`: computes a developer comparison recommendation without
+  changing the visible pick or persisted state. QA enables this automatically.
+- `FEATURE_PRACTICE_V2=true`: enables the visible single-rep Practice V2 workflow. QA enables
+  it automatically; local production and hosted production keep V0 unless this flag is set.
+  Leave the hosted flag off until the QA acceptance flow in
+  `docs/practice-v2-spec.md` is approved for rollout.
 
 Phone reminders require VAPID keys. Generate keys with:
 
 ```bash
 npx web-push generate-vapid-keys
 ```
+
+Hosted users can optionally enable the leaderboard. Its V2 views use aggregate signals only:
+
+- `This week`: practice days, real graded reps, distinct skill areas, and independent reps.
+- `Readiness`: skill areas checked, solved independently, and supported by transfer evidence
+  during the rolling 30-day evidence window.
+- There is no composite score. Problem names, topics practiced by a person, notes, grades,
+  timing, assistance details, and raw history stay private.
 
 When Friend Pulse is enabled, hosted users can opt into social features from `Pacts`:
 

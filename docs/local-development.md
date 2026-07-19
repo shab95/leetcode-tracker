@@ -103,11 +103,30 @@ FEATURE_PHONE_REMINDERS=true
 FEATURE_FRIEND_PULSE=true
 FEATURE_LEETCODE_IMPORT=true
 FEATURE_RECOVERY_LANE=true
+FEATURE_PRACTICE_V2=true
+FEATURE_PRACTICE_V2_SHADOW=true
 ```
 
 All experiment flags default to off. The default product should stay focused on Practice, Library,
 Memory, Leaderboard, and Settings. Turn these flags on only when actively testing or
 shipping the experiment.
+
+`FEATURE_PRACTICE_V2_SHADOW` runs the deterministic `readiness-v1` recommender without changing
+the visible recommendation, grades, scheduling, or saved state. QA enables shadow mode
+automatically. Its latest comparison is available to developers at
+`window.__practiceV2Shadow` and in the browser console.
+
+QA also enables the visible `FEATURE_PRACTICE_V2` workflow automatically. The QA Practice page
+therefore shows one adaptive rep instead of the V0 review/new grid. Local production and hosted
+production keep V0 unless `FEATURE_PRACTICE_V2=true` is explicitly configured. Do not enable the
+hosted flag until the acceptance scenarios in `docs/practice-v2-spec.md` have been reviewed.
+
+The visible workflow keeps the recommendation non-spoiling before completion. It may show the
+title, difficulty, time box, and neutral evidence language, but it must not expose topic, task
+type, stage, due date, list membership, saved notes, solution details, or private ranking reasons.
+Choosing a grade is provisional. Tracker state is written only after the reflection is valid and
+the user chooses Save. Back navigation retains drafts, interrupted workflows resume after reload,
+and Undo restores the exact pre-attempt tracker snapshot.
 
 `VAPID_SUBJECT` must be a real contact value, such as `mailto:you@example.com` or the
 hosted `https://...` origin. Avoid fake `.local` values because push services may reject
@@ -219,10 +238,12 @@ import. The extension first reads LeetCode's signed-in submissions API and falls
 rendered progress pages if needed. Captured rows add or merge problem records and
 `grade: "imported"` history entries, but they do not create `sessions`, real
 red/yellow/green grades, habit completion, Friend Pulse completion, or leaderboard weekly
-activity. The import review defaults rows to `First Recall (Stage 1)` for initial
-scheduling, and the user can bulk or individually override rows to
-`Learning (Stage 0)` or `Pattern (Stage 2)` before applying. Individual rows can also be
-removed from the pending import; removed rows are skipped and do not change app state.
+activity. Imported-only records are derived as `Seen, unverified`, ignored by due-review
+selection and backlog calculations, and have no trusted schedule until the user launches
+`Practice now` from Library. The resulting cold check maps red/yellow/green to Stage 0/1/2
+and atomically stores its required benchmark metadata with the real history entry only
+when `Finish cold check` is chosen. Individual rows can also
+be removed from the pending import; removed rows are skipped and do not change app state.
 
 The replay uses the same spaced-repetition transition as Today grading. Clean attempts
 before the scheduled review date are stored with `heldForEarly: true`, keep the existing

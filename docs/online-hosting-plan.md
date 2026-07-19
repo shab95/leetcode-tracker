@@ -119,6 +119,18 @@ VAPID_PRIVATE_KEY=...
 VAPID_SUBJECT=https://your-hosted-app.example.com
 ```
 
+For a major state-schema rollout, an operator may also set a one-time snapshot name before
+deploying:
+
+```text
+SQLITE_STARTUP_SNAPSHOT=pre-release-snapshot-name
+```
+
+On startup, the server creates `<snapshot-name>.sqlite` beside the active database with
+SQLite's transactional `VACUUM INTO`, verifies it with `PRAGMA integrity_check`, and refuses
+to start if the snapshot is invalid. Reusing the same name is idempotent. Remove the variable
+after the release is verified; normal per-user rolling backups continue independently.
+
 5. Use one app replica while SQLite is the database.
 6. Deploy.
 7. Open the app, sign in with an allowlisted email, then import a JSON backup or seed built-in
@@ -126,9 +138,9 @@ VAPID_SUBJECT=https://your-hosted-app.example.com
 
 ## Phone Reminders
 
-Hosted mode can send an optional daily Minimum Practice reminder. The reminder is
-motivational only: it checks whether the user has already logged any real graded attempt
-for their local date, and sends a notification only when the day is still open.
+Hosted mode can send an optional daily practice reminder. The reminder is motivational
+only: it checks whether the user has already logged an honest rep for their local date and
+sends a notification only when today's rep is still open.
 
 To use reminders on iPhone:
 

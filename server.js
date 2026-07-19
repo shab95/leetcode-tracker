@@ -9,17 +9,15 @@ const helmet = require("helmet");
 const passport = require("passport");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const webPush = require("web-push");
+const {
+  STATE_VERSION,
+  createEmptyState,
+  migrateStateToV4,
+} = require("./state-v4.js");
+const PracticeV2Engine = require("./recommendation-engine.js");
 
-const EXPORT_VERSION = 3;
-const EMPTY_STATE = {
-  version: EXPORT_VERSION,
-  savedAt: null,
-  revision: 0,
-  importMeta: null,
-  problems: [],
-  sessions: [],
-  recoveryProblemIds: [],
-};
+const EXPORT_VERSION = STATE_VERSION;
+const EMPTY_STATE = createEmptyState();
 
 const ENV = process.env.TRACKER_ENV === "qa" ? "qa" : "prod";
 const IS_QA = ENV === "qa";
@@ -35,6 +33,7 @@ const QA_FIXTURE_FILE = path.join(DATA_DIR, "fixtures", "qa-state.json");
 const MAX_STATE_BYTES = Number(process.env.MAX_STATE_BYTES || 5_000_000);
 const BACKUP_RETENTION = Number(process.env.BACKUP_RETENTION || 20);
 const SQLITE_PATH = process.env.SQLITE_PATH || path.join(DATA_DIR, "tracker.sqlite");
+const SQLITE_STARTUP_SNAPSHOT = String(process.env.SQLITE_STARTUP_SNAPSHOT || "").trim();
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || "";
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "";
 const VAPID_SUBJECT = process.env.VAPID_SUBJECT || "";
@@ -44,11 +43,16 @@ const FEATURES = Object.freeze({
   friendPulse: readFeatureFlag("FEATURE_FRIEND_PULSE"),
   leetcodeImport: readFeatureFlag("FEATURE_LEETCODE_IMPORT"),
   phoneReminders: readFeatureFlag("FEATURE_PHONE_REMINDERS"),
+  practiceV2: IS_QA || readFeatureFlag("FEATURE_PRACTICE_V2"),
+  practiceV2Shadow: IS_QA || readFeatureFlag("FEATURE_PRACTICE_V2_SHADOW"),
   recoveryLane: readFeatureFlag("FEATURE_RECOVERY_LANE"),
 });
 const PUBLIC_FILES = new Set([
   "/index.html",
   "/app.js",
+  "/state-v4.js",
+  "/recommendation-engine.js",
+  "/practice-v2-workflow.js",
   "/manifest.webmanifest",
   "/pwa-icon.svg",
   "/service-worker.js",
@@ -769,6 +773,7 @@ function initDatabase(filePath) {
   const dir = path.dirname(dbPath);
   require("node:fs").mkdirSync(dir, { recursive: true });
   const database = new DatabaseSync(dbPath);
+  createStartupSnapshot(database, dbPath, SQLITE_STARTUP_SNAPSHOT);
   database.exec("PRAGMA journal_mode = WAL");
   database.exec("PRAGMA foreign_keys = ON");
   database.exec(`
@@ -868,6 +873,29 @@ function initDatabase(filePath) {
     WHERE opted_in = 1 AND leaderboard_opted_in = 0
   `).run();
   return database;
+}
+
+function createStartupSnapshot(database, dbPath, snapshotName) {
+  if (!snapshotName) return;
+  if (!/^[a-z0-9][a-z0-9._-]{2,79}$/i.test(snapshotName)) {
+    throw new Error("SQLITE_STARTUP_SNAPSHOT must be a safe 3-80 character filename");
+  }
+
+  const snapshotPath = path.join(path.dirname(dbPath), `${snapshotName}.sqlite`);
+  if (require("node:fs").existsSync(snapshotPath)) {
+    console.log(`SQLite startup snapshot already exists: ${snapshotPath}`);
+    return;
+  }
+
+  database.prepare("VACUUM INTO ?").run(snapshotPath);
+  const snapshot = new DatabaseSync(snapshotPath, { readOnly: true });
+  const integrity = snapshot.prepare("PRAGMA integrity_check").get()?.integrity_check;
+  snapshot.close();
+  if (integrity !== "ok") {
+    require("node:fs").rmSync(snapshotPath, { force: true });
+    throw new Error(`SQLite startup snapshot failed integrity check: ${integrity || "unknown"}`);
+  }
+  console.log(`Created SQLite startup snapshot: ${snapshotPath}`);
 }
 
 function ensureColumn(database, tableName, columnName, definition) {
@@ -1015,6 +1043,7 @@ function getLeaderboard(currentUserId) {
       handle: FEATURES.friendPulse && row.pacts_opted_in ? row.handle || "" : "",
       isCurrentUser: row.user_id === currentUserId,
       weekly: stats.weekly,
+      readiness: stats.readiness,
       lifetime: stats.lifetime,
     };
   });
@@ -1042,11 +1071,19 @@ async function getQaLeaderboard() {
       isCurrentUser: false,
       weekly: {
         practiceDays: 5,
+        repsCompleted: 24,
+        skillBreadth: 6,
+        independentReps: 15,
         reviewsCompleted: 18,
         newAttempts: 6,
         backlogReduced: 12,
         cleanRecallRate: 78,
         currentStreak: 4,
+      },
+      readiness: {
+        checkedSkills: 11,
+        independentSkills: 8,
+        transferSkills: 4,
       },
       lifetime: {
         durablePlus: 44,
@@ -1062,11 +1099,19 @@ async function getQaLeaderboard() {
       isCurrentUser: false,
       weekly: {
         practiceDays: 3,
+        repsCompleted: 20,
+        skillBreadth: 9,
+        independentReps: 9,
         reviewsCompleted: 11,
         newAttempts: 9,
         backlogReduced: 3,
         cleanRecallRate: 65,
         currentStreak: 2,
+      },
+      readiness: {
+        checkedSkills: 13,
+        independentSkills: 7,
+        transferSkills: 3,
       },
       lifetime: {
         durablePlus: 31,
@@ -1082,11 +1127,19 @@ async function getQaLeaderboard() {
       isCurrentUser: false,
       weekly: {
         practiceDays: 6,
+        repsCompleted: 9,
+        skillBreadth: 5,
+        independentReps: 7,
         reviewsCompleted: 7,
         newAttempts: 2,
         backlogReduced: 1,
         cleanRecallRate: 92,
         currentStreak: 6,
+      },
+      readiness: {
+        checkedSkills: 7,
+        independentSkills: 6,
+        transferSkills: 2,
       },
       lifetime: {
         durablePlus: 17,
@@ -1104,6 +1157,7 @@ async function getQaLeaderboard() {
       handle: FEATURES.friendPulse ? qaLeaderboardProfile.handle || "qayou" : "",
       isCurrentUser: true,
       weekly: currentStats.weekly,
+      readiness: currentStats.readiness,
       lifetime: currentStats.lifetime,
     });
   }
@@ -1480,6 +1534,10 @@ function buildLeaderboardStats(state, baselineDueCount, weekStart, weekEnd, toda
   const sessionsWithAttemptTypes = sessions.map((session) => ({
     ...session,
     effectiveAttemptType: session.attemptType || inferSessionAttemptType(session, problems),
+    effectiveTopic:
+      session.topic ||
+      problems.find((problem) => problem.id === session.problemId)?.topic ||
+      "General",
   }));
   const weekSessions = sessionsWithAttemptTypes.filter((session) => isSessionInWeek(session, weekStart, weekEnd));
   const gradedWeekSessions = weekSessions.filter((session) => isProperGrade(session.grade));
@@ -1489,15 +1547,28 @@ function buildLeaderboardStats(state, baselineDueCount, weekStart, weekEnd, toda
   const currentDueCount = countDueReviews(problems, today);
   const lifetimeAttempts = getLifetimeGradedAttempts(problems, sessionsWithAttemptTypes);
   const streakAnchor = latestActivityDate(gradedWeekSessions, today);
+  const evidence = PracticeV2Engine.deriveEvidence(state, { today });
+  const skillBreadth = new Set(
+    gradedWeekSessions.map((session) => PracticeV2Engine.skillIdFor(session.effectiveTopic)),
+  ).size;
+  const independentReps = gradedWeekSessions.filter(isIndependentLeaderboardRep).length;
 
   return {
     weekly: {
       practiceDays,
+      repsCompleted: totalGraded,
+      skillBreadth,
+      independentReps,
       reviewsCompleted: gradedWeekSessions.filter((session) => session.effectiveAttemptType === "review").length,
       newAttempts: gradedWeekSessions.filter((session) => session.effectiveAttemptType === "new").length,
       backlogReduced: Math.max(0, Number(baselineDueCount || 0) - currentDueCount),
       cleanRecallRate: totalGraded ? Math.round((cleanCount / totalGraded) * 100) : 0,
       currentStreak: currentPracticeStreak(sessionsWithAttemptTypes, streakAnchor),
+    },
+    readiness: {
+      checkedSkills: evidence.checkedSkillIds.length,
+      independentSkills: evidence.independentSkillIds.length,
+      transferSkills: evidence.transferSupportedSkillIds.length,
     },
     lifetime: {
       durablePlus: problems.filter((problem) => isAttempted(problem) && clampStage(problem.stage) >= 4).length,
@@ -1506,6 +1577,12 @@ function buildLeaderboardStats(state, baselineDueCount, weekStart, weekEnd, toda
       totalReviewCompletions: lifetimeAttempts.filter((attempt) => attempt.attemptType === "review").length,
     },
   };
+}
+
+function isIndependentLeaderboardRep(session) {
+  if (session.grade !== "green") return false;
+  const assistance = String(session.assistance || "none").toLowerCase();
+  return !["hint", "solution", "editorial", "person", "ai"].includes(assistance);
 }
 
 function latestActivityDate(sessions, fallbackDate) {
@@ -1573,6 +1650,8 @@ function getActivitySessions(state) {
         topic: problem.topic,
         grade: entry.grade,
         attemptType: inferBackfillAttemptType(problem, entry),
+        taskType: entry.taskType || "",
+        assistance: entry.assistance || "",
         stage: entry.newStage ?? problem.stage,
         status: problem.status,
         backfilled: true,
@@ -2011,15 +2090,15 @@ function normalizeDate(value) {
 
 function getHostedState(userId) {
   const row = db.prepare("SELECT version, revision, state_json, saved_at FROM tracker_state WHERE user_id = ?").get(userId);
-  if (!row) return { ...EMPTY_STATE };
+  if (!row) return createEmptyState();
 
   const state = JSON.parse(row.state_json);
-  return {
+  return migrateStateToV4({
     ...state,
     version: Number(row.version || state.version || EXPORT_VERSION),
     savedAt: row.saved_at,
     revision: Number(row.revision || 0),
-  };
+  });
 }
 
 function saveHostedState(userId, state) {
@@ -2048,7 +2127,15 @@ function saveHostedState(userId, state) {
 
   db.exec("BEGIN");
   try {
-    if (existing) createHostedBackup(userId, currentRevision, existing.state_json, "save");
+    if (existing) {
+      const existingVersion = serializedStateVersion(existing.state_json);
+      createHostedBackup(
+        userId,
+        currentRevision,
+        existing.state_json,
+        existingVersion < STATE_VERSION ? "pre-v4-migration" : "save",
+      );
+    }
     db.prepare(`
       INSERT INTO tracker_state (user_id, version, revision, state_json, saved_at)
       VALUES (?, ?, ?, ?, ?)
@@ -2092,7 +2179,7 @@ async function getLocalState() {
     const raw = await fs.readFile(STATE_FILE, "utf8");
     return normalizeStateResponse(JSON.parse(raw));
   } catch (error) {
-    if (error.code === "ENOENT") return { ...EMPTY_STATE };
+    if (error.code === "ENOENT") return createEmptyState();
     throw error;
   }
 }
@@ -2105,10 +2192,29 @@ async function saveLocalState(state) {
   });
   const serialized = serializeState(nextState);
 
+  let previousSerialized = "";
+  try {
+    previousSerialized = await fs.readFile(STATE_FILE, "utf8");
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+
   await fs.mkdir(BACKUP_DIR, { recursive: true });
+  if (previousSerialized) {
+    const previousVersion = serializedStateVersion(previousSerialized);
+    const reason = previousVersion < STATE_VERSION ? "pre-v4-migration" : "pre-save";
+    await fs.writeFile(path.join(BACKUP_DIR, `tracker-state-${reason}-${timestamp()}.json`), previousSerialized);
+  }
   await fs.writeFile(STATE_FILE, serialized);
-  await fs.writeFile(path.join(BACKUP_DIR, `tracker-state-${timestamp()}.json`), serialized);
   return { ok: true, savedAt: nextState.savedAt, revision: nextState.revision };
+}
+
+function serializedStateVersion(serialized) {
+  try {
+    return Number(JSON.parse(serialized)?.version || 0);
+  } catch {
+    return 0;
+  }
 }
 
 async function handleResetQa(response) {
@@ -2149,13 +2255,9 @@ async function loadQaFixture() {
   }
 
   return sanitizeState({
-    version: Number(state.version || EXPORT_VERSION),
+    ...state,
     savedAt: state.savedAt || new Date().toISOString(),
     revision: Number(state.revision || 0),
-    importMeta: state.importMeta || null,
-    problems: state.problems,
-    sessions: state.sessions,
-    recoveryProblemIds: Array.isArray(state.recoveryProblemIds) ? state.recoveryProblemIds : [],
   });
 }
 
@@ -2164,19 +2266,15 @@ function validateTrackerState(state) {
   if (!Array.isArray(state.problems) || !Array.isArray(state.sessions)) {
     return { ok: false, error: "Invalid tracker state" };
   }
+  const version = Number(state.version || 3);
+  if (!Number.isFinite(version) || version < 1 || version > STATE_VERSION) {
+    return { ok: false, error: `Unsupported tracker state version: ${state.version}` };
+  }
   return { ok: true };
 }
 
 function sanitizeState(state) {
-  return {
-    version: Number(state.version || EXPORT_VERSION),
-    savedAt: state.savedAt || null,
-    revision: Number(state.revision || 0),
-    importMeta: state.importMeta || null,
-    problems: state.problems,
-    sessions: state.sessions,
-    recoveryProblemIds: Array.isArray(state.recoveryProblemIds) ? state.recoveryProblemIds : [],
-  };
+  return migrateStateToV4(state);
 }
 
 function normalizeStateResponse(state) {

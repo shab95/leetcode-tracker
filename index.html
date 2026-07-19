@@ -110,6 +110,169 @@
             </details>
           </div>
 
+          <section class="practice-v2" id="practiceV2Experience" aria-label="Adaptive practice rep" hidden>
+            <ol class="practice-v2-progress" aria-label="Practice progress">
+              <li data-v2-step="ready"><span>1</span>Ready</li>
+              <li data-v2-step="attempting"><span>2</span>Attempt</li>
+              <li data-v2-step="reflecting"><span>3</span>Reflect</li>
+              <li data-v2-step="completed"><span>4</span>Complete</li>
+            </ol>
+
+            <div class="practice-v2-state" data-v2-state="ready">
+              <div class="practice-v2-kicker">Next rep</div>
+              <h3 class="practice-v2-title" id="practiceV2ReadyTitle">Finding the strongest next rep...</h3>
+              <div class="practice-v2-public-facts">
+                <span><small>Difficulty</small><strong id="practiceV2Difficulty">-</strong></span>
+                <span><small>Time box</small><strong id="practiceV2TimeBox">-</strong></span>
+              </div>
+              <p class="practice-v2-evidence" id="practiceV2Evidence"></p>
+              <p class="practice-v2-reason" id="practiceV2Reason"></p>
+              <div class="practice-v2-ready-actions">
+                <label class="practice-v2-capacity">
+                  <span>How much time do you have?</span>
+                  <select id="practiceV2Capacity">
+                    <option value="15">15 minutes</option>
+                    <option value="30">30 minutes</option>
+                    <option value="45">45 minutes</option>
+                    <option value="60">60 minutes</option>
+                  </select>
+                </label>
+                <button class="primary-btn" id="practiceV2BeginBtn" type="button">Begin rep</button>
+                <button class="ghost-btn" id="practiceV2ChangeBtn" type="button">Choose another</button>
+              </div>
+              <p class="practice-v2-capacity-hint" id="practiceV2CapacityHint" aria-live="polite">
+                Changing this recalculates your next rep and may select a different problem.
+              </p>
+            </div>
+
+            <div class="practice-v2-state" data-v2-state="attempting" hidden>
+              <div class="practice-v2-kicker">Attempt in progress</div>
+              <h3 class="practice-v2-title" id="practiceV2AttemptTitle"></h3>
+              <div class="practice-v2-time-lock"><strong id="practiceV2LockedTime">-</strong><span>minute maximum</span></div>
+              <ol class="practice-v2-instructions">
+                <li>Start LeetCode's stopwatch.</li>
+                <li>Work independently before opening hints or solutions.</li>
+                <li>Return with your final stopwatch time.</li>
+              </ol>
+              <div class="practice-v2-actions">
+                <a class="primary-btn" id="practiceV2OpenLink" href="#" target="_blank" rel="noreferrer">Open on LeetCode</a>
+                <button class="ghost-btn" id="practiceV2FinishBtn" type="button">I finished the attempt</button>
+                <button class="text-btn" id="practiceV2CancelBtn" type="button">Back to ready</button>
+              </div>
+            </div>
+
+            <div class="practice-v2-state" data-v2-state="grading" hidden>
+              <div class="practice-v2-kicker">Provisional result</div>
+              <h3 class="practice-v2-title">How did the full attempt go?</h3>
+              <p class="practice-v2-subcopy">A grade is not saved until you finish reflection.</p>
+              <div class="practice-v2-grades" role="radiogroup" aria-label="Attempt result">
+                <button type="button" data-v2-grade="red" role="radio" aria-checked="false"><strong>Could not solve</strong><span>Needed the core solution or did not reach working code</span></button>
+                <button type="button" data-v2-grade="yellow" role="radio" aria-checked="false"><strong>Solved with help or heavy friction</strong><span>Needed meaningful help, struggled substantially, or exceeded the time box</span></button>
+                <button type="button" data-v2-grade="green" role="radio" aria-checked="false"><strong>Solved independently</strong><span>Working code, important tests, and complexity explained without help</span></button>
+              </div>
+              <p class="practice-v2-grade-note">A tiny syntax correction can still be independent if it did not change your strategy or require outside help.</p>
+              <div class="practice-v2-actions">
+                <button class="primary-btn" id="practiceV2ContinueGradeBtn" type="button" disabled>Continue</button>
+                <button class="text-btn" id="practiceV2BackAttemptBtn" type="button">Back to attempt</button>
+              </div>
+            </div>
+
+            <form class="practice-v2-state" data-v2-state="reflecting" id="practiceV2ReflectionForm" hidden>
+              <div class="practice-v2-reflection-head">
+                <div><div class="practice-v2-kicker">Reflection</div><h3 class="practice-v2-title">What happened?</h3></div>
+                <span id="practiceV2SelectedGrade"></span>
+              </div>
+              <div class="practice-v2-fields">
+                <label>
+                  <span>LeetCode stopwatch minutes</span>
+                  <input id="practiceV2Elapsed" type="number" min="1" max="180" inputmode="numeric" />
+                </label>
+                <label class="practice-v2-check">
+                  <input id="practiceV2TimeUntracked" type="checkbox" />
+                  <span>I did not track it</span>
+                </label>
+                <label id="practiceV2AssistanceField">
+                  <span>Assistance used</span>
+                  <select id="practiceV2Assistance">
+                    <option value="">Choose one</option>
+                    <option value="none">None</option>
+                    <option value="hint">Hint or small nudge</option>
+                    <option value="solution">Viewed a solution</option>
+                    <option value="editorial">Read the editorial</option>
+                    <option value="ai">Asked AI</option>
+                    <option value="person">Asked another person</option>
+                  </select>
+                </label>
+                <label id="practiceV2BlockerField">
+                  <span>Main blocker</span>
+                  <select id="practiceV2Blocker">
+                    <option value="">Choose one</option>
+                    <option value="getting-started">Getting started</option>
+                    <option value="strategy">Deriving a complete strategy</option>
+                    <option value="implementation">Implementing the idea</option>
+                    <option value="syntax-api">Syntax or API recall</option>
+                    <option value="edge-cases">Edge cases</option>
+                    <option value="explanation">Complexity explanation</option>
+                    <option value="time-management">Time management</option>
+                  </select>
+                </label>
+                <label id="practiceV2FrictionField" hidden>
+                  <span>Minor friction <small>Optional</small></span>
+                  <select id="practiceV2Friction">
+                    <option value="none">None</option>
+                    <option value="implementation">Minor implementation friction</option>
+                    <option value="syntax-api">Syntax or API recall</option>
+                    <option value="edge-cases">Edge-case cleanup</option>
+                    <option value="explanation">Complexity explanation</option>
+                    <option value="time-management">Time management</option>
+                  </select>
+                </label>
+                <label class="practice-v2-note">
+                  <span>Note for future you <small>Optional</small></span>
+                  <textarea id="practiceV2Note" rows="3" placeholder="One invariant, mistake, or edge case worth remembering"></textarea>
+                </label>
+                <label class="practice-v2-check practice-v2-complexity">
+                  <input id="practiceV2Complexity" type="checkbox" />
+                  <span>I can explain time and space complexity</span>
+                </label>
+              </div>
+              <p class="practice-v2-error" id="practiceV2Error" role="alert"></p>
+              <div class="practice-v2-actions">
+                <button class="primary-btn" type="submit">Save rep</button>
+                <button class="text-btn" id="practiceV2BackGradeBtn" type="button">Change grade</button>
+              </div>
+            </form>
+
+            <div class="practice-v2-state practice-v2-complete" data-v2-state="completed" hidden>
+              <div class="practice-v2-complete-mark" aria-hidden="true"></div>
+              <div class="practice-v2-kicker">Evidence captured</div>
+              <h3 class="practice-v2-title" id="practiceV2CompleteTitle">That rep changed the plan.</h3>
+              <p class="practice-v2-subcopy" id="practiceV2CompleteSummary"></p>
+              <div class="practice-v2-reveal">
+                <div><small>Tested skill</small><strong id="practiceV2CompleteSkill"></strong></div>
+                <div><small>Plan update</small><strong id="practiceV2CompleteEvidence"></strong></div>
+                <div><small>Exact-title review</small><strong id="practiceV2CompleteReview"></strong></div>
+              </div>
+              <div class="practice-v2-actions">
+                <button class="primary-btn" id="practiceV2NextBtn" type="button">Get next rep</button>
+                <button class="ghost-btn" id="practiceV2EndBtn" type="button">End session</button>
+                <button class="text-btn" id="practiceV2UndoBtn" type="button">Undo this rep</button>
+              </div>
+            </div>
+
+            <div class="practice-v2-state practice-v2-complete" data-v2-state="session-complete" hidden>
+              <div class="practice-v2-complete-mark" aria-hidden="true"></div>
+              <div class="practice-v2-kicker">Session complete</div>
+              <h3 class="practice-v2-title">One honest rep is enough.</h3>
+              <p class="practice-v2-subcopy">The plan has new evidence and will adapt when you return.</p>
+              <div class="practice-v2-actions">
+                <button class="primary-btn" id="practiceV2RestartBtn" type="button">Do another rep</button>
+                <button class="text-btn" id="practiceV2SessionUndoBtn" type="button">Undo last rep</button>
+              </div>
+            </div>
+          </section>
+
+          <div id="practiceV0Content">
           <p class="grade-result" id="gradeResult" aria-live="polite"></p>
           <details class="grading-reference">
             <summary>How to choose a grade</summary>
@@ -136,8 +299,67 @@
             </div>
             <div class="post-grade-note-copy">
               <strong id="postGradeTitle">Leave one note for future you?</strong>
-              <p>Optional, but useful: pattern, mistake, edge case, or complexity reminder.</p>
+              <p id="postGradeHelper">Optional, but useful: pattern, mistake, edge case, or complexity reminder.</p>
             </div>
+            <fieldset class="benchmark-fields" id="postGradeBenchmarkFields" hidden>
+              <legend>Cold-check record</legend>
+              <p>Nothing is scheduled until you finish this record. You can revise the grade before saving.</p>
+              <div class="benchmark-grid">
+                <label>
+                  <span>Final grade</span>
+                  <select id="postGradeDraftGradeInput">
+                    <option value="red">Could not solve</option>
+                    <option value="yellow">Solved with hints / slow</option>
+                    <option value="green">Solved cleanly</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Stopwatch minutes</span>
+                  <input id="postGradeDurationInput" type="number" min="1" max="180" inputmode="numeric" placeholder="18" />
+                </label>
+                <label>
+                  <span>Code result</span>
+                  <select id="postGradeResultInput">
+                    <option value="accepted">Accepted</option>
+                    <option value="working">Working, not submitted</option>
+                    <option value="incomplete">Incomplete</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Assistance</span>
+                  <select id="postGradeAssistanceInput">
+                    <option value="none">None</option>
+                    <option value="hint">Hint or small nudge</option>
+                    <option value="solution">Viewed solution</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Main blocker</span>
+                  <select id="postGradeBlockerInput">
+                    <option value="">Choose one</option>
+                    <option value="none">No blocker</option>
+                    <option value="recognition">Recognizing the pattern</option>
+                    <option value="strategy">Deriving the strategy</option>
+                    <option value="implementation">Implementing the idea</option>
+                    <option value="syntax-api">Syntax or API recall</option>
+                    <option value="edge-cases">Edge cases</option>
+                    <option value="time">Time pressure</option>
+                    <option value="explanation">Explaining the solution</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Cold score</span>
+                  <select id="postGradeColdScoreInput">
+                    <option value="0">0 - no viable approach</option>
+                    <option value="1">1 - recognized part of it</option>
+                    <option value="2">2 - right idea, needed help</option>
+                    <option value="3">3 - solved with friction</option>
+                    <option value="4">4 - independent and clean</option>
+                  </select>
+                </label>
+              </div>
+              <p class="benchmark-error" id="postGradeBenchmarkError" role="alert"></p>
+            </fieldset>
             <fieldset class="post-grade-tags" id="postGradeTags">
               <legend>What made this rep hard?</legend>
               <label>
@@ -179,7 +401,6 @@
               <button class="primary-btn" id="savePostGradeNoteBtn" type="button">Save note</button>
             </div>
           </div>
-
           <div class="daily-grid">
             <article class="recommend-card primary-rep-card" id="reviewCard">
               <span class="card-label">Review</span>
@@ -270,6 +491,7 @@
               </div>
             </article>
           </div>
+          </div>
         </section>
 
         <section class="panel habit-panel" id="minimumPracticePanel" aria-label="Minimum viable practice">
@@ -331,11 +553,12 @@
             </label>
 
             <label class="field">
-              <span>Status</span>
+              <span id="statusFilterLabel">Status</span>
               <select id="statusFilter">
                 <option value="all">All statuses</option>
                 <option value="todo">Unattempted</option>
                 <option value="solving">Learning</option>
+                <option value="unverified">Seen, unverified</option>
                 <option value="review">Reviewing</option>
                 <option value="solved">Mastered</option>
               </select>
@@ -359,7 +582,7 @@
             </label>
 
             <label class="field">
-              <span>List</span>
+              <span id="listFilterLabel">List</span>
               <select id="listFilter">
                 <option value="all">All problems</option>
                 <option value="blind75">Blind 75</option>
@@ -370,8 +593,8 @@
 
             <div class="divider"></div>
 
-            <details class="stage-reference" open>
-              <summary>Review Stages</summary>
+            <details class="stage-reference" id="stageReference" open>
+              <summary id="stageReferenceSummary">Review Stages</summary>
               <ol>
                 <li><span>Learning (Stage 0)</span><strong>1 day</strong></li>
                 <li><span>First Recall (Stage 1)</span><strong>3 days</strong></li>
@@ -405,11 +628,19 @@
 
             <div class="table-scroll">
               <table>
-                <thead>
+                <thead id="practiceV2ProblemTableHead" hidden>
+                  <tr>
+                    <th data-sort-column="title"><button class="sort-header" type="button" data-table-sort="title">Problem</button></th>
+                    <th>Evidence</th>
+                    <th data-sort-column="nextReview"><button class="sort-header" type="button" data-table-sort="nextReview">Exact-title review</button></th>
+                    <th aria-label="Actions"></th>
+                  </tr>
+                </thead>
+                <thead id="legacyProblemTableHead">
                   <tr>
                     <th data-sort-column="title"><button class="sort-header" type="button" data-table-sort="title">Problem</button></th>
                     <th data-sort-column="status"><button class="sort-header" type="button" data-table-sort="status">Status</button></th>
-                    <th data-sort-column="stage"><button class="sort-header" type="button" data-table-sort="stage">Stage</button></th>
+                    <th data-sort-column="stage"><button class="sort-header" id="stageSortBtn" type="button" data-table-sort="stage">Stage</button></th>
                     <th data-sort-column="difficulty"><button class="sort-header" type="button" data-table-sort="difficulty">Difficulty</button></th>
                     <th data-sort-column="topic"><button class="sort-header" type="button" data-table-sort="topic">Topic</button></th>
                     <th data-sort-column="attempts"><button class="sort-header" type="button" data-table-sort="attempts">Attempts</button></th>
@@ -430,42 +661,38 @@
       </section>
 
       <section class="diagnostics-view" id="diagnosticsView" hidden>
-        <section class="stats-grid memory-stats" aria-label="Practice stats">
-          <article class="stat-card">
-            <span>Mastered</span>
-            <strong id="totalSolved">0</strong>
-          </article>
-          <article class="stat-card stat-card-reveal">
-            <span>Due Reviews</span>
-            <button class="stat-reveal-btn" id="dueReviewsRevealBtn" type="button" aria-expanded="false">
-              <strong id="reviewDue">Hidden</strong>
-              <small id="dueReviewsRevealCopy">All that matters is the next one. Click to reveal when you want the count.</small>
-            </button>
-          </article>
+        <section class="stats-grid memory-stats" aria-label="Readiness evidence summary">
           <article class="stat-card">
             <span>Blind 75 Attempted</span>
             <strong id="blindAttempted">0/75</strong>
-          </article>
-          <article class="stat-card">
-            <span>Blind 75 Mastered</span>
-            <strong id="blindMastered">0/75</strong>
           </article>
           <article class="stat-card">
             <span>NeetCode 150 Attempted</span>
             <strong id="neetcodeAttempted">0/150</strong>
           </article>
           <article class="stat-card">
-            <span>NeetCode 150 Mastered</span>
-            <strong id="neetcodeMastered">0/150</strong>
+            <span>Checked Recently</span>
+            <strong id="checkedSkillCount">0/0</strong>
+            <small>Skill areas measured in the last 30 days</small>
+          </article>
+          <article class="stat-card">
+            <span>Independent Recently</span>
+            <strong id="independentSkillCount">0/0</strong>
+            <small>Skill areas solved without meaningful help in the last 30 days</small>
+          </article>
+          <article class="stat-card">
+            <span>Transfer Recently</span>
+            <strong id="transferSkillCount">0/0</strong>
+            <small>Skill areas proven across distinct problems in the last 30 days</small>
           </article>
           <article class="stat-card">
             <span class="stat-label-with-info">
-              7-Day Activity
+              7-Day Reps
               <button
                 class="info-btn"
                 type="button"
-                aria-label="Problems attempted or reviewed in the last 7 days. Multiple attempts on the same problem count once."
-                title="Problems attempted or reviewed in the last 7 days. Multiple attempts on the same problem count once."
+                aria-label="Real graded attempts completed in the last 7 days."
+                title="Real graded attempts completed in the last 7 days."
               >
                 i
               </button>
@@ -478,38 +705,46 @@
           <div class="section-head">
             <div>
               <h2>Memory</h2>
-              <p>Signals for understanding backlog pressure, topic risk, and recent recall quality.</p>
+              <p>Evidence of what you can retrieve, apply independently, and transfer to a different problem.</p>
             </div>
           </div>
 
           <div class="memory-grid">
-            <article class="memory-card backlog-card">
-              <span class="memory-card-label">Backlog Pressure</span>
-              <strong id="backlogDueCount">0 due</strong>
-              <p id="backlogOldest">Nothing is overdue right now.</p>
+            <article class="memory-card evidence-gap-card">
+              <span class="memory-card-label">Evidence Gaps</span>
+              <strong id="evidenceGapCount">0 skill areas</strong>
+              <p id="evidenceGapCopy">Complete an honest graded attempt to begin measuring readiness.</p>
               <div class="metric-row">
-                <span>Extremely overdue</span>
-                <strong id="backlogExtremeCount">0</strong>
+                <span>Awaiting a fresh check</span>
+                <strong id="uncheckedSkillCount">0</strong>
+              </div>
+              <div class="metric-row">
+                <span>Checked; need independence</span>
+                <strong id="independentGapCount">0</strong>
+              </div>
+              <div class="metric-row">
+                <span>Independent; need transfer</span>
+                <strong id="transferGapCount">0</strong>
               </div>
             </article>
 
             <article class="memory-card">
               <div class="memory-card-head">
-                <span class="memory-card-label">Attention Topics</span>
+                <span class="memory-card-label">Priority Skills</span>
                 <button class="ghost-btn small-btn" id="viewAllTopicsBtn" type="button">View all</button>
               </div>
               <div class="attention-list" id="attentionTopics"></div>
             </article>
 
             <article class="memory-card">
-              <span class="memory-card-label">Current Stages</span>
-              <div class="stage-chart" id="stageChart"></div>
+              <span class="memory-card-label">Evidence Ladder</span>
+              <div class="stage-chart evidence-chart" id="evidenceChart"></div>
             </article>
 
             <article class="memory-card">
-              <span class="memory-card-label">Recent Grades</span>
+              <span class="memory-card-label">Recent Outcomes</span>
               <div class="grade-chart" id="recentGradeChart"></div>
-              <p class="memory-empty" id="recentGradeEmpty">Recent grade quality appears after you grade problems in this app.</p>
+              <p class="memory-empty" id="recentGradeEmpty">Your last 7 days of honest graded attempts will appear here.</p>
             </article>
           </div>
         </section>
@@ -590,7 +825,15 @@
           <div class="section-head">
             <div>
               <h2>Leaderboard</h2>
-              <p>Opt-in aggregate practice stats. Problem names, notes, grades, and history stay private.</p>
+              <p>Opt-in progress signals for consistency and current interview evidence. Your private practice details stay private.</p>
+            </div>
+          </div>
+
+          <div class="leaderboard-principle" aria-label="Leaderboard principle">
+            <span class="leaderboard-principle-mark" aria-hidden="true"></span>
+            <div>
+              <strong>Progress, not pressure</strong>
+              <p>The practice algorithm chooses the work. This board reflects showing up, covering skills, and building independent evidence.</p>
             </div>
           </div>
 
@@ -613,13 +856,20 @@
             </div>
           </article>
 
-          <div class="leaderboard-tabs" role="tablist" aria-label="Leaderboard views">
-            <button class="leaderboard-tab is-active" type="button" data-leaderboard-view="weekly">This Week</button>
-            <button class="leaderboard-tab" type="button" data-leaderboard-view="lifetime">Lifetime</button>
+          <div class="leaderboard-toolbar">
+            <div class="leaderboard-tabs" role="tablist" aria-label="Leaderboard views">
+              <button class="leaderboard-tab is-active" type="button" data-leaderboard-view="weekly">This week</button>
+              <button class="leaderboard-tab" type="button" data-leaderboard-view="readiness">Readiness</button>
+            </div>
+            <label class="leaderboard-sort-field">
+              <span>Rank by</span>
+              <select id="leaderboardSortSelect" aria-label="Rank leaderboard by"></select>
+            </label>
           </div>
+          <p class="leaderboard-view-note" id="leaderboardViewNote"></p>
 
           <div class="table-scroll leaderboard-table-wrap">
-            <table>
+            <table class="leaderboard-table">
               <thead id="leaderboardHead"></thead>
               <tbody id="leaderboardRows"></tbody>
             </table>
@@ -644,8 +894,8 @@
           <div class="settings-nudge" id="notificationBanner" hidden>
             <span class="nudge-dot" aria-hidden="true"></span>
             <div>
-              <strong>Enable phone reminders</strong>
-              <p>Get a gentle nudge when Minimum Practice is still open.</p>
+              <strong>Enable practice reminders</strong>
+              <p>Get a gentle nudge when today&rsquo;s honest rep is still open.</p>
             </div>
             <button class="ghost-btn" id="notificationSettingsBtn" type="button">Click here</button>
           </div>
@@ -736,8 +986,8 @@
 
             <article class="data-card notification-card" id="notificationSettingsCard">
               <span class="data-card-label">Phone Reminder</span>
-              <h3>Minimum Practice nudge</h3>
-              <p class="data-card-copy">Install the hosted tracker on your phone, then enable a daily reminder. It only sends if Minimum Practice is still open for that day.</p>
+              <h3>Daily practice nudge</h3>
+              <p class="data-card-copy">Install the hosted tracker on your phone, then enable a daily reminder. It only sends if today&rsquo;s honest rep is still open.</p>
               <div class="notification-controls" id="notificationControls" hidden>
                 <label class="notification-time">
                   <span>Reminder time</span>
@@ -809,8 +1059,8 @@
         <section class="modal-tab-panel" id="problemTabPanel" role="tabpanel" aria-labelledby="problemTabBtn" data-dialog-panel="problem">
           <section class="review-summary" id="reviewSummary" aria-label="Review summary">
             <div class="review-summary-head">
-              <span>Review Summary</span>
-              <small>Read-only</small>
+              <span id="reviewSummaryLabel">Review Summary</span>
+              <small id="reviewSummaryHint">Read-only</small>
             </div>
             <div class="summary-grid" id="reviewSummaryStats"></div>
             <div class="mastery-blockers" id="masteryBlockers"></div>
@@ -827,7 +1077,7 @@
           </label>
 
           <div class="form-grid">
-            <label class="field">
+            <label class="field" id="statusField">
               <span>Status</span>
               <select id="statusInput">
                 <option value="todo">Unattempted</option>
@@ -848,18 +1098,18 @@
           </div>
 
           <div class="form-grid">
-            <label class="field">
+            <label class="field" id="topicField">
               <span>Topic</span>
               <select id="topicInput"></select>
             </label>
 
-            <label class="field">
-              <span>Next review</span>
+            <label class="field" id="reviewField">
+              <span id="reviewInputLabel">Next review</span>
               <input id="reviewInput" type="date" />
             </label>
           </div>
 
-          <label class="field">
+          <label class="field" id="completionField">
             <span>Completion count</span>
             <input id="completionInput" type="number" min="0" step="1" value="0" />
           </label>
@@ -870,7 +1120,7 @@
               <input id="complexityInput" type="checkbox" />
               <span>
                 <strong>I can explain time and space complexity</strong>
-                <small>Required for Mastered status</small>
+                <small id="complexityHelper">Required for Mastered status</small>
               </span>
             </label>
           </div>
@@ -912,7 +1162,7 @@
 
         <section class="modal-tab-panel history-section" id="historyTabPanel" role="tabpanel" aria-labelledby="historyTabBtn" data-dialog-panel="history" hidden>
           <div class="solution-section-head">
-            <span>Review History</span>
+            <span>Practice History</span>
             <small>Newest first</small>
           </div>
 
@@ -923,7 +1173,7 @@
               <span>Backfill Attempt</span>
               <small>Outside this app</small>
             </div>
-            <p class="modal-copy" id="backfillHelp">Add a real graded attempt you completed elsewhere. Imported CSV rows stay visible above, but only real grades drive scheduling.</p>
+            <p class="modal-copy" id="backfillHelp">Add a real graded attempt you completed elsewhere. Imported rows stay visible above, but only real grades build current evidence and schedule same-title recall.</p>
 
             <div class="form-grid">
               <label class="field">
@@ -983,6 +1233,9 @@
 
     <script src="./data/blind-75.js"></script>
     <script src="./data/neetcode-150.js"></script>
+    <script src="./state-v4.js"></script>
+    <script src="./recommendation-engine.js"></script>
+    <script src="./practice-v2-workflow.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>

@@ -4,7 +4,7 @@
   "importMeta": {
     "importedAt": "2026-05-10",
     "sourceFileName": "qa-fixture.json",
-    "rowCount": 9,
+    "rowCount": 10,
     "schemaVersion": 3
   },
   "recoveryProblemIds": ["qa-valid-anagram", "qa-group-anagrams"],
@@ -292,6 +292,48 @@
       "listMemberships": [],
       "createdAt": "2026-04-20T12:00:00.000Z",
       "updatedAt": "2026-04-20T12:00:00.000Z",
+      "solvedAt": ""
+    },
+    {
+      "id": "qa-seen-unverified",
+      "title": "Longest Consecutive Sequence",
+      "titleSlug": "longest-consecutive-sequence",
+      "url": "https://leetcode.com/problems/longest-consecutive-sequence/",
+      "status": "review",
+      "difficulty": "Medium",
+      "topic": "Arrays and Hashing",
+      "confidence": 50,
+      "notes": "Imported history only; current recall has not been verified.",
+      "firstAttemptAt": "2025-12-01",
+      "reviewHistory": [
+        {
+          "id": "qa-imported-longest-consecutive",
+          "date": "2025-12-01",
+          "grade": "imported",
+          "source": "leetcode-progress",
+          "result": "Accepted",
+          "submissions": 3,
+          "previousStage": null,
+          "newStage": 1,
+          "wasOverdue": false,
+          "daysOverdue": 0,
+          "intervalDays": null,
+          "nextReview": "2025-12-04"
+        }
+      ],
+      "completionCount": 1,
+      "stage": 1,
+      "greenStreak": 0,
+      "complexityKnown": false,
+      "currentIntervalDays": 3,
+      "lastReviewedAt": "2025-12-01",
+      "lastGrade": "imported",
+      "nextReview": "2025-12-04",
+      "masteredAt": "",
+      "source": "leetcode-progress",
+      "listMemberships": ["blind75", "neetcode150"],
+      "createdAt": "2025-12-01T12:00:00.000Z",
+      "updatedAt": "2025-12-01T12:00:00.000Z",
       "solvedAt": ""
     },
     {

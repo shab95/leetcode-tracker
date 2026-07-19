@@ -1,18 +1,26 @@
 # DSA Review Algorithm
 
-This document is the product logic source of truth for the anti-forgetting tracker.
-The goal is not to mark problems complete after one solve. The goal is durable recall:
-being able to recreate the solution, complexity, and core pattern after time has passed.
+This document is the source of truth for the backward-compatible exact-title review scheduler.
+When Practice V2 is enabled, [practice-v2-spec.md](practice-v2-spec.md) is the canonical source
+for recommendations, evidence, and interview-readiness presentation. V2 preserves the scheduler
+and all existing history, but does not treat a high stage on one memorized title as proof of
+transfer to a different problem.
+
+The goal is not to mark problems complete after one solve. The goal is durable recall plus
+independent transfer: being able to recreate the solution, complexity, and underlying skill
+after time has passed and on more than one title.
 
 ## Core Concepts
 
 - **Unattempted**: The problem has not been tried in the app.
 - **Learning**: The problem has been attempted but recall is not stable yet.
+- **Seen, unverified**: Imported history proves prior exposure, but the user's current recall has not been graded honestly in the tracker.
 - **Reviewing**: The problem is in the spaced-repetition loop.
 - **Mastered**: The problem has passed the mastery rule.
 - **Maintenance**: A mastered problem can still return on a long review interval.
 
-Imported CSV problems count as prior attempts, not automatic mastery.
+Imported CSV and LeetCode-history problems count as prior exposure, not automatic mastery
+or active review evidence.
 
 ## Review Stages
 
@@ -31,6 +39,15 @@ The app should display this table somewhere visible or easy to open.
 
 ```mermaid
 flowchart TD
+  U["Import historical attempt"] --> V["Seen, unverified<br/>Excluded from due backlog"]
+  V --> W["User chooses Practice now<br/>Cold check"]
+  W --> X{"Grade current recall"}
+  X -->|Could not solve| G
+  X -->|Solved with hints / slow| X1["Set First Recall (Stage 1)<br/>Next review = 3 days"]
+  X -->|Solved cleanly| X2["Set Pattern (Stage 2)<br/>Next review = 7 days"]
+  X1 --> Q
+  X2 --> Q
+
   A["Pick today’s work"] --> B{"Any review with nextReview <= today?"}
   B -->|Yes| C["Pick most overdue/due review"]
   B -->|No| D["Pick next unattempted Blind 75"]
@@ -85,9 +102,34 @@ New Medium: about 30 minutes
 New Hard: about 45 minutes
 ```
 
-The app may remind the user to use LeetCode's built-in stopwatch while solving. The timer
-is a practice aid only; the tracker does not store elapsed time or use it directly in the
-scheduling algorithm.
+The app may remind the user to use LeetCode's built-in stopwatch while solving. Normal
+reviews do not require elapsed time. A cold check may store the stopwatch duration as
+diagnostic benchmark evidence, but duration does not directly alter scheduling.
+
+### Practice V2 workflow
+
+Practice V2 replaces the visible review/new choice with one adaptive rep. QA enables this
+surface automatically; hosted production remains on the legacy Practice surface until its
+feature flag is deliberately enabled. The deterministic recommender may choose retention,
+transfer, acquisition, or assessment work, but the pre-attempt UI does not reveal that internal
+task type.
+
+Before completion, the UI may show only the problem title, difficulty, locked time box, and
+neutral evidence language. Topic, task type, stage, due date, list membership, saved notes,
+stored solution, and private ranking rationale remain hidden so the recommendation does not hint
+at the solution pattern.
+
+The user moves through Ready, Attempting, Grading, Reflecting, Saving, and Completed states.
+Selecting a grade is provisional and does not write history, sessions, stages, or review dates.
+The reflection captures stopwatch evidence, assistance, blocker or friction, an optional note,
+and complexity readiness as applicable. A clean solve cannot be saved beyond its locked time box;
+a red or yellow result may exceed it. Red and yellow require time evidence, an assistance answer,
+and a blocker. An independent clean result normalizes assistance to none and clears blockers.
+
+Back navigation preserves the draft, reload resumes an interrupted attempt, and Undo restores
+the exact pre-attempt tracker snapshot. Only a valid Save invokes the existing grade transition
+and scheduler. Practice V2 changes task selection and evidence capture, not the stage intervals,
+early-clean rule, extremely-overdue rule, mastery rule, or historical data model.
 
 Use `Could not solve` when the user needed the solution, could not reach working code, or
 could not explain the core idea after the time box. Use `Solved with hints / slow` when
@@ -156,14 +198,52 @@ as `imported` history only. Accepted is not automatically `Solved cleanly`, fail
 submissions are not automatically missed solves, and imported LeetCode rows do not count
 for Minimum Practice, Friend Pulse, leaderboard weekly stats, mastery green streak, or
 Recent Grades.
-When reviewing a LeetCode import, the default starting schedule is
-`First Recall (Stage 1)`. The user may bulk-change imported rows to
-`Learning (Stage 0)` or `Pattern (Stage 2)`, or override individual rows before applying
-the import. The user may also remove individual rows from the pending import; removed rows
-are skipped and do not change state. These import choices are initial scheduling context
-only; they are not real grades and do not create green streak, mastery, session, pact, or
-leaderboard credit.
-Real scheduling confidence still comes from Today-card grades or manual graded backfills.
+Import review may label rows with a provisional starting stage so users can organize the
+import, and users may remove rows before applying it. Once imported, a problem with no
+real grade is displayed as `Seen, unverified`, has no trusted next-review date, and is
+excluded from due-review recommendations, backlog pressure, and stage distribution.
+Provisional import stages are not real grades and do not create green streak, mastery,
+session, pact, or leaderboard credit.
+
+### Cold checks for imported history
+
+The Library exposes `Practice now` for a `Seen, unverified` problem. This starts a cold
+check in Practice. The user attempts the problem without consulting saved notes or a
+solution, uses LeetCode's stopwatch, and gives one honest grade. The first real grade sets
+the trusted baseline directly:
+
+| Cold grade | Trusted stage | Next review |
+| --- | --- | --- |
+| Could not solve | Learning (Stage 0) | 1 day |
+| Solved with hints / slow | First Recall (Stage 1) | 3 days |
+| Solved cleanly | Pattern (Stage 2) | 7 days |
+
+Stale imported review dates do not trigger early-clean or extremely-overdue holds during
+this first calibration. After the cold check, every future grade uses the normal review
+algorithm. The cold check records duration, code result, assistance level, primary
+blocker, and a recall score from 0-4 on the history entry. These fields explain the
+benchmark; the selected grade is what determines the baseline stage.
+
+The user runs LeetCode's stopwatch during the attempt. Selecting a cold grade is
+provisional: it opens the cold-check record but does not create history, activity, stage
+movement, or a next-review date. The grade can still be revised there. The app saves the
+grade, stopwatch minutes, code result, assistance, blocker, recall score, baseline stage,
+and next review together only when the user chooses `Finish cold check`. Notes and
+learning-signal tags remain optional.
+
+The selected problem, active attempt, and unfinished cold-check form live in browser
+session storage so navigation or a reload can resume the workflow without changing
+tracker data. `Back to attempt` discards the provisional grade while keeping the problem
+selected. Undoing a completed cold check removes its real grade and schedule and returns
+the problem to the selected `Seen, unverified` state. Switching to another active problem
+requires confirmation so the neighboring Review card cannot be graded silently while a
+cold attempt is active.
+The pre-attempt card shows the applicable time box: Easy 20 minutes, Medium 30 minutes,
+or Hard 45 minutes. The tracker does not run a second timer; it asks for LeetCode's final
+stopwatch minutes after grading.
+
+A manual graded backfill on an imported-only problem may establish a backfilled baseline,
+but it is not labeled as a timed cold check and does not require stopwatch evidence.
 
 Clean solves only prove spaced recall when they happen on or after the scheduled review
 date. A clean solve before the scheduled review date is still recorded as history, but it
@@ -256,9 +336,11 @@ When a user drills into a topic from Memory, the app may navigate to Library, ap
 topic filter, and scroll to the problem table. This is a
 navigation aid only; it does not change scheduling or problem state.
 
-The edit dialog may show a read-only review summary with current stage, review timing,
-attempts, green streak, interval, and mastery blockers. This summary is derived from the
-problem state and should not persist additional fields.
+In the legacy UI, the edit dialog may show current stage, review timing, attempts, green
+streak, interval, and mastery blockers. In Practice V2 it instead shows current evidence,
+last honest check, latest result, help or friction, recorded time, and the secondary
+exact-title recall date. Both summaries are derived from existing state and persist no
+additional fields.
 
 The edit dialog can separate core problem metadata from solution reference material with
 tabs. Topic editing should use the app's known topic vocabulary so filters and Memory
@@ -424,6 +506,10 @@ The daily dashboard should prioritize:
 2. Other overdue reviews.
 3. Other reviews due today.
 4. One new unattempted problem from the selected study list.
+
+Imported-only `Seen, unverified` problems are not due reviews and do not enter this queue
+automatically. The user can deliberately launch one from Library as a cold check; while
+selected, it temporarily occupies the new/cold-check card without changing the review pick.
 
 When Recovery Lane is disabled, old `recoveryLane` state may remain in saved data but it
 must not affect recommendation priority or the Practice UI.

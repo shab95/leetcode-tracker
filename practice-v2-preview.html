@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f4f7f5" />
+    <title>Practice V2 Prototype</title>
+    <link rel="stylesheet" href="./practice-v2-preview.css" />
+  </head>
+  <body>
+    <main class="prototype-shell">
+      <header class="prototype-header">
+        <a class="prototype-brand" href="./index.html" aria-label="Return to DSA Tracker">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>
+            <strong>DSA Tracker</strong>
+            <small>Practice V2 prototype</small>
+          </span>
+        </a>
+
+        <nav class="prototype-nav" aria-label="Prototype navigation">
+          <a class="active" href="#practice">Practice</a>
+          <a href="#library">Library</a>
+          <a href="#memory">Memory</a>
+        </nav>
+
+        <div class="header-actions">
+          <div class="theme-switch" aria-label="Preview theme">
+            <button type="button" data-theme-choice="light" aria-pressed="true">Light</button>
+            <button type="button" data-theme-choice="dark" aria-pressed="false">Dark</button>
+          </div>
+          <button class="quiet-button" id="resetPreview" type="button">Reset demo</button>
+        </div>
+      </header>
+
+      <section class="session-banner" aria-label="Training plan status">
+        <div>
+          <span class="section-kicker">Rolling 8-week plan</span>
+          <strong>Today is about one useful piece of evidence.</strong>
+        </div>
+        <div class="session-meter" aria-label="Weekly practice progress: 3 of 4 days">
+          <span><b>3</b> of 4 practice days</span>
+          <div><i style="--progress: 75%"></i></div>
+        </div>
+        <p><span class="status-dot"></span> Plan recalculates after every rep</p>
+      </section>
+
+      <div class="practice-layout">
+        <aside class="practice-context" aria-label="Current training context">
+          <div class="context-heading">
+            <span class="section-kicker">Current plan</span>
+            <h1>Interview readiness</h1>
+            <p>Build independent solving evidence across the target set, not a perfect streak.</p>
+          </div>
+
+          <div class="readiness-visual" id="readinessVisual" aria-label="Baseline coverage: 6 of 15 core skill areas checked recently">
+            <div class="readiness-ring"><span><strong id="checkedCount">6/15</strong><small>checked</small></span></div>
+            <div>
+              <strong>Baseline in progress</strong>
+              <p id="checkedGap">9 core areas still need a recent check.</p>
+            </div>
+          </div>
+
+          <dl class="plan-facts">
+            <div>
+              <dt>Target</dt>
+              <dd>General SWE interviews</dd>
+            </div>
+            <div>
+              <dt>Planning window</dt>
+              <dd>Rolling 8 weeks</dd>
+            </div>
+          </dl>
+
+          <div class="privacy-rule">
+            <span aria-hidden="true">?</span>
+            <p><strong>No pattern hints before the attempt.</strong> The tested skill and detailed rationale unlock only after the rep saves.</p>
+          </div>
+        </aside>
+
+        <section class="practice-stage" id="practice" aria-labelledby="repTitle">
+          <ol class="rep-progress" aria-label="Practice progress">
+            <li data-step="ready" class="active"><span>1</span>Ready</li>
+            <li data-step="attempt"><span>2</span>Attempt</li>
+            <li data-step="reflect"><span>3</span>Reflect</li>
+            <li data-step="complete"><span>4</span>Complete</li>
+          </ol>
+
+          <div class="stage-body">
+            <section class="rep-state active" data-state="ready">
+              <div class="rep-heading">
+                <div>
+                  <span class="rep-label"><i></i>Next rep</span>
+                  <h2 id="repTitle" class="rep-problem-title">Longest Consecutive Sequence</h2>
+                  <p>Selected to measure current independent problem-solving evidence.</p>
+                </div>
+                <span class="rep-number">01</span>
+              </div>
+
+              <dl class="rep-facts">
+                <div><dt>Difficulty</dt><dd id="readyDifficulty">Medium</dd></div>
+                <div><dt>Time box</dt><dd id="readyTimeBox">30 minutes</dd></div>
+                <div><dt>Evidence</dt><dd>Current ability unverified</dd></div>
+                <div>
+                  <dt>Today</dt>
+                  <dd>
+                    <select class="capacity-select" id="sessionCapacity" aria-label="Minutes available today">
+                      <option value="15">15 minutes</option>
+                      <option value="30">30 minutes</option>
+                      <option value="45" selected>45 minutes</option>
+                      <option value="60">60 minutes</option>
+                    </select>
+                  </dd>
+                </div>
+              </dl>
+
+              <div class="selection-note">
+                <strong>Why now</strong>
+                <p>Your plan needs a fresh independent result here. The recommendation does not expose the underlying pattern.</p>
+              </div>
+
+              <div class="primary-actions">
+                <button class="primary-button" id="beginRep" type="button">Begin rep</button>
+                <button class="text-button" id="changeRep" type="button">Choose another</button>
+              </div>
+            </section>
+
+            <section class="rep-state" data-state="attempt" hidden>
+              <div class="rep-heading">
+                <div>
+                  <span class="rep-label active-label"><i></i>Rep in progress</span>
+                  <h2 class="rep-problem-title">Longest Consecutive Sequence</h2>
+                  <p>Work independently. Use the full time box only if you need it.</p>
+                </div>
+                <div class="timebox-display"><strong id="attemptTimeBox">30</strong><span>min max</span></div>
+              </div>
+
+              <div class="attempt-brief">
+                <ol>
+                  <li><span>01</span><p><strong>Start LeetCode's stopwatch.</strong> Keep notes and solutions closed.</p></li>
+                  <li><span>02</span><p><strong>Derive, code, and test.</strong> Include edge cases and complexity.</p></li>
+                  <li><span>03</span><p><strong>Return with the final time.</strong> The tracker records evidence, not perfection.</p></li>
+                </ol>
+              </div>
+
+              <div class="primary-actions split-actions">
+                <a class="primary-button" id="leetcodeLink" href="https://leetcode.com/problems/longest-consecutive-sequence/" target="_blank" rel="noreferrer">Open on LeetCode</a>
+                <button class="quiet-button" id="finishAttempt" type="button">I finished the attempt</button>
+                <button class="text-button" id="cancelAttempt" type="button">Not now</button>
+              </div>
+            </section>
+
+            <section class="rep-state" data-state="grade" hidden>
+              <div class="rep-heading compact-heading">
+                <div>
+                  <span class="rep-label"><i></i>Grade the evidence</span>
+                  <h2>How independently did you finish?</h2>
+                  <p>Choose the result that describes the full attempt, not just the final submission.</p>
+                </div>
+              </div>
+
+              <div class="grade-choices" role="radiogroup" aria-label="Attempt grade">
+                <button type="button" data-grade="red" role="radio" aria-checked="false">
+                  <span class="grade-code">01</span>
+                  <span><strong>Could not solve</strong><small>Needed the core solution or did not reach working code.</small></span>
+                  <i aria-hidden="true"></i>
+                </button>
+                <button type="button" data-grade="yellow" role="radio" aria-checked="false">
+                  <span class="grade-code">02</span>
+                  <span><strong>Solved with help or heavy friction</strong><small>Needed a hint, exceeded the time box, or struggled substantially.</small></span>
+                  <i aria-hidden="true"></i>
+                </button>
+                <button type="button" data-grade="green" role="radio" aria-checked="false">
+                  <span class="grade-code">03</span>
+                  <span><strong>Solved independently</strong><small>Working code, important tests, and complexity explained without help.</small></span>
+                  <i aria-hidden="true"></i>
+                </button>
+              </div>
+
+              <p class="grade-footnote">A small syntax correction can still be independent. Grade down when assistance changed the approach or the attempt exceeded your time box.</p>
+
+              <div class="primary-actions">
+                <button class="primary-button" id="continueGrade" type="button" disabled>Continue</button>
+                <button class="text-button" id="backToAttempt" type="button">Back to attempt</button>
+              </div>
+            </section>
+
+            <section class="rep-state" data-state="reflect" hidden>
+              <div class="rep-heading compact-heading">
+                <div>
+                  <span class="rep-label"><i></i>Capture the signal</span>
+                  <h2>What happened during the attempt?</h2>
+                  <p id="reflectionPrompt">A few honest signals turn the result into a better next recommendation.</p>
+                </div>
+                <span class="selected-grade" id="selectedGradeLabel">Solved with help</span>
+              </div>
+
+              <form id="reflectionForm">
+                <div class="reflection-grid">
+                  <label class="elapsed-field">
+                    <span>Elapsed time</span>
+                    <div class="input-with-unit"><input id="elapsedMinutes" type="number" min="1" max="180" placeholder="24" required /><small>minutes</small></div>
+                    <span class="inline-check"><input id="timeUntracked" type="checkbox" /> I didn't track it</span>
+                  </label>
+                  <label id="assistanceField">
+                    <span>Assistance</span>
+                    <select id="assistance" required>
+                      <option value="" selected disabled>Choose one</option>
+                      <option value="none">None</option>
+                      <option value="nudge">Small nudge</option>
+                      <option value="hint">Meaningful hint</option>
+                      <option value="solution">Viewed solution</option>
+                    </select>
+                  </label>
+                  <label id="blockerField">
+                    <span>Main blocker</span>
+                    <select id="blocker" required>
+                      <option value="" selected disabled>Choose the main blocker</option>
+                      <option value="recognition">Getting started</option>
+                      <option value="strategy">Deriving a complete strategy</option>
+                      <option value="implementation">Implementation</option>
+                      <option value="syntax">Syntax or API recall</option>
+                      <option value="edges">Edge cases</option>
+                      <option value="explanation">Explaining complexity</option>
+                      <option value="time">Time management</option>
+                    </select>
+                  </label>
+                  <label id="greenFrictionField" hidden>
+                    <span>Any friction? <small>Optional</small></span>
+                    <select id="greenFriction" disabled>
+                      <option value="none" selected>No meaningful friction</option>
+                      <option value="implementation">Minor implementation friction</option>
+                      <option value="syntax">Syntax or API recall</option>
+                      <option value="edges">Edge-case cleanup</option>
+                      <option value="explanation">Complexity explanation</option>
+                      <option value="time">Time management</option>
+                    </select>
+                  </label>
+                </div>
+
+                <label class="optional-note">
+                  <span>Note for future you <small>Optional</small></span>
+                  <textarea id="reflectionNote" rows="3" placeholder="One mistake, invariant, or edge case worth remembering"></textarea>
+                </label>
+
+                <div class="primary-actions">
+                  <button class="primary-button" type="submit">Save rep</button>
+                  <button class="text-button" id="backToGrade" type="button">Change grade</button>
+                </div>
+              </form>
+            </section>
+
+            <section class="rep-state completion-state" data-state="complete" hidden>
+              <div class="completion-mark" aria-hidden="true"><span></span></div>
+              <span class="section-kicker">Evidence captured</span>
+              <h2 id="completionHeadline">That rep changed the plan.</h2>
+              <p class="completion-summary" id="completionSummary">You showed partial independent recall. The next recommendation will reinforce the weak point without repeating this exact title immediately.</p>
+
+              <div class="evidence-reveal">
+                <div>
+                  <span>Tested after the attempt</span>
+                  <strong id="completionSkill"></strong>
+                  <p id="completionSkillCopy">Attempt evidence under a 30-minute constraint.</p>
+                </div>
+                <div>
+                  <span>Plan update</span>
+                  <strong id="completionPlanTitle">Transfer evidence still needed</strong>
+                  <p id="completionPlanCopy">This result is retained, but another problem will test whether the reasoning generalizes.</p>
+                </div>
+                <div>
+                  <span>Exact-title review</span>
+                  <strong id="completionReviewDate">Scheduled after this result</strong>
+                  <p>The memory date is one input to the plan, not a debt counter.</p>
+                </div>
+              </div>
+
+              <div class="primary-actions">
+                <button class="primary-button" id="continuePractice" type="button">Get next rep</button>
+                <button class="quiet-button" id="endSession" type="button">End session</button>
+                <button class="text-button" id="undoCompleted" type="button">Undo this rep</button>
+              </div>
+              <p class="completion-capacity-copy" id="completionCapacityCopy">The next recommendation will fit the time left today.</p>
+            </section>
+
+            <section class="rep-state completion-state" data-state="session-complete" hidden>
+              <div class="completion-mark session-mark" aria-hidden="true"><span></span></div>
+              <span class="section-kicker">Session complete</span>
+              <h2>You gave the plan useful evidence.</h2>
+              <p class="completion-summary">One honest rep is enough for today. Return tomorrow and the next task will reflect what you did here.</p>
+              <div class="session-recap">
+                <div><span>Reps</span><strong>1</strong></div>
+                <div><span>Practice time</span><strong id="recapMinutes">24 min</strong></div>
+                <div><span>Weekly rhythm</span><strong>4 of 4</strong></div>
+              </div>
+              <div class="primary-actions">
+                <button class="primary-button" id="restartSession" type="button">Preview another session</button>
+                <button class="text-button" id="undoFromSession" type="button">Undo last rep</button>
+              </div>
+            </section>
+          </div>
+
+          <footer class="stage-footer">
+            <p><span class="status-dot"></span><strong>No makeup debt.</strong> If you stop after this rep, tomorrow's plan simply adapts.</p>
+            <div class="footer-actions">
+              <button class="footer-undo" id="undoReceipt" type="button" hidden>Undo last saved rep</button>
+              <span>Prototype only · no tracker data is read or saved</span>
+            </div>
+          </footer>
+        </section>
+      </div>
+    </main>
+
+    <div class="prototype-toast" id="prototypeToast" role="status" aria-live="polite" hidden></div>
+    <script src="./practice-v2-preview.js"></script>
+  </body>
+</html>

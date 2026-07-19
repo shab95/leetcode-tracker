@@ -3,10 +3,15 @@ const LEGACY_STORAGE_KEYS = ["leetcode-tracker.problems.v2", "leetcode-tracker.p
 const IMPORT_META_KEY = "leetcode-tracker.import.v1";
 const SESSION_KEY = "leetcode-tracker.sessions.v1";
 const RECOVERY_LANE_KEY = "leetcode-tracker.recovery.v1";
+const COLD_WORKFLOW_SESSION_KEY = "leetcode-tracker.cold-workflow.v1";
 const NOTIFICATION_BANNER_KEY = "leetcode-tracker.notification-banner-seen.v1";
 const THEME_KEY = "leetcode-tracker.theme.v1";
 const LEADERBOARD_TAB_KEY = "leetcode-tracker.show-leaderboard-tab.v1";
-const EXPORT_VERSION = 3;
+const STATE_V4 = window.TrackerStateV4;
+const PRACTICE_V2_ENGINE = window.PracticeV2Engine;
+const PRACTICE_V2_WORKFLOW = window.PracticeV2Workflow;
+const PRACTICE_V2_EVIDENCE_WINDOW_DAYS = PRACTICE_V2_ENGINE?.EVIDENCE_WINDOW_DAYS || 30;
+const EXPORT_VERSION = STATE_V4?.STATE_VERSION || 4;
 const API_STATE_URL = "/api/state";
 const API_ENV_URL = "/api/env";
 const API_RESET_QA_URL = "/api/reset-qa";
@@ -24,6 +29,8 @@ const DEFAULT_FEATURES = {
   friendPulse: false,
   leetcodeImport: false,
   phoneReminders: false,
+  practiceV2: false,
+  practiceV2Shadow: false,
   recoveryLane: false,
 };
 
@@ -51,6 +58,11 @@ const MASTERY_ATTEMPT_THRESHOLDS = {
   Easy: 3,
   Medium: 4,
   Hard: 5,
+};
+const NEW_ATTEMPT_TIMEBOX_MINUTES = {
+  Easy: 20,
+  Medium: 30,
+  Hard: 45,
 };
 const WEEKLY_PRACTICE_TARGET = 4;
 const RECOVERY_LANE_LIMIT = 3;
@@ -80,12 +92,16 @@ const els = {
   backfillHelp: document.querySelector("#backfillHelp"),
   backfillNoteInput: document.querySelector("#backfillNoteInput"),
   blindAttempted: document.querySelector("#blindAttempted"),
-  blindMastered: document.querySelector("#blindMastered"),
+  checkedSkillCount: document.querySelector("#checkedSkillCount"),
+  independentSkillCount: document.querySelector("#independentSkillCount"),
+  transferSkillCount: document.querySelector("#transferSkillCount"),
   attentionTopics: document.querySelector("#attentionTopics"),
   attentionTopicRows: document.querySelector("#attentionTopicRows"),
-  backlogDueCount: document.querySelector("#backlogDueCount"),
-  backlogExtremeCount: document.querySelector("#backlogExtremeCount"),
-  backlogOldest: document.querySelector("#backlogOldest"),
+  evidenceGapCount: document.querySelector("#evidenceGapCount"),
+  evidenceGapCopy: document.querySelector("#evidenceGapCopy"),
+  uncheckedSkillCount: document.querySelector("#uncheckedSkillCount"),
+  independentGapCount: document.querySelector("#independentGapCount"),
+  transferGapCount: document.querySelector("#transferGapCount"),
   cancelBtn: document.querySelector("#cancelBtn"),
   cancelLeetcodeImportBtn: document.querySelector("#cancelLeetcodeImportBtn"),
   closeDialogBtn: document.querySelector("#closeDialogBtn"),
@@ -93,7 +109,9 @@ const els = {
   closeLeetcodeImportDialogBtn: document.querySelector("#closeLeetcodeImportDialogBtn"),
   clearFilterBtn: document.querySelector("#clearFilterBtn"),
   completionInput: document.querySelector("#completionInput"),
+  completionField: document.querySelector("#completionField"),
   complexityInput: document.querySelector("#complexityInput"),
+  complexityHelper: document.querySelector("#complexityHelper"),
   csvImportInput: document.querySelector("#csvImportInput"),
   dashboardQaTools: document.querySelector("#dashboardQaTools"),
   dashboardView: document.querySelector("#dashboardView"),
@@ -106,8 +124,6 @@ const els = {
   dialogTitle: document.querySelector("#dialogTitle"),
   difficultyFilter: document.querySelector("#difficultyFilter"),
   difficultyInput: document.querySelector("#difficultyInput"),
-  dueReviewsRevealBtn: document.querySelector("#dueReviewsRevealBtn"),
-  dueReviewsRevealCopy: document.querySelector("#dueReviewsRevealCopy"),
   emptyState: document.querySelector("#emptyState"),
   enableNotificationsBtn: document.querySelector("#enableNotificationsBtn"),
   exportBtn: document.querySelector("#exportBtn"),
@@ -125,9 +141,11 @@ const els = {
   leaderboardOptInHelp: document.querySelector("#leaderboardOptInHelp"),
   leaderboardProfileHelp: document.querySelector("#leaderboardProfileHelp"),
   leaderboardRows: document.querySelector("#leaderboardRows"),
+  leaderboardSortSelect: document.querySelector("#leaderboardSortSelect"),
   leaderboardTabStatus: document.querySelector("#leaderboardTabStatus"),
   leaderboardTabToggle: document.querySelector("#leaderboardTabToggle"),
   leaderboardView: document.querySelector("#leaderboardView"),
+  leaderboardViewNote: document.querySelector("#leaderboardViewNote"),
   leetcodeImportDialog: document.querySelector("#leetcodeImportDialog"),
   leetcodeImportCard: document.querySelector("#leetcodeImportCard"),
   leetcodeImportPreview: document.querySelector("#leetcodeImportPreview"),
@@ -158,7 +176,6 @@ const els = {
   newMeta: document.querySelector("#newMeta"),
   newAttemptState: document.querySelector("#newAttemptState"),
   neetcodeAttempted: document.querySelector("#neetcodeAttempted"),
-  neetcodeMastered: document.querySelector("#neetcodeMastered"),
   newSourceSelect: document.querySelector("#newSourceSelect"),
   newOpenLink: document.querySelector("#newOpenLink"),
   newStartAttemptBtn: document.querySelector("#newStartAttemptBtn"),
@@ -178,9 +195,60 @@ const els = {
   postGradeComplexityInput: document.querySelector("#postGradeComplexityInput"),
   postGradeBadge: document.querySelector("#postGradeBadge"),
   postGradeFeedback: document.querySelector("#postGradeFeedback"),
+  postGradeHelper: document.querySelector("#postGradeHelper"),
   postGradeNotesInput: document.querySelector("#postGradeNotesInput"),
   postGradeTags: document.querySelector("#postGradeTags"),
   postGradeTitle: document.querySelector("#postGradeTitle"),
+  postGradeBenchmarkFields: document.querySelector("#postGradeBenchmarkFields"),
+  postGradeDraftGradeInput: document.querySelector("#postGradeDraftGradeInput"),
+  postGradeDurationInput: document.querySelector("#postGradeDurationInput"),
+  postGradeResultInput: document.querySelector("#postGradeResultInput"),
+  postGradeAssistanceInput: document.querySelector("#postGradeAssistanceInput"),
+  postGradeBlockerInput: document.querySelector("#postGradeBlockerInput"),
+  postGradeColdScoreInput: document.querySelector("#postGradeColdScoreInput"),
+  postGradeBenchmarkError: document.querySelector("#postGradeBenchmarkError"),
+  practiceV0Content: document.querySelector("#practiceV0Content"),
+  practiceV2Experience: document.querySelector("#practiceV2Experience"),
+  practiceV2ReadyTitle: document.querySelector("#practiceV2ReadyTitle"),
+  practiceV2Difficulty: document.querySelector("#practiceV2Difficulty"),
+  practiceV2TimeBox: document.querySelector("#practiceV2TimeBox"),
+  practiceV2Evidence: document.querySelector("#practiceV2Evidence"),
+  practiceV2Reason: document.querySelector("#practiceV2Reason"),
+  practiceV2Capacity: document.querySelector("#practiceV2Capacity"),
+  practiceV2CapacityHint: document.querySelector("#practiceV2CapacityHint"),
+  practiceV2BeginBtn: document.querySelector("#practiceV2BeginBtn"),
+  practiceV2ChangeBtn: document.querySelector("#practiceV2ChangeBtn"),
+  practiceV2AttemptTitle: document.querySelector("#practiceV2AttemptTitle"),
+  practiceV2LockedTime: document.querySelector("#practiceV2LockedTime"),
+  practiceV2OpenLink: document.querySelector("#practiceV2OpenLink"),
+  practiceV2FinishBtn: document.querySelector("#practiceV2FinishBtn"),
+  practiceV2CancelBtn: document.querySelector("#practiceV2CancelBtn"),
+  practiceV2ContinueGradeBtn: document.querySelector("#practiceV2ContinueGradeBtn"),
+  practiceV2BackAttemptBtn: document.querySelector("#practiceV2BackAttemptBtn"),
+  practiceV2ReflectionForm: document.querySelector("#practiceV2ReflectionForm"),
+  practiceV2SelectedGrade: document.querySelector("#practiceV2SelectedGrade"),
+  practiceV2Elapsed: document.querySelector("#practiceV2Elapsed"),
+  practiceV2TimeUntracked: document.querySelector("#practiceV2TimeUntracked"),
+  practiceV2AssistanceField: document.querySelector("#practiceV2AssistanceField"),
+  practiceV2Assistance: document.querySelector("#practiceV2Assistance"),
+  practiceV2BlockerField: document.querySelector("#practiceV2BlockerField"),
+  practiceV2Blocker: document.querySelector("#practiceV2Blocker"),
+  practiceV2FrictionField: document.querySelector("#practiceV2FrictionField"),
+  practiceV2Friction: document.querySelector("#practiceV2Friction"),
+  practiceV2Note: document.querySelector("#practiceV2Note"),
+  practiceV2Complexity: document.querySelector("#practiceV2Complexity"),
+  practiceV2Error: document.querySelector("#practiceV2Error"),
+  practiceV2BackGradeBtn: document.querySelector("#practiceV2BackGradeBtn"),
+  practiceV2CompleteTitle: document.querySelector("#practiceV2CompleteTitle"),
+  practiceV2CompleteSummary: document.querySelector("#practiceV2CompleteSummary"),
+  practiceV2CompleteSkill: document.querySelector("#practiceV2CompleteSkill"),
+  practiceV2CompleteEvidence: document.querySelector("#practiceV2CompleteEvidence"),
+  practiceV2CompleteReview: document.querySelector("#practiceV2CompleteReview"),
+  practiceV2NextBtn: document.querySelector("#practiceV2NextBtn"),
+  practiceV2EndBtn: document.querySelector("#practiceV2EndBtn"),
+  practiceV2UndoBtn: document.querySelector("#practiceV2UndoBtn"),
+  practiceV2RestartBtn: document.querySelector("#practiceV2RestartBtn"),
+  practiceV2SessionUndoBtn: document.querySelector("#practiceV2SessionUndoBtn"),
   problemDialog: document.querySelector("#problemDialog"),
   problemForm: document.querySelector("#problemForm"),
   problemId: document.querySelector("#problemId"),
@@ -195,14 +263,18 @@ const els = {
   recoverySummary: document.querySelector("#recoverySummary"),
   reviewAttemptState: document.querySelector("#reviewAttemptState"),
   reviewCard: document.querySelector("#reviewCard"),
-  reviewDue: document.querySelector("#reviewDue"),
   reviewInput: document.querySelector("#reviewInput"),
+  reviewField: document.querySelector("#reviewField"),
+  reviewInputLabel: document.querySelector("#reviewInputLabel"),
   reviewMeta: document.querySelector("#reviewMeta"),
   reviewOpenLink: document.querySelector("#reviewOpenLink"),
   reviewReason: document.querySelector("#reviewReason"),
   reviewRecoveryBtn: document.querySelector("#reviewRecoveryBtn"),
   reviewStartAttemptBtn: document.querySelector("#reviewStartAttemptBtn"),
   reviewSummaryStats: document.querySelector("#reviewSummaryStats"),
+  reviewSummary: document.querySelector("#reviewSummary"),
+  reviewSummaryHint: document.querySelector("#reviewSummaryHint"),
+  reviewSummaryLabel: document.querySelector("#reviewSummaryLabel"),
   reviewTitle: document.querySelector("#reviewTitle"),
   recentGradeChart: document.querySelector("#recentGradeChart"),
   recentGradeEmpty: document.querySelector("#recentGradeEmpty"),
@@ -232,15 +304,19 @@ const els = {
   skipReviewBtn: document.querySelector("#skipReviewBtn"),
   socialHandleInput: document.querySelector("#socialHandleInput"),
   sortSelect: document.querySelector("#sortSelect"),
-  stageChart: document.querySelector("#stageChart"),
+  stageReference: document.querySelector("#stageReference"),
+  stageReferenceSummary: document.querySelector("#stageReferenceSummary"),
+  stageSortBtn: document.querySelector("#stageSortBtn"),
+  evidenceChart: document.querySelector("#evidenceChart"),
   statusFilter: document.querySelector("#statusFilter"),
+  statusField: document.querySelector("#statusField"),
+  statusFilterLabel: document.querySelector("#statusFilterLabel"),
   statusInput: document.querySelector("#statusInput"),
   titleInput: document.querySelector("#titleInput"),
   todayPanel: document.querySelector("#todayPanel"),
   todaySummary: document.querySelector("#todaySummary"),
   topicFilter: document.querySelector("#topicFilter"),
   topicInput: document.querySelector("#topicInput"),
-  totalSolved: document.querySelector("#totalSolved"),
   timeComplexityInput: document.querySelector("#timeComplexityInput"),
   testNotificationBtn: document.querySelector("#testNotificationBtn"),
   themeStatus: document.querySelector("#themeStatus"),
@@ -250,6 +326,9 @@ const els = {
   viewAllTopicsBtn: document.querySelector("#viewAllTopicsBtn"),
   weeklySolved: document.querySelector("#weeklySolved"),
   spaceComplexityInput: document.querySelector("#spaceComplexityInput"),
+  listFilterLabel: document.querySelector("#listFilterLabel"),
+  legacyProblemTableHead: document.querySelector("#legacyProblemTableHead"),
+  practiceV2ProblemTableHead: document.querySelector("#practiceV2ProblemTableHead"),
 };
 const routeLinks = document.querySelectorAll("[data-route]");
 const dialogTabButtons = document.querySelectorAll("[data-dialog-tab]");
@@ -262,6 +341,10 @@ let problems = [];
 let importMeta = null;
 let sessions = [];
 let recoveryProblemIds = [];
+let algorithmVersion = STATE_V4?.ALGORITHM_VERSION || "readiness-v1";
+let trainingProfile = cloneState(STATE_V4?.DEFAULT_TRAINING_PROFILE || {});
+let practicePlan = cloneState(STATE_V4?.DEFAULT_PRACTICE_PLAN || {});
+let trackerStateExtras = {};
 let dailyPicks = { review: null, newProblem: null };
 let skippedDailyPicks = { review: new Set(), new: new Set() };
 let lastServerSavedAt = "";
@@ -272,9 +355,14 @@ let isHostedAllowed = true;
 let diagnosticsTopicFilter = "";
 let pendingNoteProblemId = "";
 let pendingNoteHistoryEntryId = "";
+let pendingAttemptContext = "";
+let coldPracticeProblemId = "";
+let activeAttempt = null;
+let coldGradeDraft = null;
 let lastGradeUndo = null;
+let practiceV2Runtime = PRACTICE_V2_WORKFLOW?.createRuntime() || null;
+let currentNewSourceId = els.newSourceSelect.value || "blind75";
 let tableSort = { column: "nextReview", direction: "asc" };
-let dueReviewsVisible = false;
 let leaderboardProfile = {
   displayName: "",
   handle: "",
@@ -300,7 +388,7 @@ let pendingLeetcodeImportStages = {};
 let pendingLeetcodeImportExcluded = new Set();
 let leaderboardSort = {
   weekly: { column: "practiceDays", direction: "desc" },
-  lifetime: { column: "mastered", direction: "desc" },
+  readiness: { column: "independentSkills", direction: "desc" },
 };
 let notificationConfig = { available: false, configured: false, vapidPublicKey: "", settings: null, reason: "" };
 let currentPushSubscription = null;
@@ -320,7 +408,6 @@ els.closeDialogBtn.addEventListener("click", () => els.problemDialog.close());
 els.csvImportInput.addEventListener("change", importCsv);
 els.deleteBtn.addEventListener("click", deleteCurrentProblem);
 els.disableNotificationsBtn?.addEventListener("click", disableNotifications);
-els.dueReviewsRevealBtn?.addEventListener("click", toggleDueReviewsVisibility);
 els.enableNotificationsBtn?.addEventListener("click", enableNotifications);
 els.exportBtn.addEventListener("click", exportJson);
 els.historyList.addEventListener("click", (event) => {
@@ -341,6 +428,13 @@ els.leaderboardDisplayNameInput?.addEventListener("input", () => {
   markLeaderboardProfileDirty();
 });
 els.leaderboardOptInInput?.addEventListener("input", markLeaderboardProfileDirty);
+els.leaderboardSortSelect?.addEventListener("change", () => {
+  leaderboardSort[leaderboardViewMode] = {
+    column: els.leaderboardSortSelect.value,
+    direction: "desc",
+  };
+  renderLeaderboard();
+});
 els.leetcodeImportReviewBtn?.addEventListener("click", openLeetcodeImportReview);
 els.pactDisplayNameInput?.addEventListener("input", () => {
   if (els.leaderboardDisplayNameInput) els.leaderboardDisplayNameInput.value = els.pactDisplayNameInput.value;
@@ -369,9 +463,34 @@ els.friendSearchResult?.addEventListener("click", handleFriendPulseAction);
 els.logoutBtn?.addEventListener("click", logout);
 els.logoutDeniedBtn?.addEventListener("click", logout);
 els.newSourceSelect.addEventListener("input", () => {
+  const nextSourceId = getSelectedStudyListId();
+  if (activeAttempt?.type === "new") {
+    const activeProblem = dailyPicks.newProblem;
+    const shouldSwitch = !activeProblem || window.confirm(
+      `You started ${activeProblem.title}. Change the new-problem source and leave that attempt?`,
+    );
+    if (!shouldSwitch) {
+      els.newSourceSelect.value = currentNewSourceId;
+      return;
+    }
+    activeAttempt = null;
+    persistColdWorkflowSession();
+  }
+  currentNewSourceId = nextSourceId;
   skippedDailyPicks.new = new Set();
   renderDailyPicks();
 });
+[
+  els.postGradeDraftGradeInput,
+  els.postGradeDurationInput,
+  els.postGradeResultInput,
+  els.postGradeAssistanceInput,
+  els.postGradeBlockerInput,
+  els.postGradeColdScoreInput,
+  els.postGradeNotesInput,
+  els.postGradeComplexityInput,
+].forEach((control) => control?.addEventListener("input", handleColdDraftInput));
+els.postGradeTags?.addEventListener("input", captureColdDraftForm);
 els.problemForm.addEventListener("submit", saveProblem);
 els.resetQaBtn.addEventListener("click", resetQaData);
 els.recoveryList?.addEventListener("click", (event) => {
@@ -390,7 +509,33 @@ els.skipNewBtn.addEventListener("click", () => skipDailyPick("new"));
 els.skipPostGradeNoteBtn.addEventListener("click", clearPostGradeNote);
 els.skipReviewBtn.addEventListener("click", () => skipDailyPick("review"));
 els.newStartAttemptBtn?.addEventListener("click", () => startAttempt("new"));
-els.undoGradeBtn.addEventListener("click", undoLastGrade);
+els.undoGradeBtn.addEventListener("click", handlePostGradeUndo);
+els.practiceV2BeginBtn?.addEventListener("click", beginPracticeV2Rep);
+els.practiceV2ChangeBtn?.addEventListener("click", chooseAnotherPracticeV2Rep);
+els.practiceV2FinishBtn?.addEventListener("click", () => movePracticeV2("finish"));
+els.practiceV2CancelBtn?.addEventListener("click", () => movePracticeV2("cancel"));
+els.practiceV2BackAttemptBtn?.addEventListener("click", () => movePracticeV2("back"));
+els.practiceV2ContinueGradeBtn?.addEventListener("click", continuePracticeV2Grade);
+els.practiceV2BackGradeBtn?.addEventListener("click", () => movePracticeV2("back"));
+els.practiceV2ReflectionForm?.addEventListener("submit", savePracticeV2Rep);
+els.practiceV2NextBtn?.addEventListener("click", getNextPracticeV2Rep);
+els.practiceV2EndBtn?.addEventListener("click", () => movePracticeV2("end"));
+els.practiceV2UndoBtn?.addEventListener("click", undoPracticeV2Rep);
+els.practiceV2RestartBtn?.addEventListener("click", getNextPracticeV2Rep);
+els.practiceV2SessionUndoBtn?.addEventListener("click", undoPracticeV2Rep);
+els.practiceV2Capacity?.addEventListener("change", changePracticeV2Capacity);
+els.practiceV2TimeUntracked?.addEventListener("change", capturePracticeV2Reflection);
+[
+  els.practiceV2Elapsed,
+  els.practiceV2Assistance,
+  els.practiceV2Blocker,
+  els.practiceV2Friction,
+  els.practiceV2Note,
+  els.practiceV2Complexity,
+].forEach((control) => control?.addEventListener("input", capturePracticeV2Reflection));
+document.querySelectorAll("[data-v2-grade]").forEach((button) => {
+  button.addEventListener("click", () => selectPracticeV2Grade(button.dataset.v2Grade));
+});
 els.viewAllTopicsBtn.addEventListener("click", openAttentionDialog);
 document.querySelectorAll("[data-leaderboard-view]").forEach((button) => {
   button.addEventListener("click", () => {
@@ -573,7 +718,13 @@ async function initApp() {
 
   const hasRemoteData =
     remoteState &&
-    (remoteState.savedAt || remoteState.importMeta || remoteState.problems?.length > 0 || remoteState.sessions?.length > 0);
+    (
+      remoteState.savedAt ||
+      remoteState.importMeta ||
+      remoteState.problems?.length > 0 ||
+      remoteState.sessions?.length > 0 ||
+      remoteState.practicePlan?.onboardingComplete
+    );
 
   if (hasRemoteData) {
     applyRemoteState(remoteState);
@@ -593,17 +744,75 @@ async function initApp() {
     }
   }
 
+  restoreColdWorkflowSession();
+  restorePracticeV2Runtime();
   render();
   renderAppRoute();
 }
 
 function applyRemoteState(state) {
-  problems = Array.isArray(state.problems) ? state.problems.map(normalizeProblem) : [];
-  importMeta = state.importMeta || null;
-  sessions = Array.isArray(state.sessions) ? state.sessions : [];
-  recoveryProblemIds = normalizeRecoveryProblemIds(state.recoveryProblemIds);
-  lastServerSavedAt = state.savedAt || "";
-  currentRevision = Number(state.revision || 0);
+  const migrated = migrateTrackerState(state);
+  problems = cloneState(migrated.problems);
+  importMeta = cloneState(migrated.importMeta);
+  sessions = cloneState(migrated.sessions);
+  recoveryProblemIds = normalizeRecoveryProblemIds(migrated.recoveryProblemIds);
+  algorithmVersion = migrated.algorithmVersion;
+  trainingProfile = cloneState(migrated.trainingProfile);
+  practicePlan = cloneState(migrated.practicePlan);
+  trackerStateExtras = extractTrackerStateExtras(migrated);
+  lastServerSavedAt = migrated.savedAt || "";
+  currentRevision = Number(migrated.revision || 0);
+}
+
+function migrateTrackerState(state) {
+  if (!STATE_V4) throw new Error("Tracker state migration module is unavailable");
+  return STATE_V4.migrateStateToV4(state, { timezone: browserTimezone() });
+}
+
+function browserTimezone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York";
+  } catch {
+    return "America/New_York";
+  }
+}
+
+function extractTrackerStateExtras(state) {
+  const coreKeys = new Set([
+    "version",
+    "savedAt",
+    "revision",
+    "importMeta",
+    "problems",
+    "sessions",
+    "recoveryProblemIds",
+    "algorithmVersion",
+    "trainingProfile",
+    "practicePlan",
+    "exportedAt",
+  ]);
+  return Object.fromEntries(
+    Object.entries(state || {})
+      .filter(([key]) => !coreKeys.has(key))
+      .map(([key, value]) => [key, cloneState(value)]),
+  );
+}
+
+function buildTrackerStatePayload(overrides = {}) {
+  return migrateTrackerState({
+    ...trackerStateExtras,
+    version: EXPORT_VERSION,
+    savedAt: overrides.savedAt ?? lastServerSavedAt ?? null,
+    revision: overrides.revision ?? currentRevision,
+    importMeta,
+    problems,
+    sessions,
+    recoveryProblemIds,
+    algorithmVersion,
+    trainingProfile,
+    practicePlan,
+    ...overrides,
+  });
 }
 
 function loadProblems() {
@@ -632,6 +841,95 @@ function loadJson(key, fallback) {
     return raw ? JSON.parse(raw) : fallback;
   } catch {
     return fallback;
+  }
+}
+
+function coldWorkflowOwner() {
+  return currentUser?.id || currentUser?.email || (appEnv.isQa ? "qa" : "local");
+}
+
+function persistColdWorkflowSession() {
+  try {
+    sessionStorage.setItem(COLD_WORKFLOW_SESSION_KEY, JSON.stringify({
+      owner: coldWorkflowOwner(),
+      selectedProblemId: coldPracticeProblemId || "",
+      activeAttempt: activeAttempt || null,
+      draft: coldGradeDraft || null,
+      newSourceId: getSelectedStudyListId(),
+    }));
+  } catch {
+    // Cold-check progress is session convenience; tracker data remains the source of truth.
+  }
+}
+
+function restoreColdWorkflowSession() {
+  let saved = null;
+  try {
+    saved = JSON.parse(sessionStorage.getItem(COLD_WORKFLOW_SESSION_KEY) || "null");
+  } catch {
+    saved = null;
+  }
+
+  if (!saved || saved.owner !== coldWorkflowOwner()) {
+    clearColdWorkflowSession();
+    return;
+  }
+
+  const selected = problems.find((problem) => problem.id === saved.selectedProblemId && isSeenUnverified(problem));
+  coldPracticeProblemId = selected?.id || "";
+
+  if (STUDY_LISTS[saved.newSourceId]) {
+    els.newSourceSelect.value = saved.newSourceId;
+    currentNewSourceId = saved.newSourceId;
+  }
+
+  const savedActive = saved.activeAttempt;
+  const activeProblem = savedActive?.problemId
+    ? problems.find((problem) => problem.id === savedActive.problemId)
+    : null;
+  const canRestorePlannedNew = savedActive?.type === "new" && String(savedActive.problemId || "").startsWith("planned-");
+  activeAttempt = (activeProblem || canRestorePlannedNew) && ["review", "new", "cold"].includes(savedActive.type)
+    ? {
+        type: savedActive.type,
+        problemId: activeProblem?.id || savedActive.problemId,
+        title: activeProblem?.title || savedActive.title || "",
+      }
+    : null;
+
+  const savedDraft = saved.draft;
+  const draftProblem = savedDraft?.problemId
+    ? problems.find((problem) => problem.id === savedDraft.problemId && isSeenUnverified(problem))
+    : null;
+  coldGradeDraft = draftProblem && isProperGrade(savedDraft.grade)
+    ? {
+        problemId: draftProblem.id,
+        grade: savedDraft.grade,
+        durationMinutes: savedDraft.durationMinutes || "",
+        result: savedDraft.result || "",
+        assistance: savedDraft.assistance || "",
+        blocker: savedDraft.blocker || "",
+        coldScore: savedDraft.coldScore ?? "",
+        note: savedDraft.note || "",
+        tags: Array.isArray(savedDraft.tags) ? savedDraft.tags.filter((tag) => LEARNING_SIGNAL_KEYS.includes(tag)) : [],
+        complexityKnown: Boolean(savedDraft.complexityKnown),
+      }
+    : null;
+
+  if (coldGradeDraft) {
+    coldPracticeProblemId = coldGradeDraft.problemId;
+    activeAttempt = { type: "cold", problemId: coldGradeDraft.problemId, title: draftProblem.title };
+  }
+  persistColdWorkflowSession();
+}
+
+function clearColdWorkflowSession() {
+  coldPracticeProblemId = "";
+  activeAttempt = null;
+  coldGradeDraft = null;
+  try {
+    sessionStorage.removeItem(COLD_WORKFLOW_SESSION_KEY);
+  } catch {
+    // Nothing else to clear.
   }
 }
 
@@ -773,6 +1071,8 @@ async function resetQaData() {
     const state = await response.json();
     applyRemoteState(state);
     skippedDailyPicks = { review: new Set(), new: new Set() };
+    clearColdWorkflowSession();
+    clearPracticeV2Runtime();
     setSaveStatus("saved", buildSavedMessage(lastServerSavedAt));
     render();
   } catch {
@@ -781,15 +1081,10 @@ async function resetQaData() {
 }
 
 function saveRemoteState() {
-  const payload = {
-    version: EXPORT_VERSION,
+  const payload = buildTrackerStatePayload({
     savedAt: new Date().toISOString(),
     revision: currentRevision,
-    importMeta,
-    problems,
-    sessions,
-    recoveryProblemIds,
-  };
+  });
 
   setSaveStatus("saving", appEnv.authRequired ? "Saving to your cloud account..." : "Saving to local file...");
   fetch(API_STATE_URL, {
@@ -911,6 +1206,10 @@ function renderAppRoute() {
     requestAnimationFrame(() => {
       activeRouteLink.scrollIntoView({ block: "nearest", inline: "center" });
     });
+  }
+  if (route === "dashboard") {
+    if (coldGradeDraft) resumeColdGradeDraft();
+    else resumePendingColdBenchmark();
   }
 }
 
@@ -1156,7 +1455,7 @@ function renderNotificationControls() {
   } else if (enabled) {
     els.notificationStatus.textContent = `Reminder on at ${els.notificationTimeInput.value || settings.reminderTime}. Only sends if today is still open.`;
   } else {
-    els.notificationStatus.textContent = "Enable a phone reminder for days when Minimum Practice is still open.";
+    els.notificationStatus.textContent = "Enable a phone reminder for days when today's honest rep is still open.";
   }
 }
 
@@ -1333,8 +1632,81 @@ function render() {
   renderFriendPulse();
   renderRecoveryLane();
   renderMemoryHealth();
+  renderLibraryTerminology();
   renderRows(getFilteredProblems());
   renderLeaderboard();
+}
+
+function renderLibraryTerminology() {
+  const usesAdaptivePractice = isFeatureEnabled("practiceV2");
+  const mode = usesAdaptivePractice ? "v2" : "legacy";
+  els.libraryView?.classList.toggle("library-v2", usesAdaptivePractice);
+  if (els.practiceV2ProblemTableHead) els.practiceV2ProblemTableHead.hidden = !usesAdaptivePractice;
+  if (els.legacyProblemTableHead) els.legacyProblemTableHead.hidden = usesAdaptivePractice;
+  if (els.stageReference) els.stageReference.hidden = usesAdaptivePractice;
+  if (els.statusFilterLabel) els.statusFilterLabel.textContent = usesAdaptivePractice ? "Evidence" : "Status";
+  if (els.listFilterLabel) els.listFilterLabel.textContent = usesAdaptivePractice ? "Study list" : "List";
+  if (els.searchInput) {
+    els.searchInput.placeholder = usesAdaptivePractice ? "Problem or topic..." : "Problem, topic, note...";
+  }
+  if (els.stageSortBtn) els.stageSortBtn.textContent = usesAdaptivePractice ? "Retention" : "Stage";
+  if (els.stageReferenceSummary) {
+    els.stageReferenceSummary.textContent = usesAdaptivePractice ? "Exact-title schedule" : "Review Stages";
+  }
+
+  if (els.libraryView?.dataset.libraryMode === mode) return;
+  if (els.libraryView) els.libraryView.dataset.libraryMode = mode;
+
+  if (usesAdaptivePractice) {
+    els.statusFilter.innerHTML = `
+      <option value="all">All evidence</option>
+      <option value="unseen">Unseen</option>
+      <option value="unverified">Assessment pending</option>
+      <option value="repair">Needs repair</option>
+      <option value="assisted">Assisted</option>
+      <option value="independent">Independent</option>
+      <option value="stale">Stale evidence</option>
+    `;
+    els.listFilter.innerHTML = `
+      <option value="all">All problems</option>
+      <option value="blind75">Blind 75</option>
+      <option value="neetcode150">NeetCode 150</option>
+    `;
+    els.sortSelect.innerHTML = `
+      <option value="recentPractice">Recently practiced</option>
+      <option value="title">A-Z</option>
+      <option value="due">Next exact-title review</option>
+      <option value="difficulty">Difficulty</option>
+      <option value="topic">Topic</option>
+    `;
+    tableSort = { column: "lastActivity", direction: "desc" };
+    els.sortSelect.value = "recentPractice";
+    return;
+  }
+
+  els.statusFilter.innerHTML = `
+    <option value="all">All statuses</option>
+    <option value="todo">Unattempted</option>
+    <option value="solving">Learning</option>
+    <option value="unverified">Seen, unverified</option>
+    <option value="review">Reviewing</option>
+    <option value="solved">Mastered</option>
+  `;
+  els.listFilter.innerHTML = `
+    <option value="all">All problems</option>
+    <option value="blind75">Blind 75</option>
+    <option value="neetcode150">NeetCode 150</option>
+    <option value="due">Due reviews</option>
+  `;
+  els.sortSelect.innerHTML = `
+    <option value="due">Due first</option>
+    <option value="dueDesc">Due last</option>
+    <option value="updated">Recently updated</option>
+    <option value="difficulty">Difficulty</option>
+    <option value="topic">Topic</option>
+  `;
+  tableSort = { column: "nextReview", direction: "asc" };
+  els.sortSelect.value = "due";
 }
 
 function renderLeaderboard() {
@@ -1365,6 +1737,13 @@ function renderLeaderboard() {
   renderFriendPactManager();
 
   const columns = leaderboardColumns(leaderboardViewMode);
+  renderLeaderboardSortControl(columns);
+  if (els.leaderboardViewNote) {
+    els.leaderboardViewNote.textContent =
+      leaderboardViewMode === "readiness"
+        ? "Readiness uses the same rolling 30-day evidence window as Practice."
+        : "Weekly signals reset Monday. Imported history does not count.";
+  }
   const rows = sortedLeaderboardRows();
   els.leaderboardHead.innerHTML = `
     <tr>
@@ -1388,13 +1767,21 @@ function renderLeaderboard() {
   els.leaderboardRows.innerHTML = rows
     .map((row, index) => `
       <tr class="${row.isCurrentUser ? "leaderboard-current-user" : ""}">
-        <td>${index + 1}</td>
-        <td>
+        <td class="leaderboard-rank" data-label="Rank"><span>#${index + 1}</span></td>
+        <td class="leaderboard-person" data-label="Name">
           <strong>${escapeHtml(row.displayName)}</strong>
           ${canUseFriendPulse() && row.handle ? `<span class="leaderboard-handle">@${escapeHtml(row.handle)}</span>` : ""}
           ${row.isCurrentUser ? `<span class="leaderboard-you">You</span>` : ""}
         </td>
-        ${columns.map((column) => `<td>${escapeHtml(formatLeaderboardValue(column, row[leaderboardViewMode][column.key]))}</td>`).join("")}
+        ${columns
+          .map(
+            (column) => `
+              <td class="leaderboard-metric" data-label="${escapeAttr(column.shortLabel || column.label)}">
+                <strong>${escapeHtml(formatLeaderboardValue(column, leaderboardMetricValue(row, column.key)))}</strong>
+              </td>
+            `,
+          )
+          .join("")}
       </tr>
     `)
     .join("");
@@ -1407,35 +1794,83 @@ function canUseLeaderboard() {
 }
 
 function leaderboardColumns(viewMode) {
-  if (viewMode === "lifetime") {
+  if (viewMode === "readiness") {
     return [
-      { key: "mastered", label: "Mastered" },
-      { key: "durablePlus", label: "Durable+" },
       {
-        key: "totalGradedAttempts",
-        label: "Graded attempts",
-        description: "Total real grades entered in the tracker: Today grades and manual graded backfills. Imported CSV history is excluded.",
+        key: "checkedSkills",
+        label: "Checked skills",
+        shortLabel: "Checked",
+        description: "Skill areas with at least one real graded attempt in the last 30 days.",
       },
       {
-        key: "totalReviewCompletions",
-        label: "Review completions",
-        description: "Graded attempts that were reviews of problems already in the review loop. First-time or new attempts are excluded.",
+        key: "independentSkills",
+        label: "Independent skills",
+        shortLabel: "Independent",
+        description: "Skill areas with a clean, unassisted result in the last 30 days.",
+      },
+      {
+        key: "transferSkills",
+        label: "Transfer skills",
+        shortLabel: "Transfer",
+        description: "Skill areas supported by independent results on distinct titles, including a designated transfer-style rep, in the last 30 days.",
       },
     ];
   }
 
   return [
-    { key: "practiceDays", label: "Practice days" },
-    { key: "reviewsCompleted", label: "Reviews" },
-    { key: "newAttempts", label: "New attempts" },
     {
-      key: "backlogReduced",
-      label: "Backlog reduced",
-      description: "How many due reviews were cleared compared with the start of this week. It can rise when reviews are completed and fall as new reviews become due.",
+      key: "practiceDays",
+      label: "Practice days",
+      shortLabel: "Days",
+      description: "Distinct days this week with at least one real graded attempt.",
     },
-    { key: "cleanRecallRate", label: "Clean recall" },
-    { key: "currentStreak", label: "Streak" },
+    {
+      key: "repsCompleted",
+      label: "Reps completed",
+      shortLabel: "Reps",
+      description: "Real graded attempts completed this week. Imported history is excluded.",
+    },
+    {
+      key: "skillBreadth",
+      label: "Skill breadth",
+      shortLabel: "Skills",
+      description: "Distinct skill areas practiced this week. Breadth helps prevent repeatedly memorizing only a few exact solutions.",
+    },
+    {
+      key: "independentReps",
+      label: "Independent reps",
+      shortLabel: "Independent",
+      description: "Clean attempts completed without hints, solutions, editorials, people, or AI this week.",
+    },
   ];
+}
+
+function renderLeaderboardSortControl(columns) {
+  if (!els.leaderboardSortSelect) return;
+  els.leaderboardSortSelect.innerHTML = columns
+    .map((column) => `<option value="${escapeAttr(column.key)}">${escapeHtml(column.label)}</option>`)
+    .join("");
+  els.leaderboardSortSelect.value = leaderboardSort[leaderboardViewMode].column;
+}
+
+function leaderboardMetricValue(row, key) {
+  const current = row?.[leaderboardViewMode];
+  if (current && current[key] != null) return current[key];
+
+  if (leaderboardViewMode === "weekly") {
+    if (key === "repsCompleted") {
+      return Number(row?.weekly?.reviewsCompleted || 0) + Number(row?.weekly?.newAttempts || 0);
+    }
+    if (key === "skillBreadth" || key === "independentReps") return 0;
+  }
+
+  if (leaderboardViewMode === "readiness") {
+    if (key === "checkedSkills") return Number(row?.lifetime?.durablePlus || 0);
+    if (key === "independentSkills") return Number(row?.lifetime?.mastered || 0);
+    if (key === "transferSkills") return 0;
+  }
+
+  return 0;
 }
 
 function renderInfoButton(description) {
@@ -1456,8 +1891,8 @@ function sortedLeaderboardRows() {
   const sort = leaderboardSort[leaderboardViewMode];
   const direction = sort.direction === "asc" ? 1 : -1;
   return [...(leaderboardData.rows || [])].sort((a, b) => {
-    const aValue = Number(a[leaderboardViewMode]?.[sort.column] || 0);
-    const bValue = Number(b[leaderboardViewMode]?.[sort.column] || 0);
+    const aValue = Number(leaderboardMetricValue(a, sort.column) || 0);
+    const bValue = Number(leaderboardMetricValue(b, sort.column) || 0);
     return (aValue - bValue) * direction || a.displayName.localeCompare(b.displayName);
   });
 }
@@ -1468,11 +1903,11 @@ function sortLeaderboard(column) {
     column,
     direction: current.column === column && current.direction === "desc" ? "asc" : "desc",
   };
+  if (els.leaderboardSortSelect) els.leaderboardSortSelect.value = column;
   renderLeaderboard();
 }
 
 function formatLeaderboardValue(column, value) {
-  if (column.key === "cleanRecallRate") return `${Number(value || 0)}%`;
   return String(Number(value || 0));
 }
 
@@ -1700,62 +2135,63 @@ function sortArrow(direction) {
 function renderStats() {
   const today = dateOnly(new Date());
   const weekStart = addDays(today, -6);
-  const mastered = problems.filter((problem) => isMastered(problem));
-  const due = getDueReviews();
-  const recent = problems.filter((problem) => {
-    if (!problem.lastReviewedAt && !problem.solvedAt) return false;
-    const date = dateOnly(new Date(problem.lastReviewedAt || problem.solvedAt));
-    return date >= weekStart && date <= today;
-  });
+  const recentReps = getActivitySessions()
+    .filter((session) => isProperGrade(session.grade))
+    .filter((session) => {
+      const normalized = normalizeDate(session.date);
+      if (!normalized) return false;
+      const date = dateOnly(parseIsoDate(normalized));
+      return date >= weekStart && date <= today;
+    });
   const blindAttempted = BLIND_75.filter((planProblem) => {
     const row = findProblemByPlan(planProblem);
     return row && isAttempted(row);
-  }).length;
-  const blindMastered = BLIND_75.filter((planProblem) => {
-    const row = findProblemByPlan(planProblem);
-    return row && isMastered(row);
   }).length;
   const neetcodeAttempted = NEETCODE_150.filter((planProblem) => {
     const row = findProblemByPlan(planProblem);
     return row && isAttempted(row);
   }).length;
-  const neetcodeMastered = NEETCODE_150.filter((planProblem) => {
-    const row = findProblemByPlan(planProblem);
-    return row && isMastered(row);
-  }).length;
+  const evidence = buildMemoryEvidenceModel();
 
-  els.totalSolved.textContent = mastered.length;
-  renderDueReviewsStat(due.length);
   els.blindAttempted.textContent = `${blindAttempted}/${BLIND_75.length}`;
-  els.blindMastered.textContent = `${blindMastered}/${BLIND_75.length}`;
   els.neetcodeAttempted.textContent = `${neetcodeAttempted}/${NEETCODE_150.length}`;
-  els.neetcodeMastered.textContent = `${neetcodeMastered}/${NEETCODE_150.length}`;
-  els.weeklySolved.textContent = recent.length;
+  els.checkedSkillCount.textContent = `${evidence.checkedCount}/${evidence.skillCount}`;
+  els.independentSkillCount.textContent = `${evidence.independentCount}/${evidence.skillCount}`;
+  els.transferSkillCount.textContent = `${evidence.transferCount}/${evidence.skillCount}`;
+  els.weeklySolved.textContent = recentReps.length;
 }
 
-function renderDueReviewsStat(count) {
-  if (!els.reviewDue) return;
+function buildMemoryEvidenceModel() {
+  const evidence = PRACTICE_V2_ENGINE?.deriveEvidence
+    ? PRACTICE_V2_ENGINE.deriveEvidence(buildTrackerStatePayload(), {
+        today: toIsoDate(new Date()),
+        catalog: practiceV2Catalog(),
+      })
+    : { skills: new Map(), checkedSkillIds: [], independentSkillIds: [], transferSupportedSkillIds: [], recentAttempts: [] };
+  const skills = [...evidence.skills.values()];
+  const skillCount = skills.length;
+  const checkedCount = evidence.checkedSkillIds.length;
+  const independentCount = evidence.independentSkillIds.length;
+  const transferCount = evidence.transferSupportedSkillIds.length;
 
-  els.reviewDue.textContent = dueReviewsVisible ? count : "Hidden";
-  if (els.dueReviewsRevealBtn) {
-    els.dueReviewsRevealBtn.setAttribute("aria-expanded", String(dueReviewsVisible));
-  }
-  if (els.dueReviewsRevealCopy) {
-    els.dueReviewsRevealCopy.textContent = dueReviewsVisible
-      ? "You are behind, but nothing is broken. This will pay off."
-      : "All that matters is the next one. Click to reveal when you want the count.";
-  }
-}
-
-function toggleDueReviewsVisibility() {
-  dueReviewsVisible = !dueReviewsVisible;
-  renderStats();
+  return {
+    ...evidence,
+    skills,
+    skillCount,
+    checkedCount,
+    independentCount,
+    transferCount,
+    uncheckedCount: skillCount - checkedCount,
+    independentGapCount: skills.filter((skill) => skill.checked && !skill.independent).length,
+    transferGapCount: skills.filter((skill) => skill.independent && !skill.transferSupported).length,
+  };
 }
 
 function renderMinimumPractice() {
   if (!els.habitToday) return;
 
   const habit = buildMinimumPracticeState();
+  const hasPracticePick = hasActionablePracticePick();
   els.habitToday.textContent = habit.todayComplete ? "Complete" : "Open";
   els.habitWeek.textContent = `${habit.weekPracticeDays}/${WEEKLY_PRACTICE_TARGET} rhythm days`;
   els.habitRhythm.textContent = `${habit.rhythmDays} ${habit.rhythmDays === 1 ? "day" : "days"}`;
@@ -1765,7 +2201,16 @@ function renderMinimumPractice() {
     : habit.todayComplete
       ? "Minimum day complete. Momentum protected."
       : "One real grade is enough to keep the loop alive.";
-  els.habitActionBtn.textContent = dailyPicks.review || dailyPicks.newProblem ? "Start with today's picks" : "Find a problem to backfill";
+  els.habitActionBtn.textContent = hasPracticePick
+    ? isFeatureEnabled("practiceV2") ? "Start today's rep" : "Start with today's picks"
+    : "Find a problem to backfill";
+}
+
+function hasActionablePracticePick() {
+  if (isFeatureEnabled("practiceV2")) {
+    return Boolean(practiceV2Runtime?.recommendation?.public);
+  }
+  return Boolean(dailyPicks.review || dailyPicks.newProblem);
 }
 
 function buildMinimumPracticeState() {
@@ -1811,7 +2256,7 @@ function currentPracticeRhythm(practiceDates, today) {
 }
 
 function startMinimumPractice() {
-  const hasTodayPick = Boolean(dailyPicks.review || dailyPicks.newProblem);
+  const hasTodayPick = hasActionablePracticePick();
   if (!hasTodayPick) navigateToRoute("library");
   const target = hasTodayPick ? els.todayPanel : els.problemsPanel;
 
@@ -1819,7 +2264,9 @@ function startMinimumPractice() {
 
   if (hasTodayPick) {
     window.setTimeout(() => {
-      const firstStart = dailyPicks.review ? els.reviewStartAttemptBtn : els.newStartAttemptBtn;
+      const firstStart = isFeatureEnabled("practiceV2")
+        ? els.practiceV2Experience?.querySelector("[data-v2-state]:not([hidden]) .primary-btn:not([disabled])")
+        : dailyPicks.review ? els.reviewStartAttemptBtn : els.newStartAttemptBtn;
       firstStart?.focus({ preventScroll: true });
     }, 350);
   } else {
@@ -1953,27 +2400,29 @@ function setRecoveryMessage(message) {
 }
 
 function renderMemoryHealth() {
-  const dueReviews = getDueReviews();
-  const extremeReviews = dueReviews.filter((problem) => isExtremelyOverdue(problem.stage, getDaysOverdue(problem.nextReview)));
-  const oldestReview = dueReviews[0] || null;
+  const evidence = buildMemoryEvidenceModel();
+  const remaining = Math.max(0, evidence.skillCount - evidence.transferCount);
 
-  els.backlogDueCount.textContent = `${dueReviews.length} ${dueReviews.length === 1 ? "review" : "reviews"} due`;
-  els.backlogExtremeCount.textContent = extremeReviews.length;
-  els.backlogOldest.textContent = oldestReview
-    ? `${oldestReview.title} is ${reviewTimingLabel(oldestReview.nextReview)}.`
-    : "Nothing is overdue right now.";
+  els.evidenceGapCount.textContent = `${remaining} ${remaining === 1 ? "skill area" : "skill areas"}`;
+  els.evidenceGapCopy.textContent = remaining === 0
+    ? "Every tracked skill area has recent, independent, transfer-supported evidence."
+    : "The adaptive plan uses these gaps to choose the next useful rep.";
+  els.uncheckedSkillCount.textContent = evidence.uncheckedCount;
+  els.independentGapCount.textContent = evidence.independentGapCount;
+  els.transferGapCount.textContent = evidence.transferGapCount;
 
-  renderAttentionTopics();
-  renderStageChart();
+  renderAttentionTopics(evidence);
+  renderEvidenceChart(evidence);
   renderRecentGradeChart();
 }
 
-function renderAttentionTopics() {
-  const topics = buildAttentionTopics().slice(0, 4);
-  els.viewAllTopicsBtn.disabled = buildAttentionTopics().length === 0;
+function renderAttentionTopics(evidence = buildMemoryEvidenceModel()) {
+  const allTopics = buildAttentionTopics(evidence);
+  const topics = allTopics.slice(0, 4);
+  els.viewAllTopicsBtn.disabled = allTopics.length === 0;
 
   if (topics.length === 0) {
-    els.attentionTopics.innerHTML = `<p class="memory-empty">Attention topics appear once attempted problems enter the review loop.</p>`;
+    els.attentionTopics.innerHTML = `<p class="memory-empty">No skill gaps are asking for attention right now.</p>`;
     return;
   }
 
@@ -1985,7 +2434,7 @@ function renderAttentionTopics() {
         <div class="attention-item">
           <div class="attention-row">
             <strong>${escapeHtml(topic.topic)}</strong>
-            <span class="attention-level ${attentionLevelClass(topic)}">${attentionLevel(topic)} attention</span>
+            <span class="attention-level ${attentionLevelClass(topic)}">${attentionLevel(topic)} priority</span>
           </div>
           <div class="memory-bar" aria-hidden="true"><span style="width: ${width}%"></span></div>
           <p>${escapeHtml(topic.reasons.join(" · "))}</p>
@@ -2001,7 +2450,7 @@ function openAttentionDialog() {
 }
 
 function renderAttentionTopicRows() {
-  const topics = buildAttentionTopics();
+  const topics = buildAttentionTopics(buildMemoryEvidenceModel());
   if (topics.length === 0) {
     els.attentionTopicRows.innerHTML = `<p class="memory-empty">No attention topics yet.</p>`;
     return;
@@ -2012,7 +2461,7 @@ function renderAttentionTopicRows() {
       <button class="attention-topic-row" type="button" data-topic-filter="${escapeAttr(topic.topic)}">
         <span>
           <strong>${escapeHtml(topic.topic)}</strong>
-          <em>${attentionLevel(topic)} attention · Score ${topic.score}</em>
+          <em>${attentionLevel(topic)} priority</em>
         </span>
         <small>${escapeHtml(topic.reasons.join(" · "))}</small>
       </button>
@@ -2048,59 +2497,52 @@ function scrollProblemsIntoView() {
   });
 }
 
-function buildAttentionTopics() {
-  const byTopic = new Map();
+function buildAttentionTopics(evidence = buildMemoryEvidenceModel()) {
+  return evidence.skills
+    .map((skill) => {
+      const recent = evidence.recentAttempts.filter((attempt) => attempt.skillId === skill.id);
+      const latest = recent[0] || null;
+      const hasHistoricalEvidence = problems.some((problem) =>
+        PRACTICE_V2_ENGINE?.skillIdFor(problem.topic) === skill.id && hasProperGradeHistory(problem),
+      );
+      const latestRed = latest?.grade === "red";
+      const latestYellow = latest?.grade === "yellow";
+      const score =
+        (latestRed ? 8 : 0) +
+        (latestYellow ? 6 : 0) +
+        (!skill.checked ? 5 : 0) +
+        (!skill.independent ? 4 : 0) +
+        (skill.independent && !skill.transferSupported ? 2 : 0);
 
-  problems.filter(isAttempted).forEach((problem) => {
-    const topicName = problem.topic || "General";
-    const topic = byTopic.get(topicName) || {
-      topic: topicName,
-      score: 0,
-      due: 0,
-      extreme: 0,
-      early: 0,
-      recentRed: 0,
-      recentYellow: 0,
-    };
-    const recent = (problem.reviewHistory || []).slice(-3);
-    const redCount = recent.filter((entry) => entry.grade === "red").length;
-    const yellowCount = recent.filter((entry) => entry.grade === "yellow").length;
-    const daysOverdue = getDaysOverdue(problem.nextReview);
-    const due = Boolean(problem.nextReview && isReviewDue(problem.nextReview));
-    const extreme = due && isExtremelyOverdue(problem.stage, daysOverdue);
-    const early = clampStage(problem.stage) <= 1;
-
-    topic.recentRed += redCount;
-    topic.recentYellow += yellowCount;
-    if (due) topic.due += 1;
-    if (extreme) topic.extreme += 1;
-    if (early) topic.early += 1;
-    topic.score += redCount * 4 + yellowCount * 2 + (due ? 3 : 0) + (extreme ? 3 : 0) + (early ? 2 : 0);
-    byTopic.set(topicName, topic);
-  });
-
-  return [...byTopic.values()]
+      return {
+        topic: skill.label,
+        score,
+        checked: skill.checked,
+        independent: skill.independent,
+        transferSupported: skill.transferSupported,
+        hasHistoricalEvidence,
+        latestRed,
+        latestYellow,
+      };
+    })
     .filter((topic) => topic.score > 0)
-    .map((topic) => ({
-      ...topic,
-      reasons: buildAttentionReasons(topic),
-    }))
+    .map((topic) => ({ ...topic, reasons: buildAttentionReasons(topic) }))
     .sort((a, b) => b.score - a.score || a.topic.localeCompare(b.topic));
 }
 
 function buildAttentionReasons(topic) {
   const reasons = [];
-  if (topic.due) reasons.push(`${topic.due} due`);
-  if (topic.extreme) reasons.push(`${topic.extreme} extremely overdue`);
-  if (topic.early) reasons.push(`${topic.early} early-stage`);
-  if (topic.recentRed) reasons.push(`${topic.recentRed} recent missed`);
-  if (topic.recentYellow) reasons.push(`${topic.recentYellow} recent slow`);
-  return reasons.length ? reasons : ["stable right now"];
+  if (topic.latestRed) reasons.push("latest result needs repair");
+  if (topic.latestYellow) reasons.push("latest result needed help");
+  if (!topic.checked) reasons.push(topic.hasHistoricalEvidence ? "evidence is older than 30 days" : "not assessed yet");
+  if (!topic.independent) reasons.push("independent proof missing");
+  if (topic.independent && !topic.transferSupported) reasons.push("transfer proof missing");
+  return reasons.length ? reasons : ["evidence is current"];
 }
 
 function attentionLevel(topic) {
-  if (topic.score >= 40 || topic.extreme >= 5) return "High";
-  if (topic.score >= 15) return "Medium";
+  if (topic.score >= 11) return "High";
+  if (topic.score >= 6) return "Medium";
   return "Low";
 }
 
@@ -2108,21 +2550,22 @@ function attentionLevelClass(topic) {
   return `attention-${attentionLevel(topic).toLowerCase()}`;
 }
 
-function renderStageChart() {
-  const counts = STAGES.map(() => 0);
-  problems.filter(isAttempted).forEach((problem) => {
-    counts[clampStage(problem.stage)] += 1;
-  });
-  const maxCount = Math.max(...counts, 1);
+function renderEvidenceChart(evidence = buildMemoryEvidenceModel()) {
+  const rows = [
+    { label: "Checked recently", count: evidence.checkedCount },
+    { label: "Independent", count: evidence.independentCount },
+    { label: "Transfer supported", count: evidence.transferCount },
+  ];
+  const denominator = Math.max(evidence.skillCount, 1);
 
-  els.stageChart.innerHTML = counts
-    .map((count, index) => {
-      const width = count === 0 ? 0 : Math.max(6, Math.round((count / maxCount) * 100));
+  els.evidenceChart.innerHTML = rows
+    .map((row) => {
+      const width = row.count === 0 ? 0 : Math.max(6, Math.round((row.count / denominator) * 100));
       return `
-        <div class="stage-chart-row">
-          <span title="${escapeAttr(stageName(index))}">${escapeHtml(compactStageName(index))}</span>
+        <div class="stage-chart-row evidence-chart-row">
+          <span>${escapeHtml(row.label)}</span>
           <div class="memory-bar" aria-hidden="true"><span style="width: ${width}%"></span></div>
-          <strong>${count}</strong>
+          <strong>${row.count}/${evidence.skillCount}</strong>
         </div>
       `;
     })
@@ -2150,9 +2593,9 @@ function renderRecentGradeChart() {
   }
 
   const grades = [
-    { key: "green", label: "Clean", className: "grade-green" },
-    { key: "yellow", label: "Slow", className: "grade-yellow" },
-    { key: "red", label: "Missed", className: "grade-red" },
+    { key: "green", label: "Independent", className: "grade-green" },
+    { key: "yellow", label: "Assisted", className: "grade-yellow" },
+    { key: "red", label: "Needs repair", className: "grade-red" },
   ];
 
   els.recentGradeChart.innerHTML = grades
@@ -2173,6 +2616,24 @@ function renderRecentGradeChart() {
 }
 
 function renderDailyPicks(options = {}) {
+  if (isFeatureEnabled("practiceV2")) {
+    if (els.practiceV0Content) els.practiceV0Content.hidden = true;
+    if (els.practiceV2Experience) els.practiceV2Experience.hidden = false;
+    const pickOptions = els.todayPanel?.querySelector(".pick-options");
+    const dailyIntent = els.todayPanel?.querySelector(".daily-intent");
+    if (pickOptions) pickOptions.hidden = true;
+    if (dailyIntent) dailyIntent.textContent = "One adaptive rep. The plan decides what matters now.";
+    if (els.todaySummary) els.todaySummary.textContent = "Your evidence, available time, and recent work are already considered.";
+    renderPracticeV2();
+    runPracticeV2Shadow();
+    return;
+  }
+  if (els.practiceV0Content) els.practiceV0Content.hidden = false;
+  if (els.practiceV2Experience) els.practiceV2Experience.hidden = true;
+  const pickOptions = els.todayPanel?.querySelector(".pick-options");
+  const dailyIntent = els.todayPanel?.querySelector(".daily-intent");
+  if (pickOptions) pickOptions.hidden = false;
+  if (dailyIntent) dailyIntent.textContent = "One review. One optional new problem.";
   dailyPicks = getDailyPicks(options);
   renderRecommendationCard("review", dailyPicks.review);
   renderRecommendationCard("new", dailyPicks.newProblem);
@@ -2181,6 +2642,413 @@ function renderDailyPicks(options = {}) {
   const reviewText = dailyPicks.review ? dailyPicks.review.title : "no due review";
   const newText = dailyPicks.newProblem ? dailyPicks.newProblem.title : `no new ${getSelectedStudyList().label} pick`;
   els.todaySummary.textContent = `${reviewText} + ${newText}.`;
+  runPracticeV2Shadow();
+}
+
+function practiceV2StorageKey() {
+  return `leetcode-tracker.practice-v2-runtime.v1.${coldWorkflowOwner()}`;
+}
+
+function restorePracticeV2Runtime() {
+  if (!PRACTICE_V2_WORKFLOW || !isFeatureEnabled("practiceV2")) return;
+  const saved = loadJson(practiceV2StorageKey(), null);
+  practiceV2Runtime = PRACTICE_V2_WORKFLOW.normalizeRuntime(saved || {
+    capacityMinutes: Number(trainingProfile.defaultSessionMinutes || 45),
+    expectedRevision: currentRevision,
+  });
+  if (practiceV2Runtime.undoReceipt && ["completed", "session-complete"].includes(practiceV2Runtime.phase)) {
+    lastGradeUndo = cloneState(practiceV2Runtime.undoReceipt);
+  }
+}
+
+function persistPracticeV2Runtime() {
+  if (!practiceV2Runtime || !isFeatureEnabled("practiceV2")) return;
+  try {
+    localStorage.setItem(practiceV2StorageKey(), JSON.stringify(practiceV2Runtime));
+  } catch {
+    // Runtime persistence is best effort in local/QA mode; evidence remains in tracker state.
+  }
+}
+
+function clearPracticeV2Runtime() {
+  practiceV2Runtime = PRACTICE_V2_WORKFLOW?.createRuntime({
+    capacityMinutes: Number(trainingProfile.defaultSessionMinutes || 45),
+    expectedRevision: currentRevision,
+  }) || null;
+  try {
+    localStorage.removeItem(practiceV2StorageKey());
+  } catch {
+    // Ignore unavailable browser storage in QA reset paths.
+  }
+}
+
+function practiceV2Catalog() {
+  return [
+    ...BLIND_75.map((problem) => ({ ...problem, listMemberships: ["blind75"] })),
+    ...NEETCODE_150.map((problem) => ({ ...problem, listMemberships: ["neetcode150"] })),
+  ];
+}
+
+function getPracticeV2Recommendation({ resetExclusions = false } = {}) {
+  if (!PRACTICE_V2_ENGINE || !practiceV2Runtime) return null;
+  if (resetExclusions) practiceV2Runtime.skippedProblemIds = [];
+  const input = {
+    state: buildTrackerStatePayload(),
+    catalog: practiceV2Catalog(),
+    today: toIsoDate(new Date()),
+    capacityMinutes: Number(practiceV2Runtime.capacityMinutes || trainingProfile.defaultSessionMinutes || 45),
+    activeProblemId: ["attempting", "grading", "reflecting", "saving"].includes(practiceV2Runtime.phase)
+      ? practiceV2Runtime.recommendation?.public?.problemId || ""
+      : "",
+    skippedProblemIds: practiceV2Runtime.skippedProblemIds,
+  };
+  let recommendation = PRACTICE_V2_ENGINE.recommendNextRep(input);
+  if (!recommendation.public && practiceV2Runtime.skippedProblemIds.length > 0) {
+    practiceV2Runtime.skippedProblemIds = [];
+    recommendation = PRACTICE_V2_ENGINE.recommendNextRep({ ...input, skippedProblemIds: [] });
+  }
+  return recommendation.public ? recommendation : null;
+}
+
+function ensurePracticeV2Recommendation() {
+  if (!practiceV2Runtime || !["ready", "session-complete"].includes(practiceV2Runtime.phase)) return;
+  if (practiceV2Runtime.phase === "ready" && practiceV2Runtime.recommendation?.public) return;
+  practiceV2Runtime.recommendation = getPracticeV2Recommendation();
+  practiceV2Runtime.expectedRevision = currentRevision;
+  persistPracticeV2Runtime();
+}
+
+function renderPracticeV2() {
+  if (!practiceV2Runtime || !els.practiceV2Experience) return;
+  ensurePracticeV2Recommendation();
+  const phase = practiceV2Runtime.phase === "saving" ? "reflecting" : practiceV2Runtime.phase;
+  const recommendation = practiceV2Runtime.recommendation;
+  const publicPick = recommendation?.public;
+
+  els.practiceV2Experience.querySelectorAll("[data-v2-state]").forEach((state) => {
+    state.hidden = state.dataset.v2State !== phase;
+  });
+  const activeStep = { ready: 0, attempting: 1, grading: 2, reflecting: 2, completed: 3, "session-complete": 3 }[phase] || 0;
+  els.practiceV2Experience.querySelectorAll("[data-v2-step]").forEach((step, index) => {
+    step.classList.toggle("active", index === activeStep);
+    step.classList.toggle("complete", index < activeStep);
+  });
+
+  if (els.practiceV2Capacity) {
+    els.practiceV2Capacity.value = String(practiceV2Runtime.capacityMinutes || 45);
+    els.practiceV2Capacity.disabled = phase !== "ready";
+  }
+  if (publicPick) {
+    els.practiceV2ReadyTitle.textContent = publicPick.title;
+    els.practiceV2Difficulty.textContent = publicPick.difficulty;
+    els.practiceV2TimeBox.textContent = `${publicPick.timeBoxMinutes} minutes`;
+    els.practiceV2Evidence.textContent = publicPick.evidenceStatus;
+    els.practiceV2Reason.textContent = publicPick.publicReason;
+    els.practiceV2AttemptTitle.textContent = publicPick.title;
+    els.practiceV2LockedTime.textContent = String(practiceV2Runtime.lockedTimeBoxMinutes || publicPick.timeBoxMinutes);
+    els.practiceV2OpenLink.href = publicPick.url || "#";
+    els.practiceV2OpenLink.hidden = !publicPick.url;
+  } else if (phase === "ready") {
+    els.practiceV2ReadyTitle.textContent = "No rep fits the time available.";
+    els.practiceV2Difficulty.textContent = "-";
+    els.practiceV2TimeBox.textContent = "-";
+    els.practiceV2Evidence.textContent = "Try a longer session or return when you have more time.";
+    els.practiceV2Reason.textContent = "Stopping without penalty is always valid.";
+  }
+  els.practiceV2BeginBtn.disabled = !publicPick;
+  els.practiceV2ChangeBtn.disabled = !publicPick;
+
+  renderPracticeV2Grade();
+  renderPracticeV2Reflection();
+  renderPracticeV2Completion();
+  clearPracticeV2Spoilers(phase);
+}
+
+function clearPracticeV2Spoilers(phase) {
+  if (["completed", "session-complete"].includes(phase)) return;
+  if (els.practiceV2CompleteSkill) els.practiceV2CompleteSkill.textContent = "";
+  if (els.practiceV2CompleteEvidence) els.practiceV2CompleteEvidence.textContent = "";
+  if (els.practiceV2CompleteReview) els.practiceV2CompleteReview.textContent = "";
+  if (els.practiceV2CompleteSummary) els.practiceV2CompleteSummary.textContent = "";
+}
+
+function movePracticeV2(event) {
+  if (!practiceV2Runtime || !PRACTICE_V2_WORKFLOW) return;
+  const result = PRACTICE_V2_WORKFLOW.transition(practiceV2Runtime, event);
+  if (!result.ok) return;
+  practiceV2Runtime = result.runtime;
+  if (event === "cancel") {
+    practiceV2Runtime.startedAt = "";
+    practiceV2Runtime.attemptId = "";
+    practiceV2Runtime.lockedTimeBoxMinutes = null;
+  }
+  persistPracticeV2Runtime();
+  renderPracticeV2();
+}
+
+function beginPracticeV2Rep() {
+  if (!practiceV2Runtime?.recommendation?.public) return;
+  practiceV2Runtime.attemptId = crypto.randomUUID();
+  practiceV2Runtime.startedAt = new Date().toISOString();
+  practiceV2Runtime.lockedTimeBoxMinutes = practiceV2Runtime.recommendation.public.timeBoxMinutes;
+  practiceV2Runtime.expectedRevision = currentRevision;
+  movePracticeV2("begin");
+}
+
+function chooseAnotherPracticeV2Rep() {
+  const currentId = practiceV2Runtime?.recommendation?.public?.problemId;
+  if (!currentId) return;
+  practiceV2Runtime.skippedProblemIds = [...new Set([...practiceV2Runtime.skippedProblemIds, currentId])];
+  practiceV2Runtime.recommendation = getPracticeV2Recommendation();
+  persistPracticeV2Runtime();
+  renderPracticeV2();
+}
+
+function changePracticeV2Capacity() {
+  if (!practiceV2Runtime || practiceV2Runtime.phase !== "ready") return;
+  const previousTitle = practiceV2Runtime.recommendation?.public?.title || "";
+  practiceV2Runtime.capacityMinutes = Number(els.practiceV2Capacity.value || 45);
+  practiceV2Runtime.recommendation = null;
+  practiceV2Runtime.skippedProblemIds = [];
+  persistPracticeV2Runtime();
+  renderPracticeV2();
+  const nextTitle = practiceV2Runtime.recommendation?.public?.title || "";
+  if (els.practiceV2CapacityHint) {
+    els.practiceV2CapacityHint.textContent = nextTitle && nextTitle !== previousTitle
+      ? `Rep updated to ${nextTitle} for a ${practiceV2Runtime.capacityMinutes}-minute session.`
+      : nextTitle
+        ? `${nextTitle} is still the strongest rep within ${practiceV2Runtime.capacityMinutes} minutes.`
+        : `No rep currently fits within ${practiceV2Runtime.capacityMinutes} minutes.`;
+  }
+}
+
+function selectPracticeV2Grade(grade) {
+  if (!practiceV2Runtime || practiceV2Runtime.phase !== "grading" || !isProperGrade(grade)) return;
+  practiceV2Runtime.provisionalGrade = grade;
+  persistPracticeV2Runtime();
+  renderPracticeV2Grade();
+}
+
+function renderPracticeV2Grade() {
+  const grade = practiceV2Runtime?.provisionalGrade || "";
+  document.querySelectorAll("[data-v2-grade]").forEach((button) => {
+    const selected = button.dataset.v2Grade === grade;
+    button.setAttribute("aria-checked", String(selected));
+    button.classList.toggle("selected", selected);
+  });
+  if (els.practiceV2ContinueGradeBtn) els.practiceV2ContinueGradeBtn.disabled = !grade;
+}
+
+function continuePracticeV2Grade() {
+  if (!practiceV2Runtime?.provisionalGrade) return;
+  movePracticeV2("continue");
+}
+
+function capturePracticeV2Reflection() {
+  if (!practiceV2Runtime || !["reflecting", "saving"].includes(practiceV2Runtime.phase)) return;
+  const drafts = practiceV2Runtime.reflectionDrafts;
+  drafts.shared.elapsedMinutes = els.practiceV2Elapsed.value;
+  drafts.shared.timeTracked = !els.practiceV2TimeUntracked.checked;
+  drafts.shared.note = els.practiceV2Note.value;
+  drafts.shared.complexityKnown = els.practiceV2Complexity.checked;
+  drafts.nonIndependent.assistance = els.practiceV2Assistance.value;
+  drafts.nonIndependent.blocker = els.practiceV2Blocker.value;
+  drafts.independent.friction = els.practiceV2Friction.value;
+  persistPracticeV2Runtime();
+  renderPracticeV2Reflection();
+}
+
+function renderPracticeV2Reflection() {
+  if (!practiceV2Runtime) return;
+  const grade = practiceV2Runtime.provisionalGrade;
+  const drafts = practiceV2Runtime.reflectionDrafts;
+  const labels = { red: "Could not solve", yellow: "Solved with help or heavy friction", green: "Solved independently" };
+  if (els.practiceV2SelectedGrade) els.practiceV2SelectedGrade.textContent = labels[grade] || "";
+  if (els.practiceV2Elapsed) {
+    els.practiceV2Elapsed.value = drafts.shared.elapsedMinutes;
+    els.practiceV2Elapsed.disabled = !drafts.shared.timeTracked;
+  }
+  if (els.practiceV2TimeUntracked) els.practiceV2TimeUntracked.checked = !drafts.shared.timeTracked;
+  if (els.practiceV2Assistance) els.practiceV2Assistance.value = drafts.nonIndependent.assistance;
+  if (els.practiceV2Blocker) els.practiceV2Blocker.value = drafts.nonIndependent.blocker;
+  if (els.practiceV2Friction) els.practiceV2Friction.value = drafts.independent.friction;
+  if (els.practiceV2Note) els.practiceV2Note.value = drafts.shared.note;
+  if (els.practiceV2Complexity) els.practiceV2Complexity.checked = drafts.shared.complexityKnown;
+  const independent = grade === "green";
+  if (els.practiceV2AssistanceField) els.practiceV2AssistanceField.hidden = independent;
+  if (els.practiceV2BlockerField) els.practiceV2BlockerField.hidden = independent;
+  if (els.practiceV2FrictionField) els.practiceV2FrictionField.hidden = !independent;
+}
+
+function practiceV2ProblemForRecommendation() {
+  const pick = practiceV2Runtime?.recommendation?.public;
+  if (!pick) return null;
+  return problems.find((problem) => problem.id === pick.problemId)
+    || findProblemBySlug(slugFromUrl(pick.url))
+    || findProblemByTitle(pick.title)
+    || null;
+}
+
+function materializePracticeV2Problem() {
+  const existing = practiceV2ProblemForRecommendation();
+  if (existing) return { problem: existing, created: false };
+  const pick = practiceV2Runtime?.recommendation?.public;
+  const plan = findBuiltInPlan(slugFromUrl(pick?.url), pick?.title);
+  if (!plan) return { problem: null, created: false };
+  return { problem: addProblemFromPlan(plan), created: true };
+}
+
+function savePracticeV2Rep(event) {
+  event.preventDefault();
+  if (!practiceV2Runtime || practiceV2Runtime.phase !== "reflecting") return;
+  capturePracticeV2Reflection();
+  const validation = PRACTICE_V2_WORKFLOW.validateReflection({
+    grade: practiceV2Runtime.provisionalGrade,
+    draft: practiceV2Runtime.reflectionDrafts,
+    lockedTimeBoxMinutes: practiceV2Runtime.lockedTimeBoxMinutes,
+  });
+  if (!validation.ok) {
+    els.practiceV2Error.textContent = Object.values(validation.errors)[0];
+    return;
+  }
+  els.practiceV2Error.textContent = "";
+  const { problem, created } = materializePracticeV2Problem();
+  if (!problem) {
+    els.practiceV2Error.textContent = "This recommendation changed. Choose another rep and try again.";
+    return;
+  }
+
+  const problemSnapshot = created ? null : cloneState(problem);
+  const sessionsSnapshot = cloneState(sessions);
+  const recoverySnapshot = cloneState(recoveryProblemIds);
+  const recommendation = cloneState(practiceV2Runtime.recommendation);
+  const metadata = {
+    ...validation.metadata,
+    attemptId: practiceV2Runtime.attemptId,
+    recommendationId: recommendation.public.recommendationId,
+    algorithmVersion: recommendation.algorithmVersion,
+    taskType: recommendation.private.taskType,
+    startedAt: practiceV2Runtime.startedAt,
+    lockedTimeBoxMinutes: practiceV2Runtime.lockedTimeBoxMinutes,
+  };
+  const attemptType = isAttempted(problemSnapshot || problem) ? "review" : "new";
+  practiceV2Runtime.phase = "saving";
+  persistPracticeV2Runtime();
+  renderPracticeV2();
+  applyGrade(problem.id, practiceV2Runtime.provisionalGrade, {
+    createdProblemId: created ? problem.id : "",
+    problemSnapshot,
+    sessionsSnapshot,
+    recoverySnapshot,
+    attemptType,
+    attemptContext: "practice-v2",
+    attemptMetadata: metadata,
+    note: validation.metadata.note,
+    complexityKnown: validation.metadata.complexityKnown,
+    suppressPostGradePrompt: true,
+  });
+
+  const savedProblem = problems.find((item) => item.id === problem.id);
+  const savedEntry = [...(savedProblem?.reviewHistory || [])].reverse().find((entry) => entry.attemptId === metadata.attemptId);
+  practiceV2Runtime.phase = "completed";
+  practiceV2Runtime.completion = {
+    problemId: problem.id,
+    title: savedProblem?.title || recommendation.public.title,
+    topic: savedProblem?.topic || "General",
+    grade: practiceV2Runtime.provisionalGrade,
+    rationale: recommendation.private.rationale,
+    nextReview: savedEntry?.nextReview || savedProblem?.nextReview || "",
+    scheduleReason: savedEntry?.heldForEarly
+      ? "early-clean-hold"
+      : savedEntry?.heldForOverdue
+        ? "overdue-hold"
+        : practiceV2Runtime.provisionalGrade === "red"
+          ? "reset"
+          : "rescheduled",
+    taskType: recommendation.private.taskType,
+    elapsedMinutes: validation.metadata.elapsedMinutes,
+  };
+  practiceV2Runtime.undoReceipt = cloneState(lastGradeUndo);
+  practiceV2Runtime.skippedProblemIds = [...new Set([...practiceV2Runtime.skippedProblemIds, recommendation.public.problemId])];
+  persistPracticeV2Runtime();
+  renderPracticeV2();
+}
+
+function renderPracticeV2Completion() {
+  const completion = practiceV2Runtime?.completion;
+  if (!completion) return;
+  const copy = {
+    red: ["Useful evidence captured.", "The plan can now prioritize the blocker before another independent check."],
+    yellow: ["Partial independence recorded.", "The next rep can reinforce the weak point before testing transfer."],
+    green: ["Independent evidence recorded.", "The plan can spend less time proving this exact answer and look for broader transfer."],
+  }[completion.grade];
+  els.practiceV2CompleteTitle.textContent = copy?.[0] || "That rep changed the plan.";
+  els.practiceV2CompleteSummary.textContent = copy?.[1] || completion.rationale;
+  els.practiceV2CompleteSkill.textContent = completion.topic;
+  els.practiceV2CompleteEvidence.textContent = completion.rationale;
+  els.practiceV2CompleteReview.textContent = completion.nextReview
+    ? `${["early-clean-hold", "overdue-hold"].includes(completion.scheduleReason) ? "Still due" : "Next"} ${formatDate(completion.nextReview)}`
+    : "No exact-title review scheduled";
+}
+
+function getNextPracticeV2Rep() {
+  if (!practiceV2Runtime) return;
+  practiceV2Runtime.phase = "ready";
+  practiceV2Runtime.recommendation = null;
+  practiceV2Runtime.attemptId = "";
+  practiceV2Runtime.startedAt = "";
+  practiceV2Runtime.lockedTimeBoxMinutes = null;
+  practiceV2Runtime.provisionalGrade = "";
+  practiceV2Runtime.reflectionDrafts = PRACTICE_V2_WORKFLOW.createRuntime().reflectionDrafts;
+  practiceV2Runtime.completion = null;
+  persistPracticeV2Runtime();
+  renderPracticeV2();
+}
+
+function undoPracticeV2Rep() {
+  if (!practiceV2Runtime?.undoReceipt) return;
+  if (["attempting", "grading", "reflecting"].includes(practiceV2Runtime.phase)) {
+    if (!window.confirm("Discard this unsaved attempt and undo the last saved rep?")) return;
+  }
+  lastGradeUndo = cloneState(practiceV2Runtime.undoReceipt);
+  practiceV2Runtime.phase = "reflecting";
+  practiceV2Runtime.completion = null;
+  practiceV2Runtime.undoReceipt = null;
+  persistPracticeV2Runtime();
+  undoLastGrade();
+  renderPracticeV2();
+}
+
+function runPracticeV2Shadow() {
+  if (!appEnv.isQa || !isFeatureEnabled("practiceV2Shadow") || !PRACTICE_V2_ENGINE) return;
+
+  const catalog = [
+    ...BLIND_75.map((problem) => ({ ...problem, listMemberships: ["blind75"] })),
+    ...NEETCODE_150.map((problem) => ({ ...problem, listMemberships: ["neetcode150"] })),
+  ];
+  const skippedProblemIds = [
+    ...skippedDailyPicks.review,
+    ...skippedDailyPicks.new,
+  ];
+  const result = PRACTICE_V2_ENGINE.recommendNextRep({
+    state: buildTrackerStatePayload(),
+    catalog,
+    today: toIsoDate(new Date()),
+    capacityMinutes: Number(trainingProfile.defaultSessionMinutes || 45),
+    activeProblemId: activeAttempt?.problemId || "",
+    skippedProblemIds,
+  });
+  const trace = {
+    generatedAt: new Date().toISOString(),
+    liveV0: {
+      reviewProblemId: dailyPicks.review?.id || null,
+      newProblemId: dailyPicks.newProblem?.id || null,
+    },
+    readinessV1: result,
+  };
+
+  window.__practiceV2Shadow = trace;
+  console.info("[practice-v2 shadow]", trace);
 }
 
 function renderSkipControls() {
@@ -2193,6 +3061,22 @@ function skipDailyPick(type) {
   const key = item ? dailyPickKey(type, item) : "";
   if (!key) return;
 
+  if (type === "new" && isColdPracticePick(item)) {
+    if (coldGradeDraft && !window.confirm("Discard the unfinished cold-check record and remove this pick?")) return;
+    coldGradeDraft = null;
+    coldPracticeProblemId = "";
+    if (activeAttempt?.problemId === item.id) activeAttempt = null;
+    clearPostGradeNote();
+    persistColdWorkflowSession();
+    renderDailyPicks({ preserveReview: true });
+    return;
+  }
+  const attemptContext = attemptContextFor(type, item);
+  if (activeAttempt?.type === attemptContext && activeAttempt.problemId === item.id) {
+    if (!window.confirm(`You started ${item.title}. Skip it and leave that attempt?`)) return;
+    activeAttempt = null;
+    persistColdWorkflowSession();
+  }
   skippedDailyPicks[type].add(key);
   renderDailyPicks({
     preserveNew: type === "review",
@@ -2207,7 +3091,19 @@ function renderRecommendationCard(type, item) {
   const openLink = type === "review" ? els.reviewOpenLink : els.newOpenLink;
   const buttons = card.querySelectorAll("[data-grade]");
   const recoveryButton = type === "review" ? els.reviewRecoveryBtn : null;
+  const isColdCheck = type === "new" && isColdPracticePick(item);
+  const cardLabel = card.querySelector(".card-label");
+  const timerNudge = card.querySelector(".leetcode-timer-nudge");
+  const startButton = type === "review" ? els.reviewStartAttemptBtn : els.newStartAttemptBtn;
+  const attemptState = type === "review" ? els.reviewAttemptState : els.newAttemptState;
   resetAttemptState(type);
+  if (cardLabel) cardLabel.textContent = isColdCheck ? "Cold check" : type === "review" ? "Review" : "New";
+  if (startButton) startButton.textContent = isColdCheck ? "Start cold check" : type === "review" ? "Start review" : "Start new";
+  if (timerNudge) {
+    timerNudge.textContent = type === "review"
+      ? "Use LeetCode's stopwatch while solving. Review target: 10-20 min."
+      : "Use LeetCode's stopwatch while solving. Easy 20 min, Medium 30 min, Hard 45 min.";
+  }
 
   if (!item) {
     card.dataset.problemId = "";
@@ -2234,15 +3130,35 @@ function renderRecommendationCard(type, item) {
 
   card.dataset.problemId = item.id || "";
   card.dataset.slug = item.titleSlug || "";
+  card.dataset.attemptContext = isColdCheck ? "cold" : type;
+  const timebox = attemptTimebox(type, item);
+  if (attemptState) {
+    const heading = attemptState.querySelector("strong");
+    const copy = attemptState.querySelector("span");
+    if (heading) heading.textContent = isColdCheck ? "Cold check started" : type === "review" ? "Review started" : "New attempt started";
+    if (copy) copy.textContent = `${timebox} target · record the final time after grading`;
+  }
+  if (timerNudge && isColdCheck) {
+    timerNudge.textContent = `Start LeetCode's stopwatch. Target: ${timebox}. After grading, record the final time, result, assistance, and blocker here.`;
+  } else if (timerNudge) {
+    timerNudge.textContent = type === "review"
+      ? "Use LeetCode's stopwatch while solving. Review target: 10-20 min."
+      : "Use LeetCode's stopwatch while solving. Easy 20 min, Medium 30 min, Hard 45 min.";
+  }
   title.textContent = item.title;
   meta.innerHTML = renderRecommendationMeta([
     { label: "Topic", value: item.topic || "General" },
     { label: "Difficulty", value: item.difficulty || "Medium" },
     {
       label: type === "review" ? "Timing" : "Source",
-      value: type === "review" ? reviewTimingLabel(item.nextReview) : `Next unattempted ${getSelectedStudyList().label}`,
+      value: type === "review"
+        ? reviewTimingLabel(item.nextReview)
+        : isColdCheck
+          ? "Previously seen; current recall unverified"
+          : `Next unattempted ${getSelectedStudyList().label}`,
     },
-    { label: "Stage", value: stageName(item.stage) },
+    { label: "Stage", value: isColdCheck ? "Cold baseline" : stageName(item.stage) },
+    { label: "Target", value: timebox },
   ]);
   if (type === "review") {
     els.reviewReason.textContent = explainReviewPick(item);
@@ -2271,6 +3187,13 @@ function renderRecommendationCard(type, item) {
     }
   }
   buttons.forEach((button) => (button.disabled = false));
+  syncAttemptState(type, item);
+}
+
+function attemptTimebox(type, item) {
+  if (type === "review") return "10-20 min";
+  const difficulty = normalizeDifficulty(item?.difficulty);
+  return `${NEW_ATTEMPT_TIMEBOX_MINUTES[difficulty]} min`;
 }
 
 function resetAttemptState(type) {
@@ -2283,6 +3206,23 @@ function resetAttemptState(type) {
     startButton.disabled = false;
   }
   if (attemptState) attemptState.hidden = true;
+}
+
+function attemptContextFor(type, item) {
+  return type === "new" && isColdPracticePick(item) ? "cold" : type;
+}
+
+function syncAttemptState(type, item) {
+  if (!item || !activeAttempt) return;
+  const context = attemptContextFor(type, item);
+  if (activeAttempt.problemId !== item.id || activeAttempt.type !== context) return;
+
+  const card = type === "review" ? els.reviewCard : els.newCard;
+  const startButton = type === "review" ? els.reviewStartAttemptBtn : els.newStartAttemptBtn;
+  const attemptState = type === "review" ? els.reviewAttemptState : els.newAttemptState;
+  card?.classList.add("is-attempting");
+  if (startButton) startButton.hidden = true;
+  if (attemptState) attemptState.hidden = false;
 }
 
 function setAttemptUnavailable(type) {
@@ -2298,15 +3238,36 @@ function setAttemptUnavailable(type) {
 function startAttempt(type) {
   const item = type === "review" ? dailyPicks.review : dailyPicks.newProblem;
   if (!item) return;
+  const context = attemptContextFor(type, item);
+  if (!allowAttemptSwitch(context, item)) return;
+  activeAttempt = { type: context, problemId: item.id, title: item.title };
+  persistColdWorkflowSession();
+  syncAttemptState(type, item);
   const card = type === "review" ? els.reviewCard : els.newCard;
-  const startButton = type === "review" ? els.reviewStartAttemptBtn : els.newStartAttemptBtn;
-  const attemptState = type === "review" ? els.reviewAttemptState : els.newAttemptState;
-  card?.classList.add("is-attempting");
-  if (startButton) startButton.hidden = true;
-  if (attemptState) attemptState.hidden = false;
   window.setTimeout(() => {
     card?.querySelector(".grade-btn:not(:disabled)")?.focus({ preventScroll: true });
   }, 80);
+}
+
+function allowAttemptSwitch(nextType, nextProblem) {
+  if (!activeAttempt || (activeAttempt.type === nextType && activeAttempt.problemId === nextProblem.id)) return true;
+  const activeProblem = problems.find((problem) => problem.id === activeAttempt.problemId);
+  const activeTitle = activeProblem?.title || activeAttempt.title || "the current problem";
+  if (coldGradeDraft) {
+    const discard = window.confirm(
+      `You have an unfinished cold-check record for ${activeTitle}. Discard that draft and switch to ${nextProblem.title}?`,
+    );
+    if (!discard) {
+      resumeColdGradeDraft();
+      return false;
+    }
+    cancelColdGradeDraft({ keepSelection: true, renderAfter: false });
+  } else if (!window.confirm(`You started ${activeTitle}. Switch to ${nextProblem.title}?`)) {
+    return false;
+  }
+  activeAttempt = null;
+  persistColdWorkflowSession();
+  return true;
 }
 
 function setReviewReasonVisibility(isVisible) {
@@ -2355,7 +3316,18 @@ function renderRows(rows) {
 
   rows.forEach((problem) => {
     const tr = document.createElement("tr");
-    const reviewClass = isReviewDue(problem.nextReview) ? "review-due" : "";
+    if (isFeatureEnabled("practiceV2")) {
+      tr.className = "library-v2-row";
+      tr.innerHTML = renderPracticeV2LibraryRow(problem);
+      els.problemRows.appendChild(tr);
+      return;
+    }
+
+    const seenUnverified = isSeenUnverified(problem);
+    const displayStatus = problemDisplayStatus(problem);
+    const displayStage = problemDisplayStage(problem);
+    const displayReview = problemDisplayReview(problem);
+    const reviewClass = !seenUnverified && isReviewDue(problem.nextReview) ? "review-due" : "";
     const titleNode = `<button type="button" data-edit="${problem.id}">${escapeHtml(problem.title)}</button>`;
     const openNode = problem.url
       ? `<a class="icon-btn row-open-link row-action-btn row-action-primary" href="${escapeAttr(problem.url)}" target="_blank" rel="noreferrer" aria-label="Open ${escapeAttr(problem.title)} on LeetCode">LeetCode</a>`
@@ -2364,21 +3336,24 @@ function renderRows(rows) {
       canUseRecoveryLane() && clampStage(problem.stage) < RECOVERY_GRADUATION_STAGE && !recoveryProblemIds.includes(problem.id)
         ? `<button class="icon-btn row-action-btn recovery-row-btn" type="button" data-recovery-add="${escapeAttr(problem.id)}" aria-label="Add ${escapeAttr(problem.title)} to Recovery Lane">Recover</button>`
         : "";
+    const practiceNode = seenUnverified && !isFeatureEnabled("practiceV2")
+      ? `<button class="icon-btn row-action-btn cold-practice-btn" type="button" data-cold-practice="${escapeAttr(problem.id)}" aria-label="Practice ${escapeAttr(problem.title)} now">Practice now</button>`
+      : "";
     const memberships = renderMembershipBadges(problem);
     const attempts = Number(problem.completionCount || 0);
     const compactMeta = [
       problem.difficulty,
       problem.topic || "General",
       `${attempts} ${attempts === 1 ? "attempt" : "attempts"}`,
-      formatDate(problem.nextReview),
+      displayReview,
     ]
       .filter(Boolean)
       .map((item) => `<span>${escapeHtml(item)}</span>`)
       .join("");
     const compactSignals = `
-      <span class="stage-pill">${stageName(problem.stage)}</span>
-      <span class="pill status-${problem.status}">${statusLabel(problem.status)}</span>
-      <span class="review-date ${reviewClass}">${formatDate(problem.nextReview)}</span>
+      <span class="stage-pill ${seenUnverified ? "stage-unverified" : ""}">${escapeHtml(displayStage)}</span>
+      <span class="pill ${seenUnverified ? "status-unverified" : `status-${problem.status}`}">${escapeHtml(displayStatus)}</span>
+      <span class="review-date ${reviewClass}">${escapeHtml(displayReview)}</span>
     `;
 
     tr.innerHTML = `
@@ -2391,15 +3366,16 @@ function renderRows(rows) {
           <span class="row-mobile-signals">${compactSignals}</span>
         </div>
       </td>
-      <td><span class="pill status-${problem.status}">${statusLabel(problem.status)}</span></td>
-      <td><span class="stage-pill">${stageName(problem.stage)}</span></td>
+      <td><span class="pill ${seenUnverified ? "status-unverified" : `status-${problem.status}`}">${escapeHtml(displayStatus)}</span></td>
+      <td><span class="stage-pill ${seenUnverified ? "stage-unverified" : ""}">${escapeHtml(displayStage)}</span></td>
       <td><span class="difficulty-${problem.difficulty}">${problem.difficulty}</span></td>
       <td>${escapeHtml(problem.topic || "General")}</td>
       <td>${Number(problem.completionCount || 0)}</td>
-      <td><span class="review-date ${reviewClass}">${formatDate(problem.nextReview)}</span></td>
+      <td><span class="review-date ${reviewClass}">${escapeHtml(displayReview)}</span></td>
       <td>
         <div class="row-actions">
           ${openNode}
+          ${practiceNode}
           ${recoveryNode}
           <button class="icon-btn row-action-btn" type="button" data-edit="${problem.id}" aria-label="Edit ${escapeAttr(problem.title)}">Details</button>
         </div>
@@ -2415,6 +3391,152 @@ function renderRows(rows) {
   els.problemRows.querySelectorAll("[data-recovery-add]").forEach((button) => {
     button.addEventListener("click", () => addToRecoveryLane(button.dataset.recoveryAdd));
   });
+  els.problemRows.querySelectorAll("[data-cold-practice]").forEach((button) => {
+    button.addEventListener("click", () => startColdPractice(button.dataset.coldPractice));
+  });
+}
+
+function renderPracticeV2LibraryRow(problem) {
+  const activeAttempt = isPracticeV2LibraryAttemptActive(problem);
+  const evidence = activeAttempt
+    ? {
+        key: "active",
+        label: "Attempt in progress",
+        detail: "Finish or cancel the attempt to reveal evidence.",
+        stale: false,
+      }
+    : getProblemEvidenceSummary(problem);
+  const exactReview = activeAttempt
+    ? { label: "Hidden during attempt", detail: "Your exact-title schedule is unchanged." }
+    : getExactReviewSummary(problem);
+  const titleNode = activeAttempt
+    ? `<strong class="library-problem-title is-locked">${escapeHtml(problem.title)}</strong>`
+    : `<button class="library-problem-title" type="button" data-edit="${escapeAttr(problem.id)}" aria-label="Open details for ${escapeAttr(problem.title)}">${escapeHtml(problem.title)}</button>`;
+  const topic = activeAttempt ? "Topic hidden during attempt" : problem.topic || "General";
+  const memberships = renderMembershipBadges(problem);
+  const openNode = problem.url
+    ? `<a class="library-external-link" href="${escapeAttr(problem.url)}" target="_blank" rel="noreferrer" aria-label="Open ${escapeAttr(problem.title)} on LeetCode">LeetCode <span aria-hidden="true">&#8599;</span></a>`
+    : `<span class="library-action-unavailable">No link</span>`;
+
+  return `
+    <td class="library-problem-cell">
+      <div class="library-problem-main">
+        ${titleNode}
+        <p class="library-problem-meta">
+          <span class="difficulty-${escapeAttr(problem.difficulty)}">${escapeHtml(problem.difficulty)}</span>
+          <span aria-hidden="true">&middot;</span>
+          <span>${escapeHtml(topic)}</span>
+        </p>
+        ${memberships ? `<div class="library-memberships">${memberships}</div>` : ""}
+      </div>
+    </td>
+    <td class="library-evidence-cell">
+      <div class="library-evidence">
+        <span class="evidence-badge evidence-${escapeAttr(evidence.key)}">${escapeHtml(evidence.label)}</span>
+        ${evidence.stale ? `<span class="evidence-modifier">Stale</span>` : ""}
+        <small>${escapeHtml(evidence.detail)}</small>
+      </div>
+    </td>
+    <td class="library-review-cell">
+      <div class="library-exact-review">
+        <strong>${escapeHtml(exactReview.label)}</strong>
+        <small>${escapeHtml(exactReview.detail)}</small>
+      </div>
+    </td>
+    <td class="library-action-cell">
+      ${openNode}
+    </td>
+  `;
+}
+
+function isPracticeV2LibraryAttemptActive(problem) {
+  if (!isFeatureEnabled("practiceV2") || !practiceV2Runtime) return false;
+  if (!["attempting", "grading", "reflecting", "saving"].includes(practiceV2Runtime.phase)) return false;
+  return practiceV2ProblemForRecommendation()?.id === problem.id;
+}
+
+function getProblemEvidenceSummary(problem) {
+  const latestGrade = latestProperGradeEntry(problem);
+  if (!latestGrade) {
+    const hasPriorContext = isSeenUnverified(problem) || isAttempted(problem);
+    return hasPriorContext
+      ? {
+          key: "unverified",
+          label: "Assessment pending",
+          detail: "Historical exposure only; current recall is unverified.",
+          stale: false,
+        }
+      : {
+          key: "unseen",
+          label: "Unseen",
+          detail: "No trusted attempt yet.",
+          stale: false,
+        };
+  }
+
+  const date = normalizeDate(latestGrade.date);
+  const ageDays = date ? Math.max(0, Math.floor((dateOnly(new Date()) - parseIsoDate(date)) / 86400000)) : 0;
+  const byGrade = {
+    red: { key: "repair", label: "Needs repair" },
+    yellow: { key: "assisted", label: "Assisted" },
+    green: isIndependentHistoryEntry(latestGrade)
+      ? { key: "independent", label: "Independent" }
+      : { key: "assisted", label: "Assisted" },
+  };
+  const state = byGrade[latestGrade.grade] || byGrade.yellow;
+  return {
+    ...state,
+    detail: date ? `Last checked ${formatDate(date)}` : "Latest honest result recorded",
+    stale: Boolean(date && ageDays > PRACTICE_V2_EVIDENCE_WINDOW_DAYS),
+  };
+}
+
+function isIndependentHistoryEntry(entry) {
+  if (entry?.grade !== "green") return false;
+  const assistance = String(entry.assistance || "none").toLowerCase();
+  return !["hint", "solution", "editorial", "person", "ai"].includes(assistance);
+}
+
+function latestProperGradeEntry(problem) {
+  const latestHistoryEntry = (problem.reviewHistory || [])
+    .filter((entry) => isProperGrade(entry.grade))
+    .map((entry, index) => ({ entry, index, value: libraryHistoryDateValue(entry.date) }))
+    .sort((a, b) => a.value - b.value || a.index - b.index)
+    .at(-1)?.entry;
+
+  if (latestHistoryEntry) return latestHistoryEntry;
+  if (!isProperGrade(problem.lastGrade)) return null;
+
+  return {
+    grade: problem.lastGrade,
+    date: normalizeDate(problem.lastReviewedAt || problem.firstAttemptAt),
+    source: "legacy-summary",
+  };
+}
+
+function libraryHistoryDateValue(value) {
+  const normalized = normalizeDate(value);
+  return normalized ? parseIsoDate(normalized).getTime() : 0;
+}
+
+function latestLibraryActivityValue(problem) {
+  return Math.max(0, ...(problem.reviewHistory || []).map((entry) => libraryHistoryDateValue(entry.date)));
+}
+
+function getExactReviewSummary(problem) {
+  if (!hasProperGradeHistory(problem)) {
+    return {
+      label: "Not scheduled",
+      detail: isAttempted(problem) ? "Starts after an honest assessment." : "Starts after the first grade.",
+    };
+  }
+
+  const nextReview = normalizeDate(problem.nextReview);
+  if (!nextReview) return { label: "Not scheduled", detail: "No exact-title date set." };
+  return {
+    label: isReviewDue(nextReview) ? "Due now" : "Scheduled",
+    detail: `${formatDate(nextReview)} · same-title recall`,
+  };
 }
 
 function renderMembershipBadges(problem) {
@@ -2441,7 +3563,7 @@ function renderTopicOptions() {
 }
 
 function renderProblemTopicOptions(selectedTopic = "") {
-  const normalizedSelected = String(selectedTopic || "General").trim() || "General";
+  const normalizedSelected = canonicalTopic(selectedTopic);
   const topics = getKnownTopics(normalizedSelected);
   els.topicInput.innerHTML = "";
 
@@ -2464,7 +3586,7 @@ function getKnownTopics(extraTopic = "") {
         ...problems.map((problem) => problem.topic),
         ...Object.values(STUDY_LISTS).flatMap((list) => list.problems.map((problem) => problem.topic)),
       ]
-        .map((topic) => String(topic || "").trim())
+        .map(canonicalTopic)
         .filter(Boolean),
     ),
   ].sort((a, b) => a.localeCompare(b));
@@ -2485,24 +3607,43 @@ function getFilteredProblems() {
   const difficulty = els.difficultyFilter.value;
   const topic = els.topicFilter.value;
   const list = els.listFilter.value;
+  const usesAdaptivePractice = isFeatureEnabled("practiceV2");
 
   return problems
     .filter((problem) => {
-      const haystack = [problem.title, problem.topic, problem.notes, problem.difficulty, problem.status, stageName(problem.stage)]
+      const evidence = usesAdaptivePractice ? getProblemEvidenceSummary(problem) : null;
+      const derivedStatus = usesAdaptivePractice
+        ? evidence.key
+        : isSeenUnverified(problem)
+          ? "unverified"
+          : problem.status;
+      const haystack = [
+        problem.title,
+        problem.topic,
+        usesAdaptivePractice ? "" : problem.notes,
+        problem.difficulty,
+        derivedStatus,
+        usesAdaptivePractice ? evidence.label : problemDisplayStage(problem),
+      ]
         .join(" ")
         .toLowerCase();
       return (
         (!query || haystack.includes(query)) &&
-        (status === "all" || problem.status === status) &&
+        (status === "all" || (usesAdaptivePractice ? evidenceFilterMatches(evidence, status) : derivedStatus === status)) &&
         (difficulty === "all" || problem.difficulty === difficulty) &&
         (topic === "all" || problem.topic === topic) &&
         (list === "all" ||
           (list === "blind75" && problem.listMemberships?.includes("blind75")) ||
           (list === "neetcode150" && problem.listMemberships?.includes("neetcode150")) ||
-          (list === "due" && isReviewDue(problem.nextReview)))
+          (list === "due" && hasProperGradeHistory(problem) && isReviewDue(problem.nextReview)))
       );
     })
     .sort(sortProblems);
+}
+
+function evidenceFilterMatches(evidence, filter) {
+  if (filter === "stale") return Boolean(evidence.stale);
+  return evidence.key === filter;
 }
 
 function sortProblems(a, b) {
@@ -2513,9 +3654,13 @@ function sortProblems(a, b) {
   let result = 0;
 
   if (tableSort.column === "nextReview") {
-    result = compareReviewDates(a.nextReview, b.nextReview, tableSort.direction);
+    const aReviewDate = isSeenUnverified(a) ? "" : a.nextReview;
+    const bReviewDate = isSeenUnverified(b) ? "" : b.nextReview;
+    result = compareReviewDates(aReviewDate, bReviewDate, tableSort.direction);
   } else if (tableSort.column === "updated") {
     result = new Date(a.updatedAt || 0) - new Date(b.updatedAt || 0);
+  } else if (tableSort.column === "lastActivity") {
+    result = latestLibraryActivityValue(a) - latestLibraryActivityValue(b);
   } else if (tableSort.column === "difficulty") {
     result = difficultyRank[a.difficulty] - difficultyRank[b.difficulty];
   } else if (tableSort.column === "topic") {
@@ -2546,17 +3691,21 @@ function compareReviewDates(aDate, bDate, direction) {
 
 function sortSelectValueToTableSort(value) {
   const mappings = {
+    recentPractice: { column: "lastActivity", direction: "desc" },
+    title: { column: "title", direction: "asc" },
     due: { column: "nextReview", direction: "asc" },
     dueDesc: { column: "nextReview", direction: "desc" },
     updated: { column: "updated", direction: "desc" },
     difficulty: { column: "difficulty", direction: "desc" },
     topic: { column: "topic", direction: "asc" },
   };
-  return mappings[value] || mappings.due;
+  return mappings[value] || (isFeatureEnabled("practiceV2") ? mappings.recentPractice : mappings.due);
 }
 
 function syncSortSelect() {
   const valueBySort = {
+    "lastActivity:desc": "recentPractice",
+    "title:asc": "title",
     "nextReview:asc": "due",
     "nextReview:desc": "dueDesc",
     "updated:desc": "updated",
@@ -2585,10 +3734,12 @@ function getDailyPicks(options = {}) {
     options.preserveReview && isCurrentReviewPickAvailable(dailyPicks.review)
       ? dailyPicks.review
       : getNextReviewPick();
-  const newProblem =
+  const coldProblem = getColdPracticeProblem();
+  const newProblem = coldProblem || (
     options.preserveNew && isCurrentNewPickAvailable(dailyPicks.newProblem)
       ? dailyPicks.newProblem
-      : getNextStudyListProblem(review?.topic, getSelectedStudyListId());
+      : getNextStudyListProblem(review?.topic, getSelectedStudyListId())
+  );
   return { review, newProblem };
 }
 
@@ -2601,7 +3752,7 @@ function getNextReviewPick() {
 function getDueReviews() {
   const recentTopics = getRecentTopics(7);
   return problems
-    .filter((problem) => problem.nextReview && isReviewDue(problem.nextReview))
+    .filter((problem) => hasProperGradeHistory(problem) && problem.nextReview && isReviewDue(problem.nextReview))
     .sort((a, b) => {
       const dateDiff = dateValue(a.nextReview) - dateValue(b.nextReview);
       if (dateDiff !== 0) return dateDiff;
@@ -2640,15 +3791,57 @@ function getNextStudyListProblem(reviewTopic = "", listId = "blind75") {
 
 function isCurrentReviewPickAvailable(item) {
   if (!item?.id || skippedDailyPicks.review.has(item.id)) return false;
-  return problems.some((problem) => problem.id === item.id && problem.nextReview && isReviewDue(problem.nextReview));
+  return problems.some((problem) =>
+    problem.id === item.id &&
+    hasProperGradeHistory(problem) &&
+    problem.nextReview &&
+    isReviewDue(problem.nextReview)
+  );
 }
 
 function isCurrentNewPickAvailable(item) {
+  if (isColdPracticePick(item)) return isSeenUnverified(item);
   const key = item ? dailyPickKey("new", item) : "";
   if (!key || skippedDailyPicks.new.has(key)) return false;
   if (!item.listMemberships?.includes(getSelectedStudyList().membership)) return false;
   const existing = findProblemBySlug(item.titleSlug) || findProblemByTitle(item.title);
   return !existing || !isAttempted(existing);
+}
+
+function getColdPracticeProblem() {
+  if (!coldPracticeProblemId) return null;
+  const selectedProblemId = coldPracticeProblemId;
+  const problem = problems.find((item) => item.id === selectedProblemId);
+  if (!problem || !isSeenUnverified(problem)) {
+    coldPracticeProblemId = "";
+    if (coldGradeDraft?.problemId === selectedProblemId) coldGradeDraft = null;
+    if (activeAttempt?.problemId === selectedProblemId) activeAttempt = null;
+    persistColdWorkflowSession();
+    return null;
+  }
+  return problem;
+}
+
+function isColdPracticePick(item) {
+  return Boolean(item?.id && coldPracticeProblemId && item.id === coldPracticeProblemId);
+}
+
+function startColdPractice(id) {
+  const problem = problems.find((item) => item.id === id);
+  if (!problem || !isSeenUnverified(problem)) return;
+  if (coldGradeDraft && coldGradeDraft.problemId !== id) {
+    const existing = problems.find((item) => item.id === coldGradeDraft.problemId);
+    if (!window.confirm(`Discard the unfinished cold-check record for ${existing?.title || "the current problem"}?`)) return;
+  }
+  coldPracticeProblemId = id;
+  coldGradeDraft = null;
+  activeAttempt = null;
+  clearPostGradeNote();
+  persistColdWorkflowSession();
+  skippedDailyPicks.new = new Set();
+  navigateToRoute("dashboard");
+  renderDailyPicks({ preserveReview: true });
+  els.newCard?.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 function dailyPickKey(type, item) {
@@ -2709,20 +3902,57 @@ function gradeDailyPick(cardType, grade) {
   if (!pick) return;
 
   const existing = pick.id ? problems.find((problem) => problem.id === pick.id) : findProblemBySlug(pick.titleSlug);
+  const isColdCheck = cardType === "new" && (isColdPracticePick(pick) || isSeenUnverified(existing));
+  const attemptContext = isColdCheck ? "cold" : cardType === "review" ? "review" : "new";
+  if (!allowAttemptSwitch(attemptContext, existing || pick)) return;
+  if (isColdCheck && existing) {
+    beginColdGradeDraft(existing, grade);
+    return;
+  }
+
   const problemSnapshot = existing ? cloneState(existing) : null;
   const sessionsSnapshot = cloneState(sessions);
   const recoverySnapshot = cloneState(recoveryProblemIds);
-  if (existing && cardType === "new") {
+  if (existing && cardType === "new" && !isColdCheck) {
     existing.listMemberships = mergeMemberships(existing.listMemberships, [getSelectedStudyList().membership]);
   }
   const problem = existing || addProblemFromPlan(pick);
+  activeAttempt = null;
+  persistColdWorkflowSession();
   applyGrade(problem.id, grade, {
     createdProblemId: existing ? "" : problem.id,
     problemSnapshot,
     sessionsSnapshot,
     recoverySnapshot,
-    attemptType: cardType === "review" ? "review" : "new",
+    attemptType: attemptContext,
+    attemptContext,
   });
+}
+
+function beginColdGradeDraft(problem, grade) {
+  if (!problem || !isSeenUnverified(problem) || !isProperGrade(grade)) return;
+  if (coldGradeDraft?.problemId === problem.id) {
+    coldGradeDraft.grade = grade;
+    persistColdWorkflowSession();
+    showColdGradeDraftPrompt(problem);
+    return;
+  }
+  coldPracticeProblemId = problem.id;
+  activeAttempt = { type: "cold", problemId: problem.id, title: problem.title };
+  coldGradeDraft = {
+    problemId: problem.id,
+    grade,
+    durationMinutes: "",
+    result: grade === "red" ? "incomplete" : "accepted",
+    assistance: grade === "green" ? "none" : grade === "yellow" ? "hint" : "solution",
+    blocker: "",
+    coldScore: grade === "green" ? "4" : grade === "yellow" ? "2" : "0",
+    note: "",
+    tags: [],
+    complexityKnown: Boolean(problem.complexityKnown),
+  };
+  persistColdWorkflowSession();
+  showColdGradeDraftPrompt(problem);
 }
 
 function applyGrade(id, grade, undoContext = {}) {
@@ -2735,15 +3965,18 @@ function applyGrade(id, grade, undoContext = {}) {
     if (problem.id !== id) return problem;
 
     const previousCount = Number(problem.completionCount || 0);
+    const coldStart = isSeenUnverified(problem);
     const transition = getGradeTransition({
       grade,
       currentStage: problem.stage,
       currentGreenStreak: problem.greenStreak,
       scheduledReview: problem.nextReview,
       attemptDate: today,
+      coldStart,
     });
     const reviewEntry = {
       date: today,
+      createdAt: now,
       grade,
       id: crypto.randomUUID(),
       scheduledReview: problem.nextReview || "",
@@ -2755,6 +3988,14 @@ function applyGrade(id, grade, undoContext = {}) {
       heldForOverdue: transition.heldForOverdue,
       intervalDays: transition.intervalDays,
       nextReview: transition.nextReview,
+      attemptContext: undoContext.attemptContext || (coldStart ? "cold" : undoContext.attemptType || ""),
+      benchmarkPending:
+        coldStart &&
+        !undoContext.attemptMetadata &&
+        undoContext.attemptContext !== "practice-v2",
+      ...(undoContext.note != null ? { note: undoContext.note } : {}),
+      ...(Array.isArray(undoContext.tags) ? { tags: undoContext.tags } : {}),
+      ...(undoContext.attemptMetadata || {}),
     };
     gradeTransition = transition;
     const nextProblem = normalizeProblem({
@@ -2770,6 +4011,8 @@ function applyGrade(id, grade, undoContext = {}) {
       nextReview: transition.nextReview,
       reviewHistory: [...(problem.reviewHistory || []), reviewEntry],
       solvedAt: grade === "green" ? problem.solvedAt || now : problem.solvedAt || "",
+      notes: undoContext.note != null ? undoContext.note : problem.notes,
+      complexityKnown: undoContext.complexityKnown == null ? problem.complexityKnown : undoContext.complexityKnown,
       updatedAt: now,
     });
 
@@ -2786,6 +4029,7 @@ function applyGrade(id, grade, undoContext = {}) {
       problemSnapshot: undoContext.problemSnapshot || null,
       sessionsSnapshot: undoContext.sessionsSnapshot || cloneState(sessions),
       recoverySnapshot: undoContext.recoverySnapshot || cloneState(recoveryProblemIds),
+      restoreColdPractice: undoContext.attemptType === "cold",
     };
     maybeGraduateRecoveryProblem(gradedProblem);
     sessions = [
@@ -2796,19 +4040,25 @@ function applyGrade(id, grade, undoContext = {}) {
         topic: gradedProblem.topic,
         grade,
         attemptType: undoContext.attemptType || "",
+        attemptContext: latestHistoryEntry?.attemptContext || undoContext.attemptContext || "",
         stage: gradedProblem.stage,
         status: gradedProblem.status,
         historyEntryId: latestHistoryEntry?.id || "",
+        ...(undoContext.attemptMetadata || {}),
       },
       ...sessions,
-    ].slice(0, 100);
+    ];
   }
+
+  if (coldPracticeProblemId === id) coldPracticeProblemId = "";
+  if (activeAttempt?.problemId === id) activeAttempt = null;
+  persistColdWorkflowSession();
 
   persist();
   render();
   if (els.gradeResult && gradeTransition) els.gradeResult.textContent = buildGradeResultSummary(gradeTransition);
   celebrateRep(undoContext.attemptType || "");
-  showPostGradeNotePrompt(gradedProblem);
+  if (!undoContext.suppressPostGradePrompt) showPostGradeNotePrompt(gradedProblem);
 }
 
 function celebrateRep(attemptType) {
@@ -2825,35 +4075,137 @@ function celebrateRep(attemptType) {
 function undoLastGrade() {
   if (!lastGradeUndo) return;
 
-  const { problemId, createdProblemId, problemSnapshot, sessionsSnapshot, recoverySnapshot, title } = lastGradeUndo;
+  const { problemId, createdProblemId, problemSnapshot, sessionsSnapshot, recoverySnapshot, restoreColdPractice, title } = lastGradeUndo;
   problems = createdProblemId
     ? problems.filter((problem) => problem.id !== createdProblemId)
     : problems.map((problem) => (problem.id === problemId ? normalizeProblem(problemSnapshot) : problem));
   sessions = sessionsSnapshot;
   recoveryProblemIds = Array.isArray(recoverySnapshot) ? recoverySnapshot : recoveryProblemIds;
+  if (restoreColdPractice && problemSnapshot) {
+    coldPracticeProblemId = problemId;
+    activeAttempt = { type: "cold", problemId, title: problemSnapshot.title };
+  }
   lastGradeUndo = null;
 
   persist();
   clearPostGradeNote();
+  persistColdWorkflowSession();
   render();
   if (els.gradeResult) els.gradeResult.textContent = `Undid last grade for ${title}.`;
 }
 
-function showPostGradeNotePrompt(problem) {
+function showPostGradeNotePrompt(problem, preferredEntry = null) {
   if (!problem) return;
   const shouldShowComplexity = problem.lastGrade === "green" || problem.lastGrade === "yellow";
-  const latestEntry = [...(problem.reviewHistory || [])].reverse().find((entry) => isProperGrade(entry.grade));
+  const latestEntry = preferredEntry || [...(problem.reviewHistory || [])].reverse().find((entry) => isProperGrade(entry.grade));
   pendingNoteProblemId = problem.id;
   pendingNoteHistoryEntryId = latestEntry?.id || "";
+  pendingAttemptContext = latestEntry?.attemptContext || "";
   const feedback = postGradeFeedbackFor(problem.lastGrade);
   els.postGradeBadge.textContent = feedback.badge;
   els.postGradeFeedback.textContent = feedback.copy;
-  els.postGradeTitle.textContent = `Leave one note for ${problem.title}?`;
+  const isCold = latestEntry?.attemptContext === "cold";
+  setPostGradeOptionalFieldsVisibility(true);
+  els.postGradeDraftGradeInput.disabled = true;
+  els.undoGradeBtn.textContent = "Undo grade";
+  els.savePostGradeNoteBtn.hidden = false;
+  els.postGradeTitle.textContent = isCold ? `Complete the cold check for ${problem.title}` : `Leave one note for ${problem.title}?`;
+  if (els.postGradeHelper) {
+    els.postGradeHelper.textContent = isCold
+      ? "Record the benchmark first. Notes and learning signals below are optional."
+      : "Optional, but useful: pattern, mistake, edge case, or complexity reminder.";
+  }
   els.postGradeNotesInput.value = latestEntry?.note || problem.notes || "";
   setSelectedPostGradeTags(latestEntry?.tags || []);
   els.postGradeComplexityInput.checked = Boolean(problem.complexityKnown);
   els.postGradeComplexityField.hidden = !shouldShowComplexity;
+  configurePostGradeBenchmark(latestEntry, problem.lastGrade);
   els.postGradeNote.hidden = false;
+  if (isCold) {
+    window.requestAnimationFrame(() => {
+      els.postGradeNote.scrollIntoView({ behavior: "smooth", block: "start" });
+      els.postGradeDurationInput.focus({ preventScroll: true });
+    });
+  }
+}
+
+function showColdGradeDraftPrompt(problem) {
+  if (!problem || !coldGradeDraft || coldGradeDraft.problemId !== problem.id) return;
+  pendingNoteProblemId = problem.id;
+  pendingNoteHistoryEntryId = "";
+  pendingAttemptContext = "cold";
+  setPostGradeOptionalFieldsVisibility(true);
+  els.postGradeBadge.textContent = "Provisional grade";
+  els.postGradeFeedback.textContent = "Finish the record to set this baseline.";
+  els.postGradeTitle.textContent = `Finish the cold check for ${problem.title}`;
+  els.postGradeHelper.textContent = "Confirm the grade and stopwatch evidence. Nothing has been scheduled yet.";
+  els.postGradeDraftGradeInput.disabled = false;
+  els.postGradeDraftGradeInput.value = coldGradeDraft.grade;
+  els.postGradeDurationInput.value = coldGradeDraft.durationMinutes;
+  els.postGradeResultInput.value = coldGradeDraft.result;
+  els.postGradeAssistanceInput.value = coldGradeDraft.assistance;
+  els.postGradeBlockerInput.value = coldGradeDraft.blocker;
+  els.postGradeColdScoreInput.value = String(coldGradeDraft.coldScore);
+  els.postGradeNotesInput.value = coldGradeDraft.note;
+  setSelectedPostGradeTags(coldGradeDraft.tags);
+  els.postGradeComplexityInput.checked = coldGradeDraft.complexityKnown;
+  els.postGradeComplexityField.hidden = coldGradeDraft.grade === "red";
+  els.postGradeBenchmarkFields.hidden = false;
+  els.postGradeBenchmarkError.textContent = "";
+  els.skipPostGradeNoteBtn.hidden = true;
+  els.undoGradeBtn.textContent = "Back to attempt";
+  els.savePostGradeNoteBtn.hidden = false;
+  els.savePostGradeNoteBtn.textContent = "Finish cold check";
+  els.postGradeNote.hidden = false;
+  window.requestAnimationFrame(() => {
+    els.postGradeNote.scrollIntoView({ behavior: "smooth", block: "start" });
+    els.postGradeDurationInput.focus({ preventScroll: true });
+  });
+}
+
+function resumeColdGradeDraft() {
+  const problem = problems.find((item) => item.id === coldGradeDraft?.problemId && isSeenUnverified(item));
+  if (!problem) {
+    coldGradeDraft = null;
+    persistColdWorkflowSession();
+    return;
+  }
+  coldPracticeProblemId = problem.id;
+  activeAttempt = { type: "cold", problemId: problem.id, title: problem.title };
+  persistColdWorkflowSession();
+  showColdGradeDraftPrompt(problem);
+}
+
+function resumePendingColdBenchmark() {
+  if (pendingNoteProblemId || getCurrentRoute() !== "dashboard") return;
+
+  const pending = problems
+    .flatMap((problem) =>
+      (problem.reviewHistory || [])
+        .filter((entry) => entry.attemptContext === "cold" && entry.benchmarkPending)
+        .map((entry) => ({ problem, entry })),
+    )
+    .sort((a, b) => dateValue(b.entry.createdAt || b.entry.date) - dateValue(a.entry.createdAt || a.entry.date))[0];
+
+  if (pending) showPostGradeNotePrompt(pending.problem, pending.entry);
+}
+
+function configurePostGradeBenchmark(entry, grade) {
+  const isCold = entry?.attemptContext === "cold";
+  if (!els.postGradeBenchmarkFields) return;
+  els.postGradeBenchmarkFields.hidden = !isCold;
+  els.skipPostGradeNoteBtn.hidden = isCold;
+  els.savePostGradeNoteBtn.textContent = isCold ? "Save benchmark" : "Save note";
+  if (!isCold) return;
+
+  els.postGradeDraftGradeInput.value = grade;
+  els.postGradeDraftGradeInput.disabled = true;
+  els.postGradeDurationInput.value = entry?.durationMinutes || "";
+  els.postGradeResultInput.value = entry?.result || (grade === "red" ? "incomplete" : "accepted");
+  els.postGradeAssistanceInput.value = entry?.assistance || (grade === "green" ? "none" : grade === "yellow" ? "hint" : "solution");
+  els.postGradeBlockerInput.value = entry?.blocker || "";
+  els.postGradeColdScoreInput.value = entry?.coldScore ?? (grade === "green" ? "4" : grade === "yellow" ? "2" : "0");
+  els.postGradeBenchmarkError.textContent = "";
 }
 
 function postGradeFeedbackFor(grade) {
@@ -2875,6 +4227,7 @@ function postGradeFeedbackFor(grade) {
 }
 
 function buildGradeResultSummary(transition) {
+  if (transition.coldStart) return `Cold baseline set. Next review ${formatDate(transition.nextReview)}.`;
   const held = transition.heldForEarly || transition.heldForOverdue;
   const lead = held ? "Stage held." : "Next review";
   return held ? `${lead} Next review ${formatDate(transition.nextReview)}.` : `${lead} ${formatDate(transition.nextReview)}.`;
@@ -2883,17 +4236,92 @@ function buildGradeResultSummary(transition) {
 function clearPostGradeNote() {
   pendingNoteProblemId = "";
   pendingNoteHistoryEntryId = "";
+  pendingAttemptContext = "";
   els.postGradeNotesInput.value = "";
+  if (els.postGradeHelper) {
+    els.postGradeHelper.textContent = "Optional, but useful: pattern, mistake, edge case, or complexity reminder.";
+  }
   setSelectedPostGradeTags([]);
   els.postGradeComplexityInput.checked = false;
   els.postGradeComplexityField.hidden = true;
+  if (els.postGradeBenchmarkFields) els.postGradeBenchmarkFields.hidden = true;
+  if (els.postGradeBenchmarkError) els.postGradeBenchmarkError.textContent = "";
+  els.skipPostGradeNoteBtn.hidden = false;
+  els.undoGradeBtn.textContent = "Undo grade";
+  els.savePostGradeNoteBtn.hidden = false;
+  els.savePostGradeNoteBtn.textContent = "Save note";
+  setPostGradeOptionalFieldsVisibility(true);
   els.postGradeNote.hidden = true;
 }
 
+function setPostGradeOptionalFieldsVisibility(isVisible) {
+  if (els.postGradeTags) els.postGradeTags.hidden = !isVisible;
+  if (els.postGradeNotesInput) els.postGradeNotesInput.hidden = !isVisible;
+}
+
+function handlePostGradeUndo() {
+  if (coldGradeDraft) {
+    cancelColdGradeDraft({ keepSelection: true });
+    return;
+  }
+  undoLastGrade();
+}
+
+function cancelColdGradeDraft({ keepSelection = true, renderAfter = true } = {}) {
+  const problemId = coldGradeDraft?.problemId || coldPracticeProblemId;
+  coldGradeDraft = null;
+  coldPracticeProblemId = keepSelection ? problemId : "";
+  activeAttempt = keepSelection && problemId ? { type: "cold", problemId } : null;
+  clearPostGradeNote();
+  persistColdWorkflowSession();
+  if (renderAfter) {
+    renderDailyPicks({ preserveReview: true });
+    if (els.gradeResult) els.gradeResult.textContent = keepSelection
+      ? "Cold-check grade discarded. The attempt is still open."
+      : "Cold check canceled.";
+  }
+}
+
+function handleColdDraftInput(event) {
+  if (!coldGradeDraft) return;
+  if (event?.target === els.postGradeDraftGradeInput) {
+    const grade = els.postGradeDraftGradeInput.value;
+    els.postGradeResultInput.value = grade === "red" ? "incomplete" : "accepted";
+    els.postGradeAssistanceInput.value = grade === "green" ? "none" : grade === "yellow" ? "hint" : "solution";
+    els.postGradeColdScoreInput.value = grade === "green" ? "4" : grade === "yellow" ? "2" : "0";
+    els.postGradeComplexityField.hidden = grade === "red";
+  }
+  captureColdDraftForm();
+}
+
+function captureColdDraftForm() {
+  if (!coldGradeDraft) return;
+  coldGradeDraft = {
+    ...coldGradeDraft,
+    grade: els.postGradeDraftGradeInput.value,
+    durationMinutes: els.postGradeDurationInput.value,
+    result: els.postGradeResultInput.value,
+    assistance: els.postGradeAssistanceInput.value,
+    blocker: els.postGradeBlockerInput.value,
+    coldScore: els.postGradeColdScoreInput.value,
+    note: els.postGradeNotesInput.value,
+    tags: getSelectedPostGradeTags(),
+    complexityKnown: els.postGradeComplexityInput.checked,
+  };
+  persistColdWorkflowSession();
+}
+
 function savePostGradeNote() {
+  if (coldGradeDraft) {
+    finishColdGradeDraft();
+    return;
+  }
   const note = els.postGradeNotesInput.value.trim();
   const tags = getSelectedPostGradeTags();
   if (!pendingNoteProblemId) return;
+
+  const attemptMetadata = getPostGradeAttemptMetadata();
+  if (pendingAttemptContext === "cold" && !attemptMetadata) return;
 
   const now = new Date().toISOString();
   const shouldUpdateComplexity = !els.postGradeComplexityField.hidden;
@@ -2906,20 +4334,102 @@ function savePostGradeNote() {
             historyEntryId: pendingNoteHistoryEntryId,
             note,
             tags,
+            attemptMetadata,
           }),
           complexityKnown: shouldUpdateComplexity ? els.postGradeComplexityInput.checked : problem.complexityKnown,
           updatedAt: now,
         })
       : problem,
   );
+  if (attemptMetadata) {
+    sessions = sessions.map((session) =>
+      session.historyEntryId === pendingNoteHistoryEntryId
+        ? { ...session, ...attemptMetadata }
+        : session,
+    );
+  }
 
   persist();
   clearPostGradeNote();
   render();
-  const savedSignals = tags.length > 0;
+  const savedSignals = tags.length > 0 || Boolean(attemptMetadata);
   if (els.gradeResult) {
     els.gradeResult.textContent = note || savedSignals ? "Future-you signal saved." : "Future-you signal cleared.";
   }
+}
+
+function finishColdGradeDraft() {
+  if (!coldGradeDraft) return;
+  captureColdDraftForm();
+  const problem = problems.find((item) => item.id === coldGradeDraft.problemId && isSeenUnverified(item));
+  if (!problem) {
+    els.postGradeBenchmarkError.textContent = "This problem changed in another workflow. Reload before finishing the cold check.";
+    return;
+  }
+
+  const attemptMetadata = getPostGradeAttemptMetadata();
+  if (!attemptMetadata) return;
+  const draft = cloneState(coldGradeDraft);
+  const problemSnapshot = cloneState(problem);
+  const sessionsSnapshot = cloneState(sessions);
+  const recoverySnapshot = cloneState(recoveryProblemIds);
+  coldGradeDraft = null;
+  activeAttempt = null;
+  clearPostGradeNote();
+  persistColdWorkflowSession();
+  applyGrade(problem.id, draft.grade, {
+    problemSnapshot,
+    sessionsSnapshot,
+    recoverySnapshot,
+    attemptType: "cold",
+    attemptContext: "cold",
+    attemptMetadata,
+    note: draft.note.trim(),
+    tags: draft.tags,
+    complexityKnown: draft.grade === "red" ? problem.complexityKnown : draft.complexityKnown,
+    suppressPostGradePrompt: true,
+  });
+  showColdCheckCompletion(problem.id);
+}
+
+function showColdCheckCompletion(problemId) {
+  const problem = problems.find((item) => item.id === problemId);
+  if (!problem) return;
+  setPostGradeOptionalFieldsVisibility(false);
+  els.postGradeBenchmarkFields.hidden = true;
+  els.postGradeComplexityField.hidden = true;
+  els.postGradeBadge.textContent = "Cold check complete";
+  els.postGradeFeedback.textContent = `${stageName(problem.stage)} · next ${formatDate(problem.nextReview)}`;
+  els.postGradeTitle.textContent = `Baseline saved for ${problem.title}`;
+  els.postGradeHelper.textContent = "This problem is now in the normal review loop.";
+  els.undoGradeBtn.textContent = "Undo cold check";
+  els.skipPostGradeNoteBtn.hidden = true;
+  els.savePostGradeNoteBtn.hidden = true;
+  els.postGradeNote.hidden = false;
+}
+
+function getPostGradeAttemptMetadata() {
+  if (pendingAttemptContext !== "cold") return null;
+  const durationMinutes = Number(els.postGradeDurationInput.value);
+  const result = els.postGradeResultInput.value;
+  const assistance = els.postGradeAssistanceInput.value;
+  const blocker = els.postGradeBlockerInput.value;
+  const coldScore = Number(els.postGradeColdScoreInput.value);
+
+  if (!Number.isFinite(durationMinutes) || durationMinutes < 1 || durationMinutes > 180 || !result || !assistance || !blocker || !Number.isFinite(coldScore)) {
+    els.postGradeBenchmarkError.textContent = "Complete the cold-check details so this benchmark is useful later.";
+    return null;
+  }
+
+  els.postGradeBenchmarkError.textContent = "";
+  return {
+    attemptContext: "cold",
+    durationMinutes: Math.round(durationMinutes),
+    result,
+    assistance,
+    blocker,
+    coldScore: Math.round(clamp(coldScore, 0, 4)),
+  };
 }
 
 function getSelectedPostGradeTags() {
@@ -2937,7 +4447,7 @@ function setSelectedPostGradeTags(tags = []) {
   });
 }
 
-function updateHistoryEntryWithLearningSignals(history, { historyEntryId, note, tags }) {
+function updateHistoryEntryWithLearningSignals(history, { historyEntryId, note, tags, attemptMetadata = null }) {
   const cleanTags = Array.isArray(tags) ? tags.filter((tag) => LEARNING_SIGNAL_KEYS.includes(tag)) : [];
   const fallbackIndex = historyEntryId
     ? -1
@@ -2951,14 +4461,17 @@ function updateHistoryEntryWithLearningSignals(history, { historyEntryId, note, 
       ...entry,
       note,
       tags: cleanTags,
+      ...(attemptMetadata || {}),
+      benchmarkPending: attemptMetadata ? false : Boolean(entry.benchmarkPending),
     };
   });
   return nextHistory;
 }
 
-function getGradeTransition({ grade, currentStage, currentGreenStreak = 0, scheduledReview = "", attemptDate }) {
+function getGradeTransition({ grade, currentStage, currentGreenStreak = 0, scheduledReview = "", attemptDate, coldStart = false }) {
   const previousStage = clampStage(currentStage);
   const attempt = normalizeDate(attemptDate);
+  if (coldStart) return getColdStartTransition(grade, attempt);
   const reviewDate = normalizeDate(scheduledReview);
   const isEarlyClean =
     grade === "green" && reviewDate && attempt && parseIsoDate(attempt) < parseIsoDate(reviewDate);
@@ -2995,6 +4508,23 @@ function getGradeTransition({ grade, currentStage, currentGreenStreak = 0, sched
   };
 }
 
+function getColdStartTransition(grade, attemptDate) {
+  const stageByGrade = { red: 0, yellow: 1, green: 2 };
+  const newStage = stageByGrade[grade] ?? 0;
+  const intervalDays = STAGES[newStage].intervalDays;
+  return {
+    previousStage: 1,
+    newStage,
+    intervalDays,
+    nextReview: toIsoDate(addDays(parseIsoDate(attemptDate), intervalDays)),
+    daysOverdue: 0,
+    heldForEarly: false,
+    heldForOverdue: false,
+    coldStart: true,
+    greenStreak: grade === "green" ? 1 : 0,
+  };
+}
+
 function heldReasonLabel(entry) {
   if (entry.heldForEarly) {
     const scheduled = entry.scheduledReview ? ` before ${formatDate(entry.scheduledReview)}` : "";
@@ -3016,7 +4546,22 @@ function historyGradeLabel(grade) {
 
 function historyStageSummary(entry) {
   if (!isProperGrade(entry.grade)) return "Historical context";
+  if (isFeatureEnabled("practiceV2")) {
+    const evidence = entry.grade === "red"
+      ? "Needs repair"
+      : entry.grade === "green" && isIndependentHistoryEntry(entry)
+        ? "Independent evidence"
+        : "Assisted evidence";
+    const nextReview = entry.nextReview ? ` · exact-title recall ${formatDate(entry.nextReview)}` : "";
+    return `${evidence}${nextReview}${heldReasonLabel(entry)}`;
+  }
   const nextReview = entry.nextReview ? ` · next ${formatDate(entry.nextReview)}` : "";
+  if (entry.attemptContext === "backfill-calibration") {
+    return `Backfilled baseline -> ${stageName(entry.newStage)}${nextReview}`;
+  }
+  if (entry.coldStart || entry.attemptContext === "cold") {
+    return `Cold baseline -> ${stageName(entry.newStage)}${nextReview}`;
+  }
   return `${stageName(entry.previousStage)} -> ${stageName(entry.newStage)}${nextReview}${heldReasonLabel(entry)}`;
 }
 
@@ -3101,7 +4646,7 @@ function renderHistoryTab(problem) {
   const history = [...(problem.reviewHistory || [])].sort((a, b) => dateValue(b.date) - dateValue(a.date));
   els.addBackfillBtn.disabled = false;
   els.backfillHelp.textContent =
-    "Add a real graded attempt you completed elsewhere. Imported CSV rows stay visible above, but only real grades drive scheduling.";
+    "Add a real graded attempt you completed elsewhere. Imported rows stay visible above, but only real grades build current evidence and schedule same-title recall.";
 
   if (history.length === 0) {
     els.historyList.innerHTML = `
@@ -3121,6 +4666,7 @@ function renderHistoryTab(problem) {
           <span>${escapeHtml(historyGradeLabel(entry.grade))}</span>
           ${entry.note ? `<p>${escapeHtml(entry.note)}</p>` : ""}
           ${renderLearningSignalTags(entry.tags)}
+          ${renderAttemptMetadata(entry)}
         </div>
         <div class="history-row-meta">
           <small>${escapeHtml(historyStageSummary(entry))}</small>
@@ -3133,6 +4679,87 @@ function renderHistoryTab(problem) {
       </div>
     `)
     .join("");
+}
+
+function renderAttemptMetadata(entry) {
+  if (isFeatureEnabled("practiceV2") && isProperGrade(entry.grade)) {
+    const context = entry.backfilled
+      ? "Manual backfill"
+      : practiceTaskTypeLabel(entry.taskType) || (entry.attemptContext === "cold" ? "Assessment" : "Honest rep");
+    const support = entry.grade === "green" ? frictionLabel(entry.friction) : assistanceLabel(entry.assistance);
+    const details = [
+      context,
+      entry.durationMinutes || entry.elapsedMinutes ? `${entry.durationMinutes || entry.elapsedMinutes} min` : "",
+      support,
+      entry.grade === "green" ? "" : blockerLabel(entry.blocker),
+    ].filter(Boolean);
+    return details.length
+      ? `<div class="history-attempt-meta">${details.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>`
+      : "";
+  }
+  if (entry.attemptContext !== "cold") return "";
+  const details = [
+    entry.durationMinutes ? `${entry.durationMinutes} min` : "",
+    attemptResultLabel(entry.result),
+    assistanceLabel(entry.assistance),
+    blockerLabel(entry.blocker),
+    Number.isFinite(Number(entry.coldScore)) ? `Cold score ${entry.coldScore}/4` : "",
+  ].filter(Boolean);
+  if (details.length === 0) return `<div class="history-attempt-meta"><span>Cold check</span></div>`;
+  return `<div class="history-attempt-meta"><span>Cold check</span>${details.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>`;
+}
+
+function attemptResultLabel(value) {
+  return ({ accepted: "Accepted", working: "Working solution", incomplete: "Incomplete" })[value] || "";
+}
+
+function assistanceLabel(value) {
+  return ({
+    none: "No assistance",
+    hint: "Used a hint",
+    solution: "Viewed solution",
+    editorial: "Read editorial",
+    ai: "Asked AI",
+    person: "Asked a person",
+  })[value] || "";
+}
+
+function blockerLabel(value) {
+  return ({
+    "getting-started": "Getting-started blocker",
+    recognition: "Pattern recognition blocker",
+    strategy: "Strategy blocker",
+    implementation: "Implementation blocker",
+    "syntax-api": "Syntax/API blocker",
+    "edge-cases": "Edge-case blocker",
+    time: "Time blocker",
+    "time-management": "Time-management blocker",
+    explanation: "Explanation blocker",
+    none: "No blocker",
+  })[value] || "";
+}
+
+function frictionLabel(value) {
+  return ({
+    none: "No meaningful friction",
+    implementation: "Implementation friction",
+    "syntax-api": "Syntax / API friction",
+    "edge-cases": "Edge-case friction",
+    explanation: "Explanation friction",
+    "time-management": "Time-management friction",
+  })[value] || "";
+}
+
+function practiceTaskTypeLabel(value) {
+  return ({
+    assessment: "Assessment",
+    learn: "Coverage rep",
+    repair: "Repair rep",
+    retention: "Exact-title recall",
+    transfer: "Transfer rep",
+    mixed: "Mixed rep",
+    mock: "Mock rep",
+  })[value] || "";
 }
 
 function addBackfillAttempt() {
@@ -3176,6 +4803,7 @@ function addBackfillAttempt() {
   });
 
   problems = problems.map((item) => (item.id === id ? nextProblem : item));
+  const replayedEntry = (nextProblem.reviewHistory || []).find((item) => item.id === entry.id);
   const graduationMessage = maybeGraduateRecoveryProblem(nextProblem);
   sessions = upsertSession({
     date,
@@ -3183,7 +4811,8 @@ function addBackfillAttempt() {
     title: nextProblem.title,
     topic: nextProblem.topic,
     grade,
-    attemptType: inferBackfillAttemptType(problem, date),
+    attemptType: replayedEntry?.attemptContext === "cold" ? "cold" : inferBackfillAttemptType(problem, date),
+    attemptContext: replayedEntry?.attemptContext || "",
     stage: nextProblem.stage,
     status: nextProblem.status,
     backfilled: true,
@@ -3230,6 +4859,11 @@ function deleteHistoryEntry(entryKey) {
     if (entry.id && session.historyEntryId) return session.historyEntryId !== entry.id;
     return !(session.backfilled && session.problemId === id && session.date === entry.date && session.grade === entry.grade);
   });
+  if ((entry.attemptContext === "cold" || entry.coldStart) && isSeenUnverified(nextProblem)) {
+    coldPracticeProblemId = nextProblem.id;
+    activeAttempt = { type: "cold", problemId: nextProblem.id, title: nextProblem.title };
+    persistColdWorkflowSession();
+  }
   lastGradeUndo = null;
   clearPostGradeNote();
 
@@ -3271,30 +4905,44 @@ function learningSignalLabel(tag) {
 
 function rebuildProblemFromHistory(problem) {
   const sortedHistory = [...(problem.reviewHistory || [])].sort((a, b) => dateValue(a.date) - dateValue(b.date));
-  const importedCount = sortedHistory.filter((entry) => !isProperGrade(entry.grade)).length;
   const firstAttemptAt = sortedHistory[0]?.date || problem.firstAttemptAt || "";
-  let stage = inferStageFromCount(importedCount);
+  const latestContextEntry = [...sortedHistory].reverse().find((entry) => !isProperGrade(entry.grade)) || null;
+  let stage = 0;
   let greenStreak = 0;
   let scheduledReview = "";
   let lastProperEntry = null;
+  let hasSeenImportedContext = false;
+  let hasReplayedProperGrade = false;
 
   const replayedHistory = sortedHistory.map((entry) => {
-    if (!isProperGrade(entry.grade)) return entry;
+    if (!isProperGrade(entry.grade)) {
+      if (entry.grade === "imported") hasSeenImportedContext = true;
+      return entry;
+    }
 
-    const effectiveScheduledReview = entry.scheduledReview || scheduledReview;
+    const coldStart = !hasReplayedProperGrade && hasSeenImportedContext;
+    const effectiveScheduledReview = coldStart ? "" : entry.scheduledReview || scheduledReview;
     const transition = getGradeTransition({
       grade: entry.grade,
       currentStage: stage,
       currentGreenStreak: greenStreak,
       scheduledReview: effectiveScheduledReview,
       attemptDate: entry.date,
+      coldStart,
     });
 
     stage = transition.newStage;
     greenStreak = transition.greenStreak;
     scheduledReview = transition.nextReview;
+    hasReplayedProperGrade = true;
+    const attemptContext = coldStart
+      ? entry.backfilled
+        ? "backfill-calibration"
+        : "cold"
+      : entry.attemptContext || "";
     lastProperEntry = {
       ...entry,
+      attemptContext,
       scheduledReview: effectiveScheduledReview,
       previousStage: transition.previousStage,
       newStage: transition.newStage,
@@ -3302,6 +4950,7 @@ function rebuildProblemFromHistory(problem) {
       daysOverdue: transition.daysOverdue,
       heldForEarly: transition.heldForEarly,
       heldForOverdue: transition.heldForOverdue,
+      coldStart: transition.coldStart,
       intervalDays: transition.intervalDays,
       nextReview: transition.nextReview,
     };
@@ -3316,15 +4965,18 @@ function rebuildProblemFromHistory(problem) {
     completionCount: replayedHistory.length,
     stage,
     greenStreak,
-    lastReviewedAt: lastProperEntry?.date || problem.lastReviewedAt,
-    lastGrade: lastProperEntry?.grade || problem.lastGrade,
-    nextReview: lastProperEntry?.nextReview || problem.nextReview,
+    lastReviewedAt: lastProperEntry?.date || latestContextEntry?.date || "",
+    lastGrade: lastProperEntry?.grade || latestContextEntry?.grade || "",
+    nextReview: lastProperEntry?.nextReview || "",
     currentIntervalDays: STAGES[stage].intervalDays,
     solvedAt: problem.solvedAt || replayedHistory.find((entry) => entry.grade === "green")?.date || "",
     updatedAt: new Date().toISOString(),
   });
 
-  return applyMasteryStatus(normalized);
+  const withoutUntrustedSchedule = isSeenUnverified(normalized)
+    ? { ...normalized, nextReview: "" }
+    : normalized;
+  return applyMasteryStatus(withoutUntrustedSchedule);
 }
 
 function shouldUseCurrentScheduleForBackfill(problem, date) {
@@ -3363,11 +5015,29 @@ function upsertSession(session) {
   });
 
   return [session, ...nextSessions]
-    .sort((a, b) => dateValue(b.date) - dateValue(a.date))
-    .slice(0, 100);
+    .sort((a, b) => dateValue(b.date) - dateValue(a.date));
 }
 
 function renderReviewSummary(problem) {
+  renderProblemDialogTerminology();
+  if (isFeatureEnabled("practiceV2")) {
+    renderPracticeV2ProblemEvidence(problem);
+    return;
+  }
+
+  if (problem && isSeenUnverified(problem)) {
+    const unverifiedCopy = isFeatureEnabled("practiceV2")
+      ? "The adaptive plan will schedule an assessment when it is the strongest next rep. Imported history does not schedule reviews."
+      : "Use Practice now in the Library to set an honest cold baseline. Imported history does not schedule reviews.";
+    els.reviewSummaryStats.innerHTML = `
+      <div class="summary-empty summary-unverified">
+        <strong>Seen before; current recall unverified</strong>
+        <span>${unverifiedCopy}</span>
+      </div>
+    `;
+    els.masteryBlockers.innerHTML = "";
+    return;
+  }
   if (!problem || !isAttempted(problem)) {
     els.reviewSummaryStats.innerHTML = `
       <div class="summary-empty">
@@ -3399,6 +5069,101 @@ function renderReviewSummary(problem) {
     `)
     .join("");
   renderMasteryBlockers(problem);
+}
+
+function renderProblemDialogTerminology() {
+  const isV2 = isFeatureEnabled("practiceV2");
+  if (els.reviewSummary) {
+    els.reviewSummary.setAttribute("aria-label", isV2 ? "Current evidence" : "Review summary");
+    els.reviewSummary.classList.toggle("evidence-summary", isV2);
+  }
+  if (els.reviewSummaryLabel) els.reviewSummaryLabel.textContent = isV2 ? "Current Evidence" : "Review Summary";
+  if (els.reviewSummaryHint) els.reviewSummaryHint.textContent = "Read-only";
+  if (els.statusField) els.statusField.hidden = isV2;
+  if (els.completionField) els.completionField.hidden = isV2;
+  if (els.reviewField) els.reviewField.hidden = isV2;
+  if (els.reviewInputLabel) els.reviewInputLabel.textContent = isV2 ? "Exact-title review date" : "Next review";
+  if (els.complexityHelper) {
+    els.complexityHelper.textContent = isV2
+      ? "Useful interview evidence; confirmed manually"
+      : "Required for Mastered status";
+  }
+}
+
+function renderPracticeV2ProblemEvidence(problem) {
+  if (!problem) {
+    els.reviewSummaryStats.innerHTML = `
+      <div class="summary-empty">
+        <strong>No evidence yet</strong>
+        <span>Save the problem, then complete an honest rep when the adaptive plan selects it.</span>
+      </div>
+    `;
+    renderEvidenceGuidance({ problem: null, evidence: null, latest: null, skill: null });
+    return;
+  }
+
+  const evidence = getProblemEvidenceSummary(problem);
+  const latest = latestProperGradeEntry(problem);
+  const exactReview = getExactReviewSummary(problem);
+  const skillId = PRACTICE_V2_ENGINE?.skillIdFor(problem.topic);
+  const skill = buildMemoryEvidenceModel().skills.find((item) => item.id === skillId) || null;
+  const elapsed = latest?.durationMinutes || latest?.elapsedMinutes;
+  const support = latest
+    ? latest.grade === "green"
+      ? frictionLabel(latest.friction) || assistanceLabel(latest.assistance) || "No meaningful friction"
+      : [assistanceLabel(latest.assistance), blockerLabel(latest.blocker)].filter(Boolean).join(" · ") || "Not recorded"
+    : "Not recorded";
+  const latestOutcome = latest
+    ? latest.grade === "red"
+      ? "Could not solve"
+      : latest.grade === "green" && isIndependentHistoryEntry(latest)
+        ? "Solved independently"
+        : "Solved with help or friction"
+    : isAttempted(problem)
+      ? "Historical context only"
+      : "No honest result";
+  const stats = [
+    ["Problem evidence", `${evidence.label}${evidence.stale ? " · stale" : ""}`],
+    ["Last checked", latest?.date ? formatDate(latest.date) : "Not yet"],
+    ["Latest result", latestOutcome],
+    ["Help / friction", support],
+    ["Stopwatch", elapsed ? `${elapsed} min` : "Not recorded"],
+    ["Exact-title recall", `${exactReview.label} · ${exactReview.detail}`],
+  ];
+
+  els.reviewSummaryStats.innerHTML = stats
+    .map(([label, value]) => `
+      <div class="summary-stat">
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(value)}</strong>
+      </div>
+    `)
+    .join("");
+  renderEvidenceGuidance({ problem, evidence, latest, skill });
+}
+
+function renderEvidenceGuidance({ problem, evidence, latest, skill }) {
+  const next = [];
+  if (!problem || (!latest && !isAttempted(problem))) {
+    next.push("First honest attempt");
+  } else if (!latest) {
+    next.push("Current assessment");
+  } else {
+    if (evidence?.stale) next.push("Fresh check");
+    if (latest.grade === "red") next.push("Repair the main blocker");
+    if (latest.grade !== "red" && !isIndependentHistoryEntry(latest)) next.push("Independent result");
+    if (skill?.independent && !skill.transferSupported) next.push("Distinct-title transfer proof");
+  }
+
+  if (next.length === 0 && skill?.transferSupported) {
+    els.masteryBlockers.innerHTML = `<p class="mastery-ready">Transfer-supported evidence is current for this skill.</p>`;
+    return;
+  }
+
+  els.masteryBlockers.innerHTML = `
+    <span>Next evidence to build</span>
+    <div>${next.map((item) => `<span class="blocker-pill">${escapeHtml(item)}</span>`).join("")}</div>
+  `;
 }
 
 function renderMasteryBlockers(problem) {
@@ -3494,6 +5259,10 @@ function deleteCurrentProblem() {
   problems = problems.filter((problem) => problem.id !== id);
   recoveryProblemIds = recoveryProblemIds.filter((problemId) => problemId !== id);
   sessions = sessions.filter((session) => session.problemId !== id);
+  if (coldPracticeProblemId === id || coldGradeDraft?.problemId === id || activeAttempt?.problemId === id) {
+    clearColdWorkflowSession();
+    clearPostGradeNote();
+  }
   persist();
   render();
   els.problemDialog.close();
@@ -3586,10 +5355,12 @@ function addProblemFromPlan(planProblem) {
 }
 
 function planToProblem(planProblem, membership = "blind75") {
+  const titleSlug = planProblem.slug || planProblem.titleSlug || slugifyTitle(planProblem.title);
   return normalizeProblem({
+    id: `planned-${membership}-${canonicalSlug(titleSlug)}`,
     title: planProblem.title,
-    titleSlug: planProblem.slug || planProblem.titleSlug,
-    url: planProblem.url || leetcodeUrl(planProblem.slug || planProblem.titleSlug),
+    titleSlug,
+    url: planProblem.url || leetcodeUrl(titleSlug),
     status: "todo",
     difficulty: planProblem.difficulty,
     topic: planProblem.topic,
@@ -3729,15 +5500,10 @@ function mergeImportedProblems(imported) {
 }
 
 function exportJson() {
-  const payload = {
-    version: EXPORT_VERSION,
+  const payload = buildTrackerStatePayload({
     exportedAt: new Date().toISOString(),
     revision: currentRevision,
-    importMeta,
-    problems,
-    sessions,
-    recoveryProblemIds,
-  };
+  });
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
@@ -3753,8 +5519,11 @@ function importJson(event) {
   const reader = new FileReader();
   reader.addEventListener("load", () => {
     try {
-      const imported = JSON.parse(String(reader.result));
-      const importedProblems = Array.isArray(imported) ? imported : imported.problems;
+      const parsed = JSON.parse(String(reader.result));
+      const imported = Array.isArray(parsed)
+        ? { version: 3, problems: parsed, sessions: [] }
+        : parsed;
+      const importedProblems = imported.problems;
       if (!Array.isArray(importedProblems)) throw new Error("Expected problems array");
       if (
         appEnv.authRequired &&
@@ -3762,10 +5531,13 @@ function importJson(event) {
       ) {
         return;
       }
-      problems = importedProblems.map(normalizeProblem);
-      sessions = Array.isArray(imported.sessions) ? imported.sessions : [];
-      recoveryProblemIds = normalizeRecoveryProblemIds(imported.recoveryProblemIds);
-      importMeta = imported.importMeta || importMeta;
+      const expectedRevision = currentRevision;
+      const migrated = migrateTrackerState({ ...imported, exportedAt: undefined });
+      applyRemoteState({
+        ...migrated,
+        savedAt: lastServerSavedAt,
+        revision: expectedRevision,
+      });
       persist();
       render();
     } catch (error) {
@@ -3929,7 +5701,9 @@ function renderLeetcodeImportReview(plan) {
     <div class="leetcode-import-note">
       <div>
         <strong>${includedRows.length} rows ready to import</strong>
-        <span>Default: Stage 1. Remove anything you do not want in the tracker; Accepted is not treated as Solved cleanly.</span>
+        <span>${isFeatureEnabled("practiceV2")
+          ? "Default confidence: Stage 1. This estimate does not schedule a review; a future adaptive assessment establishes trusted evidence."
+          : "Default confidence: Stage 1. This estimate does not schedule a review; your first cold check sets the trusted stage."}</span>
       </div>
       <div class="leetcode-import-bulk" aria-label="Bulk import stage">
         <button class="ghost-btn" type="button" data-leetcode-import-stage-all="0">All Stage 0</button>
@@ -3974,7 +5748,7 @@ function renderLeetcodeImportStageSelect(candidate) {
   const disabled = isLeetcodeImportIncluded(candidate) ? "" : " disabled";
   return `
     <label class="leetcode-import-stage">
-      <span>Import as</span>
+      <span>Confidence</span>
       <select data-leetcode-import-stage="${escapeAttr(candidate.importKey)}"${disabled}>
         ${[0, 1, 2]
           .map((stage) => `
@@ -4107,7 +5881,6 @@ function normalizeImportedOnlyProblem(problem) {
   const count = history.length;
   const stage = problem.importStage == null ? inferStageFromCount(count) : clampLeetcodeImportStage(problem.importStage);
   const intervalDays = STAGES[stage].intervalDays;
-  const nextReview = latest?.date ? toIsoDate(addDays(parseIsoDate(latest.date), intervalDays)) : "";
 
   return normalizeProblem({
     ...problem,
@@ -4119,7 +5892,7 @@ function normalizeImportedOnlyProblem(problem) {
     currentIntervalDays: intervalDays,
     lastReviewedAt: latest?.date || "",
     lastGrade: latest ? "imported" : "",
-    nextReview,
+    nextReview: "",
     masteredAt: "",
     solvedAt: "",
   });
@@ -4277,13 +6050,14 @@ function normalizeProblem(problem) {
     : computeGreenStreak(problem.reviewHistory || []);
   const baseStatus = STATUSES.includes(problem.status) ? problem.status : normalizeStatus(problem.status, completionCount);
   const normalized = {
+    ...problem,
     id: problem.id || crypto.randomUUID(),
     title,
     titleSlug,
     url,
     status: baseStatus,
     difficulty: normalizeDifficulty(problem.difficulty),
-    topic: String(problem.topic || "General").trim(),
+    topic: canonicalTopic(problem.topic),
     notes: String(problem.notes || ""),
     solution: normalizeSolution(problem.solution),
     firstAttemptAt: normalizeDate(problem.firstAttemptAt || problem.solvedAt || ""),
@@ -4292,10 +6066,13 @@ function normalizeProblem(problem) {
     stage,
     greenStreak,
     complexityKnown: Boolean(problem.complexityKnown),
-    currentIntervalDays: STAGES[stage].intervalDays,
+    currentIntervalDays: Number.isFinite(Number(problem.currentIntervalDays))
+      ? Number(problem.currentIntervalDays)
+      : STAGES[stage].intervalDays,
     lastReviewedAt: normalizeDate(problem.lastReviewedAt || ""),
     lastGrade: problem.lastGrade || "",
     nextReview,
+    importStage: problem.importStage == null ? null : clampLeetcodeImportStage(problem.importStage),
     masteredAt: normalizeDate(problem.masteredAt || ""),
     source: problem.source || "manual",
     listMemberships,
@@ -4304,11 +6081,21 @@ function normalizeProblem(problem) {
     solvedAt: problem.solvedAt || "",
   };
 
-  return applyMasteryStatus(normalized);
+  const withoutUntrustedSchedule = isSeenUnverified(normalized)
+    ? { ...normalized, nextReview: "" }
+    : normalized;
+  return applyMasteryStatus(withoutUntrustedSchedule);
+}
+
+function canonicalTopic(value) {
+  const topic = String(value || "General").trim() || "General";
+  if (/^math\s*(?:&|and)\s*geometry$/i.test(topic)) return "Math & Geometry";
+  return topic;
 }
 
 function normalizeSolution(solution = {}) {
   return {
+    ...solution,
     approach: String(solution.approach || ""),
     timeComplexity: String(solution.timeComplexity || ""),
     spaceComplexity: String(solution.spaceComplexity || ""),
@@ -4392,7 +6179,35 @@ function isAttempted(problem) {
   return Number(problem.completionCount || 0) > 0 || Boolean(problem.firstAttemptAt || problem.lastReviewedAt);
 }
 
+function hasProperGradeHistory(problem) {
+  return isProperGrade(problem?.lastGrade) ||
+    (problem?.reviewHistory || []).some((entry) => isProperGrade(entry.grade));
+}
+
+function isSeenUnverified(problem) {
+  if (!problem || hasProperGradeHistory(problem)) return false;
+  const hasImportedContext = (problem.reviewHistory || []).some((entry) => entry.grade === "imported") ||
+    problem.lastGrade === "imported" ||
+    problem.source === "csv" ||
+    problem.source === "leetcode-progress";
+  return hasImportedContext && isAttempted(problem);
+}
+
+function problemDisplayStatus(problem) {
+  return isSeenUnverified(problem) ? "Seen, unverified" : statusLabel(problem.status);
+}
+
+function problemDisplayStage(problem) {
+  if (!isSeenUnverified(problem)) return stageName(problem.stage);
+  return isFeatureEnabled("practiceV2") ? "Assessment pending" : "Cold check needed";
+}
+
+function problemDisplayReview(problem) {
+  return isSeenUnverified(problem) ? "Not scheduled" : formatDate(problem.nextReview);
+}
+
 function isMastered(problem) {
+  if (isSeenUnverified(problem)) return false;
   return problem.status === "solved" || Boolean(problem.masteredAt);
 }
 
@@ -4407,6 +6222,7 @@ function applyMasteryStatus(problem) {
 }
 
 function isMasteryEligible(problem) {
+  if (isSeenUnverified(problem)) return false;
   const attempts = countMasteryEligibleAttempts(problem);
   const threshold = MASTERY_ATTEMPT_THRESHOLDS[problem.difficulty] || MASTERY_ATTEMPT_THRESHOLDS.Medium;
   const recent = (problem.reviewHistory || []).slice(-3);
