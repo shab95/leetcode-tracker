@@ -349,6 +349,8 @@ let dailyPicks = { review: null, newProblem: null };
 let skippedDailyPicks = { review: new Set(), new: new Set() };
 let lastServerSavedAt = "";
 let currentRevision = 0;
+let remoteStateRefreshInFlight = false;
+let lastRemoteStateRefreshAt = 0;
 let appEnv = { env: "prod", isQa: false, authRequired: false, storageMode: "local", features: { ...DEFAULT_FEATURES } };
 let currentUser = null;
 let isHostedAllowed = true;
@@ -559,6 +561,10 @@ routeLinks.forEach((link) => {
 });
 window.addEventListener("popstate", renderAppRoute);
 window.addEventListener("message", handleLeetcodeExtensionMessage);
+window.addEventListener("focus", refreshHostedStateIfIdle);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") refreshHostedStateIfIdle();
+});
 
 document.querySelectorAll(".grade-actions").forEach((group) => {
   group.addEventListener("click", (event) => {
@@ -956,6 +962,34 @@ async function loadRemoteState() {
     return Array.isArray(state.problems) ? state : null;
   } catch {
     return null;
+  }
+}
+
+async function refreshHostedStateIfIdle() {
+  if (!appEnv.authRequired || !isHostedAllowed || remoteStateRefreshInFlight) return;
+  if (Date.now() - lastRemoteStateRefreshAt < 1000) return;
+
+  const practiceV2Phase = practiceV2Runtime?.phase || "ready";
+  const hasUnfinishedWork = ["attempting", "grading", "reflecting", "saving"].includes(practiceV2Phase)
+    || Boolean(activeAttempt)
+    || Boolean(coldGradeDraft)
+    || Boolean(els.problemDialog?.open)
+    || Boolean(els.leetcodeImportDialog?.open);
+  if (hasUnfinishedWork) return;
+
+  remoteStateRefreshInFlight = true;
+  lastRemoteStateRefreshAt = Date.now();
+  try {
+    const remoteState = await loadRemoteState();
+    const remoteRevision = Number(remoteState?.revision || 0);
+    if (!remoteState || remoteRevision <= currentRevision) return;
+
+    applyRemoteState(remoteState);
+    reconcilePracticeV2RuntimeRevision();
+    setSaveStatus("saved", buildSavedMessage(lastServerSavedAt));
+    render();
+  } finally {
+    remoteStateRefreshInFlight = false;
   }
 }
 
@@ -2656,9 +2690,17 @@ function restorePracticeV2Runtime() {
     capacityMinutes: Number(trainingProfile.defaultSessionMinutes || 45),
     expectedRevision: currentRevision,
   });
+  reconcilePracticeV2RuntimeRevision();
   if (practiceV2Runtime.undoReceipt && ["completed", "session-complete"].includes(practiceV2Runtime.phase)) {
     lastGradeUndo = cloneState(practiceV2Runtime.undoReceipt);
   }
+}
+
+function reconcilePracticeV2RuntimeRevision() {
+  if (!practiceV2Runtime || !PRACTICE_V2_WORKFLOW?.reconcileRuntimeRevision) return;
+  const previousRevision = Number(practiceV2Runtime.expectedRevision || 0);
+  practiceV2Runtime = PRACTICE_V2_WORKFLOW.reconcileRuntimeRevision(practiceV2Runtime, currentRevision);
+  if (Number(practiceV2Runtime.expectedRevision || 0) !== previousRevision) persistPracticeV2Runtime();
 }
 
 function persistPracticeV2Runtime() {

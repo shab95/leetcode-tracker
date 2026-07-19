@@ -59,6 +59,44 @@ test("reload recovery returns an interrupted save to reflection", () => {
   assert.deepEqual(runtime.reflectionDrafts, draft());
 });
 
+test("a newer tracker revision invalidates an idle cached recommendation", () => {
+  const runtime = workflow.reconcileRuntimeRevision(workflow.createRuntime({
+    expectedRevision: 4,
+    recommendation: { public: { problemId: "generate-parentheses" } },
+    skippedProblemIds: ["two-sum"],
+  }), 5);
+
+  assert.equal(runtime.phase, "ready");
+  assert.equal(runtime.expectedRevision, 5);
+  assert.equal(runtime.recommendation, null);
+  assert.deepEqual(runtime.skippedProblemIds, []);
+});
+
+test("the same tracker revision preserves an idle recommendation", () => {
+  const recommendation = { public: { problemId: "generate-parentheses" } };
+  const runtime = workflow.reconcileRuntimeRevision(workflow.createRuntime({
+    expectedRevision: 5,
+    recommendation,
+  }), 5);
+
+  assert.deepEqual(runtime.recommendation, recommendation);
+});
+
+test("revision reconciliation never discards an attempt in progress", () => {
+  const runtime = workflow.reconcileRuntimeRevision(workflow.createRuntime({
+    phase: "reflecting",
+    expectedRevision: 4,
+    attemptId: "attempt-1",
+    recommendation: { public: { problemId: "generate-parentheses" } },
+    reflectionDrafts: draft(),
+  }), 5);
+
+  assert.equal(runtime.phase, "reflecting");
+  assert.equal(runtime.expectedRevision, 4);
+  assert.equal(runtime.attemptId, "attempt-1");
+  assert.deepEqual(runtime.reflectionDrafts, draft());
+});
+
 test("red and yellow require assistance, blocker, and stopwatch evidence", () => {
   const missing = workflow.validateReflection({
     grade: "yellow",

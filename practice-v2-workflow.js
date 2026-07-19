@@ -55,6 +55,23 @@
     });
   }
 
+  function reconcileRuntimeRevision(value = {}, stateRevision = 0) {
+    const runtime = normalizeRuntime(value);
+    const revision = Math.max(0, Math.trunc(Number(stateRevision) || 0));
+    if (Number(runtime.expectedRevision || 0) === revision) return runtime;
+
+    if (runtime.phase === "ready") {
+      return {
+        ...runtime,
+        recommendation: null,
+        skippedProblemIds: [],
+        expectedRevision: revision,
+      };
+    }
+
+    return runtime;
+  }
+
   function transition(runtime, event) {
     const current = normalizeRuntime(runtime);
     const allowed = {
@@ -147,6 +164,7 @@
     PHASES,
     createRuntime,
     normalizeRuntime,
+    reconcileRuntimeRevision,
     transition,
     validateReflection,
   });
