@@ -224,6 +224,7 @@ const els = {
   practiceV2FinishBtn: document.querySelector("#practiceV2FinishBtn"),
   practiceV2CancelBtn: document.querySelector("#practiceV2CancelBtn"),
   practiceV2ContinueGradeBtn: document.querySelector("#practiceV2ContinueGradeBtn"),
+  practiceV2GradeTimeBox: document.querySelector("#practiceV2GradeTimeBox"),
   practiceV2BackAttemptBtn: document.querySelector("#practiceV2BackAttemptBtn"),
   practiceV2ReflectionForm: document.querySelector("#practiceV2ReflectionForm"),
   practiceV2SelectedGrade: document.querySelector("#practiceV2SelectedGrade"),
@@ -2873,6 +2874,16 @@ function selectPracticeV2Grade(grade) {
 
 function renderPracticeV2Grade() {
   const grade = practiceV2Runtime?.provisionalGrade || "";
+  const timeBoxMinutes = Number(
+    practiceV2Runtime?.lockedTimeBoxMinutes
+      || practiceV2Runtime?.recommendation?.public?.timeBoxMinutes
+      || 0
+  );
+  if (els.practiceV2GradeTimeBox) {
+    els.practiceV2GradeTimeBox.textContent = timeBoxMinutes
+      ? `${timeBoxMinutes} minutes`
+      : "Assigned time box";
+  }
   document.querySelectorAll("[data-v2-grade]").forEach((button) => {
     const selected = button.dataset.v2Grade === grade;
     button.setAttribute("aria-checked", String(selected));

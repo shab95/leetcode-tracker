@@ -165,12 +165,39 @@
               <div class="practice-v2-kicker">Provisional result</div>
               <h3 class="practice-v2-title">How did the full attempt go?</h3>
               <p class="practice-v2-subcopy">A grade is not saved until you finish reflection.</p>
-              <div class="practice-v2-grades" role="radiogroup" aria-label="Attempt result">
-                <button type="button" data-v2-grade="red" role="radio" aria-checked="false"><strong>Could not solve</strong><span>Needed the core solution or did not reach working code</span></button>
-                <button type="button" data-v2-grade="yellow" role="radio" aria-checked="false"><strong>Solved with help or heavy friction</strong><span>Needed meaningful help, struggled substantially, or exceeded the time box</span></button>
-                <button type="button" data-v2-grade="green" role="radio" aria-checked="false"><strong>Solved independently</strong><span>Working code, important tests, and complexity explained without help</span></button>
+              <div class="practice-v2-grade-compass">
+                <div>
+                  <span>Expected time</span>
+                  <strong id="practiceV2GradeTimeBox">-</strong>
+                </div>
+                <p>Grade the result, independence, and time together. Complexity readiness is recorded separately.</p>
               </div>
-              <p class="practice-v2-grade-note">A tiny syntax correction can still be independent if it did not change your strategy or require outside help.</p>
+              <div class="practice-v2-grades" role="radiogroup" aria-label="Attempt result">
+                <button type="button" data-v2-grade="red" role="radio" aria-checked="false">
+                  <strong>Could not solve</strong>
+                  <span>No working solution, the core approach never came together, or you needed the full answer.</span>
+                  <small>Next: record the main blocker and any help used.</small>
+                </button>
+                <button type="button" data-v2-grade="yellow" role="radio" aria-checked="false">
+                  <strong>Solved with help or heavy friction</strong>
+                  <span>Meaningful hint or help, major debugging, or a working solution only after the time box.</span>
+                  <small>Next: record the assistance and main blocker.</small>
+                </button>
+                <button type="button" data-v2-grade="green" role="radio" aria-checked="false">
+                  <strong>Solved independently</strong>
+                  <span>Working code and important tests without meaningful help, inside the time box.</span>
+                  <small>Next: record minor friction and complexity readiness.</small>
+                </button>
+              </div>
+              <div class="practice-v2-gray-areas" aria-label="Common grading examples">
+                <strong>Common calls</strong>
+                <ul>
+                  <li><span>Small syntax or API mistake fixed alone</span><b>Independent + syntax friction</b></li>
+                  <li><span>Edge case fixed alone and within time</span><b>Independent + edge-case friction</b></li>
+                  <li><span>Needed a hint, heavy debugging, or extra time</span><b>Help / heavy friction</b></li>
+                  <li><span>Never reached working code</span><b>Could not solve</b></li>
+                </ul>
+              </div>
               <div class="practice-v2-actions">
                 <button class="primary-btn" id="practiceV2ContinueGradeBtn" type="button" disabled>Continue</button>
                 <button class="text-btn" id="practiceV2BackAttemptBtn" type="button">Back to attempt</button>

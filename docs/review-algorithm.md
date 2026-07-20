@@ -126,17 +126,26 @@ and complexity readiness as applicable. A clean solve cannot be saved beyond its
 a red or yellow result may exceed it. Red and yellow require time evidence, an assistance answer,
 and a blocker. An independent clean result normalizes assistance to none and clears blockers.
 
+The Reflect grade is based on three observable signals: whether working code was reached, whether
+meaningful outside help was needed, and whether the attempt stayed inside its locked time box.
+`Could not solve` means no working solution was reached or the full answer was needed. `Solved with
+help or heavy friction` covers meaningful hints or help, major debugging, or finishing only after the
+time box. `Solved independently` means working code and important tests were completed without
+meaningful help and within the time box. A small syntax/API mistake or edge-case correction can still
+be independent when the user finds and fixes it alone inside the time box; it is captured as friction.
+Complexity readiness is recorded separately, so an exact complexity gap can block mastery without
+automatically changing an otherwise independent solve to yellow.
+
 Back navigation preserves the draft, reload resumes an interrupted attempt, and Undo restores
 the exact pre-attempt tracker snapshot. Only a valid Save invokes the existing grade transition
 and scheduler. Practice V2 changes task selection and evidence capture, not the stage intervals,
 early-clean rule, extremely-overdue rule, mastery rule, or historical data model.
 
-Use `Could not solve` when the user needed the solution, could not reach working code, or
-could not explain the core idea after the time box. Use `Solved with hints / slow` when
-the user needed hints, recognized the pattern but struggled to derive it, exceeded the
-target time, or got there with heavy debugging. Use `Solved cleanly` only when the user
-solved without hints, coded a working answer, tested important edge cases, and can explain
-time and space complexity.
+Use `Could not solve` when the user needed the solution or could not reach working code.
+Use `Solved with hints / slow` when the user needed meaningful help, exceeded the target
+time, or got there with heavy debugging. Use `Solved cleanly` only when the user solved
+without meaningful help, coded a working answer, tested important edge cases, and stayed
+inside the time box. Complexity readiness remains a separate mastery signal.
 
 The grade answers how independently the user completed the attempt. Learning-signal tags
 answer why the attempt was difficult. For example, wrong syntax, a language mistake, or a

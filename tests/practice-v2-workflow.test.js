@@ -147,6 +147,20 @@ test("independent evidence normalizes assistance and blockers away", () => {
   assert.equal(result.metadata.friction, "syntax-api");
 });
 
+test("complexity readiness is separate from an independent grade", () => {
+  const result = workflow.validateReflection({
+    grade: "green",
+    draft: draft({
+      shared: { complexityKnown: false },
+      independent: { friction: "explanation" },
+    }),
+    lockedTimeBoxMinutes: 20,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.metadata.complexityKnown, false);
+  assert.equal(result.metadata.friction, "explanation");
+});
+
 test("independent grade cannot exceed the locked time box", () => {
   const result = workflow.validateReflection({
     grade: "green",

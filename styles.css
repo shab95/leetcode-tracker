@@ -4048,7 +4048,42 @@ form {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
-  margin-top: 28px;
+  margin-top: 18px;
+}
+
+.practice-v2-grade-compass {
+  display: grid;
+  grid-template-columns: minmax(150px, max-content) 1fr;
+  align-items: center;
+  gap: 22px;
+  margin-top: 24px;
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.practice-v2-grade-compass > div {
+  display: grid;
+  gap: 3px;
+}
+
+.practice-v2-grade-compass span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.practice-v2-grade-compass strong {
+  color: var(--ink);
+  font-size: 1.08rem;
+}
+
+.practice-v2-grade-compass p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
 }
 
 .practice-v2-grades button {
@@ -4107,6 +4142,55 @@ form {
 
 .practice-v2-grade-note {
   margin: 14px 0 0;
+}
+
+.practice-v2-grades button small {
+  align-self: end;
+  color: var(--accent-dark);
+  font-size: 0.76rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.practice-v2-gray-areas {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 18px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.practice-v2-gray-areas > strong {
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.practice-v2-gray-areas ul {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 24px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.practice-v2-gray-areas li {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.practice-v2-gray-areas li span {
+  color: var(--muted);
+  font-size: 0.79rem;
+  line-height: 1.35;
+}
+
+.practice-v2-gray-areas li b {
+  color: var(--ink);
+  font-size: 0.79rem;
+  line-height: 1.35;
 }
 
 .practice-v2-reflection-head {
@@ -4231,6 +4315,16 @@ form {
   .practice-v2-grades,
   .practice-v2-fields,
   .practice-v2-reveal {
+    grid-template-columns: 1fr;
+  }
+
+  .practice-v2-grade-compass,
+  .practice-v2-gray-areas {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .practice-v2-gray-areas ul {
     grid-template-columns: 1fr;
   }
 
