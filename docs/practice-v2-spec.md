@@ -436,7 +436,7 @@ The engine performs these pure steps:
 4. Derive recent blockers, assistance dependence, speed, and evidence staleness.
 5. Determine the highest-value task type for the current goal and available time.
 6. Generate eligible candidates.
-7. Exclude active, just-completed, session-skipped, and unsafe hint-leaking candidates.
+7. Exclude active, just-completed, session-skipped, same-title cooldown, and unsafe hint-leaking candidates.
 8. Score candidates.
 9. Apply deterministic tie-breakers.
 10. Return one recommendation plus private reason codes and public neutral copy.
@@ -585,6 +585,11 @@ skill transfer.
   existing next-review date.
 - Red or yellow evidence still changes the exact-title schedule immediately according to
   the existing grading rules.
+- Same-title eligibility respects a cooling interval before scoring. No real grade can return the
+  exact same title for at least 24 elapsed hours, so crossing midnight cannot create an immediate
+  repeat. Yellow and green results also cannot return before their stored exact-title review date.
+  During that interval the engine may select a different title, while public recommendation copy
+  continues to conceal topic and pattern information.
 - Imported history never creates a reliable due date by itself unless the existing import
   normalizer already established one; it remains exposure context.
 
@@ -656,7 +661,7 @@ Top-level additions:
 ```js
 {
   version: 4,
-  algorithmVersion: "readiness-v1",
+  algorithmVersion: "readiness-v1.1",
   trainingProfile: { /* section 11 */ },
   practicePlan: {
     onboardingComplete: true,
@@ -675,7 +680,7 @@ New optional fields on future real review-history entries:
   recordedAt: "2026-07-18T00:04:12-04:00",
   taskType: "assessment",
   recommendationId: "uuid",
-  algorithmVersion: "readiness-v1",
+  algorithmVersion: "readiness-v1.1",
   reasonCodes: ["missing-independent-evidence", "goal-scope"],
   lockedTimeBoxMinutes: 30,
   elapsedMinutes: 24, // null when the user did not track time

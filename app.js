@@ -2739,6 +2739,7 @@ function getPracticeV2Recommendation({ resetExclusions = false } = {}) {
     state: buildTrackerStatePayload(),
     catalog: practiceV2Catalog(),
     today: toIsoDate(new Date()),
+    now: new Date().toISOString(),
     capacityMinutes: Number(practiceV2Runtime.capacityMinutes || trainingProfile.defaultSessionMinutes || 45),
     activeProblemId: ["attempting", "grading", "reflecting", "saving"].includes(practiceV2Runtime.phase)
       ? practiceV2Runtime.recommendation?.public?.problemId || ""
@@ -2755,7 +2756,12 @@ function getPracticeV2Recommendation({ resetExclusions = false } = {}) {
 
 function ensurePracticeV2Recommendation() {
   if (!practiceV2Runtime || !["ready", "session-complete"].includes(practiceV2Runtime.phase)) return;
-  if (practiceV2Runtime.phase === "ready" && practiceV2Runtime.recommendation?.public) return;
+  if (
+    practiceV2Runtime.phase === "ready" &&
+    practiceV2Runtime.recommendation?.public &&
+    practiceV2Runtime.recommendation.algorithmVersion === PRACTICE_V2_ENGINE.ALGORITHM_VERSION
+  ) return;
+  if (practiceV2Runtime.phase === "ready") practiceV2Runtime.recommendation = null;
   practiceV2Runtime.recommendation = getPracticeV2Recommendation();
   practiceV2Runtime.expectedRevision = currentRevision;
   persistPracticeV2Runtime();
@@ -3087,6 +3093,7 @@ function runPracticeV2Shadow() {
     state: buildTrackerStatePayload(),
     catalog,
     today: toIsoDate(new Date()),
+    now: new Date().toISOString(),
     capacityMinutes: Number(trainingProfile.defaultSessionMinutes || 45),
     activeProblemId: activeAttempt?.problemId || "",
     skippedProblemIds,

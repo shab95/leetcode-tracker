@@ -111,7 +111,7 @@ All experiment flags default to off. The default product should stay focused on 
 Memory, Leaderboard, and Settings. Turn these flags on only when actively testing or
 shipping the experiment.
 
-`FEATURE_PRACTICE_V2_SHADOW` runs the deterministic `readiness-v1` recommender without changing
+`FEATURE_PRACTICE_V2_SHADOW` runs the deterministic `readiness-v1.1` recommender without changing
 the visible recommendation, grades, scheduling, or saved state. QA enables shadow mode
 automatically. Its latest comparison is available to developers at
 `window.__practiceV2Shadow` and in the browser console.

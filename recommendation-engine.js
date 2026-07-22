@@ -5,9 +5,10 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function createPracticeV2Engine() {
   "use strict";
 
-  const ALGORITHM_VERSION = "readiness-v1";
+  const ALGORITHM_VERSION = "readiness-v1.1";
   const EVIDENCE_WINDOW_DAYS = 30;
   const WEAKNESS_WINDOW_DAYS = 21;
+  const EXACT_TITLE_COOLDOWN_HOURS = 24;
   const TASK_PRECEDENCE = Object.freeze({ repair: 0, assessment: 1, transfer: 2, retention: 3, learn: 4, mixed: 5, mock: 6 });
   const NEW_TIME_BOX = Object.freeze({ Easy: 20, Medium: 30, Hard: 45 });
   const REVIEW_TIME_BOX = Object.freeze({ Easy: 10, Medium: 15, Hard: 20 });
@@ -33,13 +34,14 @@
     const state = normalizeState(input.state);
     const profile = { ...(state.trainingProfile || {}), ...(input.trainingProfile || {}) };
     const today = normalizeDate(input.today) || normalizeDate(new Date());
+    const now = normalizeTimestamp(input.now) || `${today}T12:00:00.000Z`;
     const capacityMinutes = positiveNumber(input.capacityMinutes, positiveNumber(profile.defaultSessionMinutes, 45));
     const catalog = Array.isArray(input.catalog) ? input.catalog : [];
     const evidence = deriveEvidence(state, { today, catalog });
     const excluded = buildExcludedSet(input);
     const candidates = buildCandidates(state.problems, catalog)
       .filter((candidate) => !excluded.has(candidate.id) && !excluded.has(candidate.slug))
-      .map((candidate) => scoreCandidate(candidate, { evidence, profile, today, capacityMinutes }))
+      .map((candidate) => scoreCandidate(candidate, { evidence, profile, today, now, capacityMinutes }))
       .filter((candidate) => candidate.eligible)
       .sort(compareCandidates);
 
@@ -181,7 +183,7 @@
   }
 
   function scoreCandidate(candidate, context) {
-    const { evidence, profile, today, capacityMinutes } = context;
+    const { evidence, profile, today, now, capacityMinutes } = context;
     const attempts = properAttempts(candidate.problem);
     const importedEntries = importedAttempts(candidate.problem);
     const lastAttempt = attempts[attempts.length - 1] || null;
@@ -194,7 +196,8 @@
     const taskType = chooseTaskType({ candidate, skill, attempts, importedOnly, due, lastAttempt, lastAgeDays, recentWeakness });
     const timeBoxMinutes = timeBoxFor(candidate.difficulty, taskType);
     const requiredMinutes = timeBoxMinutes + 3;
-    const eligible = Boolean(candidate.title && candidate.id && requiredMinutes <= capacityMinutes);
+    const cooldown = exactTitleCooldown(candidate, lastAttempt, { today, now });
+    const eligible = Boolean(candidate.title && candidate.id && requiredMinutes <= capacityMinutes && !cooldown.blocked);
     const components = {};
 
     components.readinessGap = (!skill.checked ? WEIGHTS.missingChecked : 0) +
@@ -234,6 +237,7 @@
       lastAttempt,
       lastAgeDays,
       importedOnly,
+      cooldownReason: cooldown.reason,
       score,
       scoreComponents: components,
       reasonCodes: reasonCodesFor({ taskType, skill, due, importedOnly, recentWeakness, lastAgeDays }),
@@ -378,6 +382,33 @@
     return 0;
   }
 
+  function exactTitleCooldown(candidate, lastAttempt, { today, now }) {
+    if (!lastAttempt) return { blocked: false, reason: "" };
+
+    const attemptAt = attemptTimestamp(lastAttempt);
+    const currentTime = timestampValue(now);
+    if (attemptAt && currentTime && currentTime - attemptAt < EXACT_TITLE_COOLDOWN_HOURS * 3600000) {
+      return { blocked: true, reason: "same-title-cooldown" };
+    }
+
+    const nextReview = normalizeDate(candidate.nextReview);
+    if (["yellow", "green"].includes(lastAttempt.grade) && nextReview && nextReview > today) {
+      return { blocked: true, reason: "scheduled-review-not-due" };
+    }
+
+    if (lastAttempt.grade !== "red") return { blocked: false, reason: "" };
+
+    if (attemptAt && currentTime) return { blocked: false, reason: "" };
+
+    if (nextReview && nextReview > today) return { blocked: true, reason: "scheduled-review-not-due" };
+
+    return { blocked: false, reason: "" };
+  }
+
+  function attemptTimestamp(attempt) {
+    return timestampValue(attempt.occurredAt || attempt.completedAt || attempt.createdAt);
+  }
+
   function recentSkillPenalty(skillId, attempts) {
     const count = attempts.slice(0, 7).filter((attempt) => attempt.skillId === skillId).length;
     return count * WEIGHTS.recentSkillEach;
@@ -470,6 +501,18 @@
     return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
   }
 
+  function normalizeTimestamp(value) {
+    const timestamp = timestampValue(value);
+    return timestamp ? new Date(timestamp).toISOString() : "";
+  }
+
+  function timestampValue(value) {
+    if (!value) return NaN;
+    const date = value instanceof Date ? value : new Date(value);
+    const timestamp = date.getTime();
+    return Number.isFinite(timestamp) ? timestamp : NaN;
+  }
+
   function dateDiffDays(from, to) {
     const fromValue = dateValue(from);
     const toValue = dateValue(to);
@@ -514,6 +557,7 @@
   return Object.freeze({
     ALGORITHM_VERSION,
     EVIDENCE_WINDOW_DAYS,
+    EXACT_TITLE_COOLDOWN_HOURS,
     WEIGHTS,
     recommendNextRep,
     deriveEvidence,

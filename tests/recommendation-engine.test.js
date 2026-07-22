@@ -144,11 +144,130 @@ test("a recent weak result can outrank an old due review", () => {
     nextReview: "2026-07-01",
   });
 
-  const recommendation = recommendNextRep({ today: TODAY, state: state([retention, repair]), capacityMinutes: 45 });
+  const recommendation = recommendNextRep({
+    today: TODAY,
+    now: "2026-07-18T13:00:00.000Z",
+    state: state([retention, repair]),
+    capacityMinutes: 45,
+  });
 
   assert.equal(recommendation.public.problemId, "repair");
   assert.equal(recommendation.private.taskType, "repair");
   assert.ok(recommendation.private.rankedCandidates.some((candidate) => candidate.problemId === "retention"));
+});
+
+test("a red repair cannot repeat the same title before 24 elapsed hours", () => {
+  const recentRepair = problem({
+    id: "recent-repair",
+    title: "Pacific Atlantic Water Flow",
+    titleSlug: "pacific-atlantic-water-flow",
+    reviewHistory: [grade("2026-07-17", "red", { createdAt: "2026-07-17T11:00:00.000Z" })],
+    completionCount: 1,
+    nextReview: "2026-07-18",
+  });
+  const alternative = problem({
+    id: "alternative",
+    title: "Maximum Depth of Binary Tree",
+    titleSlug: "maximum-depth-of-binary-tree",
+    difficulty: "Easy",
+    topic: "Trees",
+  });
+
+  const recommendation = recommendNextRep({
+    today: TODAY,
+    now: "2026-07-18T04:00:00.000Z",
+    state: state([recentRepair, alternative]),
+    capacityMinutes: 30,
+  });
+
+  assert.equal(recommendation.public.problemId, "alternative");
+  assert.equal(recommendation.private.rankedCandidates.some((candidate) => candidate.problemId === "recent-repair"), false);
+});
+
+test("a red repair becomes eligible after 24 elapsed hours", () => {
+  const repair = problem({
+    id: "repair",
+    title: "Pacific Atlantic Water Flow",
+    titleSlug: "pacific-atlantic-water-flow",
+    reviewHistory: [grade("2026-07-17", "red", { createdAt: "2026-07-17T11:00:00.000Z" })],
+    completionCount: 1,
+    nextReview: "2026-07-18",
+  });
+  const alternative = problem({
+    id: "alternative",
+    title: "Maximum Depth of Binary Tree",
+    titleSlug: "maximum-depth-of-binary-tree",
+    difficulty: "Easy",
+    topic: "Trees",
+  });
+
+  const recommendation = recommendNextRep({
+    today: TODAY,
+    now: "2026-07-18T12:00:00.000Z",
+    state: state([repair, alternative]),
+    capacityMinutes: 30,
+  });
+
+  assert.equal(recommendation.public.problemId, "repair");
+  assert.equal(recommendation.private.taskType, "repair");
+});
+
+test("all real grades respect a 24-hour exact-title cooldown across midnight", () => {
+  for (const value of ["red", "yellow", "green"]) {
+    const recent = problem({
+      id: `recent-${value}`,
+      title: `Recent ${value}`,
+      titleSlug: `recent-${value}`,
+      reviewHistory: [grade("2026-07-17", value, { createdAt: "2026-07-17T11:00:00.000Z" })],
+      completionCount: 1,
+      nextReview: TODAY,
+    });
+    const alternative = problem({
+      id: `midnight-alternative-${value}`,
+      title: `Midnight alternative ${value}`,
+      titleSlug: `midnight-alternative-${value}`,
+      difficulty: "Easy",
+      topic: "Trees",
+    });
+
+    const recommendation = recommendNextRep({
+      today: TODAY,
+      now: "2026-07-18T04:00:00.000Z",
+      state: state([recent, alternative]),
+      capacityMinutes: 45,
+    });
+
+    assert.equal(recommendation.public.problemId, `midnight-alternative-${value}`);
+  }
+});
+
+test("yellow and green attempts also wait for their scheduled review", () => {
+  for (const value of ["yellow", "green"]) {
+    const scheduled = problem({
+      id: `scheduled-${value}`,
+      title: `Scheduled ${value}`,
+      titleSlug: `scheduled-${value}`,
+      reviewHistory: [grade("2026-07-17", value)],
+      completionCount: 1,
+      nextReview: "2026-07-20",
+    });
+    const alternative = problem({
+      id: `alternative-${value}`,
+      title: `Alternative ${value}`,
+      titleSlug: `alternative-${value}`,
+      difficulty: "Easy",
+      topic: "Trees",
+    });
+
+    const recommendation = recommendNextRep({
+      today: TODAY,
+      now: "2026-07-18T12:00:00.000Z",
+      state: state([scheduled, alternative]),
+      capacityMinutes: 45,
+    });
+
+    assert.equal(recommendation.public.problemId, `alternative-${value}`);
+  }
 });
 
 test("an exact-title due review remains eligible as retention", () => {
