@@ -180,7 +180,7 @@
                 </button>
                 <button type="button" data-v2-grade="yellow" role="radio" aria-checked="false">
                   <strong>Solved with help or heavy friction</strong>
-                  <span>Meaningful hint or help, major debugging, or a working solution only after the time box.</span>
+                  <span>Meaningful hint or help, major debugging, a missed optimal approach, or a working solution only after the time box.</span>
                   <small>Next: record the assistance and main blocker.</small>
                 </button>
                 <button type="button" data-v2-grade="green" role="radio" aria-checked="false">
@@ -236,6 +236,7 @@
                     <option value="">Choose one</option>
                     <option value="getting-started">Getting started</option>
                     <option value="strategy">Deriving a complete strategy</option>
+                    <option value="optimization">Did not find the optimal solution</option>
                     <option value="implementation">Implementing the idea</option>
                     <option value="syntax-api">Syntax or API recall</option>
                     <option value="edge-cases">Edge cases</option>
@@ -247,12 +248,23 @@
                   <span>Minor friction <small>Optional</small></span>
                   <select id="practiceV2Friction">
                     <option value="none">None</option>
+                    <option value="optimization">Optimization / efficiency</option>
                     <option value="implementation">Minor implementation friction</option>
                     <option value="syntax-api">Syntax or API recall</option>
                     <option value="edge-cases">Edge-case cleanup</option>
                     <option value="explanation">Complexity explanation</option>
                     <option value="time-management">Time management</option>
                   </select>
+                </label>
+                <label class="practice-v2-solution-quality" id="practiceV2SolutionQualityField">
+                  <span>Approach efficiency <small>Separate from your grade</small></span>
+                  <select id="practiceV2SolutionQuality">
+                    <option value="">Choose one</option>
+                    <option value="expected">Expected time and auxiliary-space complexity</option>
+                    <option value="suboptimal">Working, but worse time or auxiliary space</option>
+                    <option value="unknown">Working; efficiency not verified</option>
+                  </select>
+                  <small>A suboptimal independent solve still counts as independent evidence. It leaves an optimization gap for the plan.</small>
                 </label>
                 <label class="practice-v2-note">
                   <span>Note for future you <small>Optional</small></span>

@@ -6,7 +6,7 @@
   "use strict";
 
   const STATE_VERSION = 4;
-  const ALGORITHM_VERSION = "readiness-v1.2";
+  const ALGORITHM_VERSION = "readiness-v1.3";
   const DEFAULT_TRAINING_PROFILE = Object.freeze({
     roleTarget: "general-swe",
     levelTarget: "entry-mid",

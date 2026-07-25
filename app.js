@@ -236,6 +236,8 @@ const els = {
   practiceV2Blocker: document.querySelector("#practiceV2Blocker"),
   practiceV2FrictionField: document.querySelector("#practiceV2FrictionField"),
   practiceV2Friction: document.querySelector("#practiceV2Friction"),
+  practiceV2SolutionQualityField: document.querySelector("#practiceV2SolutionQualityField"),
+  practiceV2SolutionQuality: document.querySelector("#practiceV2SolutionQuality"),
   practiceV2Note: document.querySelector("#practiceV2Note"),
   practiceV2Complexity: document.querySelector("#practiceV2Complexity"),
   practiceV2Error: document.querySelector("#practiceV2Error"),
@@ -527,6 +529,7 @@ els.practiceV2TimeUntracked?.addEventListener("change", capturePracticeV2Reflect
   els.practiceV2Assistance,
   els.practiceV2Blocker,
   els.practiceV2Friction,
+  els.practiceV2SolutionQuality,
   els.practiceV2Note,
   els.practiceV2Complexity,
 ].forEach((control) => control?.addEventListener("input", capturePracticeV2Reflection));
@@ -2905,6 +2908,7 @@ function capturePracticeV2Reflection() {
   drafts.shared.note = els.practiceV2Note.value;
   drafts.shared.complexityStatus = els.practiceV2Complexity.value;
   drafts.shared.complexityKnown = drafts.shared.complexityStatus === "explained";
+  drafts.shared.solutionQuality = els.practiceV2SolutionQuality.value;
   drafts.nonIndependent.assistance = els.practiceV2Assistance.value;
   drafts.nonIndependent.blocker = els.practiceV2Blocker.value;
   drafts.independent.friction = els.practiceV2Friction.value;
@@ -2926,12 +2930,18 @@ function renderPracticeV2Reflection() {
   if (els.practiceV2Assistance) els.practiceV2Assistance.value = drafts.nonIndependent.assistance;
   if (els.practiceV2Blocker) els.practiceV2Blocker.value = drafts.nonIndependent.blocker;
   if (els.practiceV2Friction) els.practiceV2Friction.value = drafts.independent.friction;
+  if (els.practiceV2SolutionQuality) {
+    els.practiceV2SolutionQuality.value = drafts.shared.solutionQuality || "";
+  }
   if (els.practiceV2Note) els.practiceV2Note.value = drafts.shared.note;
   if (els.practiceV2Complexity) els.practiceV2Complexity.value = drafts.shared.complexityStatus || "not-checked";
   const independent = grade === "green";
   if (els.practiceV2AssistanceField) els.practiceV2AssistanceField.hidden = independent;
   if (els.practiceV2BlockerField) els.practiceV2BlockerField.hidden = independent;
   if (els.practiceV2FrictionField) els.practiceV2FrictionField.hidden = !independent;
+  if (els.practiceV2SolutionQualityField) {
+    els.practiceV2SolutionQualityField.hidden = grade === "red";
+  }
 }
 
 function practiceV2ProblemForRecommendation() {
@@ -3021,6 +3031,7 @@ function savePracticeV2Rep(event) {
           : "rescheduled",
     taskType: recommendation.private.taskType,
     elapsedMinutes: validation.metadata.elapsedMinutes,
+    solutionQuality: validation.metadata.solutionQuality,
   };
   practiceV2Runtime.undoReceipt = cloneState(lastGradeUndo);
   practiceV2Runtime.skippedProblemIds = [...new Set([...practiceV2Runtime.skippedProblemIds, recommendation.public.problemId])];
@@ -3036,8 +3047,13 @@ function renderPracticeV2Completion() {
     yellow: ["Partial independence recorded.", "The next rep can reinforce the weak point before testing transfer."],
     green: ["Independent evidence recorded.", "The plan can spend less time proving this exact answer and look for broader transfer."],
   }[completion.grade];
+  const solutionQualityCopy = completion.solutionQuality === "suboptimal"
+    ? " Your independent work counts, and an optimization gap remains in the plan."
+    : completion.solutionQuality === "unknown"
+      ? " Solution efficiency remains unverified."
+      : "";
   els.practiceV2CompleteTitle.textContent = copy?.[0] || "That rep changed the plan.";
-  els.practiceV2CompleteSummary.textContent = copy?.[1] || completion.rationale;
+  els.practiceV2CompleteSummary.textContent = `${copy?.[1] || completion.rationale}${solutionQualityCopy}`;
   els.practiceV2CompleteSkill.textContent = completion.topic;
   els.practiceV2CompleteEvidence.textContent = completion.rationale;
   els.practiceV2CompleteReview.textContent = completion.nextReview
@@ -4747,6 +4763,7 @@ function renderAttemptMetadata(entry) {
       entry.durationMinutes || entry.elapsedMinutes ? `${entry.durationMinutes || entry.elapsedMinutes} min` : "",
       support,
       entry.grade === "green" ? "" : blockerLabel(entry.blocker),
+      entry.grade === "red" ? "" : solutionQualityLabel(entry.solutionQuality),
     ].filter(Boolean);
     return details.length
       ? `<div class="history-attempt-meta">${details.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>`
@@ -4784,6 +4801,7 @@ function blockerLabel(value) {
     "getting-started": "Getting-started blocker",
     recognition: "Pattern recognition blocker",
     strategy: "Strategy blocker",
+    optimization: "Optimal solution not found",
     implementation: "Implementation blocker",
     "syntax-api": "Syntax/API blocker",
     "edge-cases": "Edge-case blocker",
@@ -4797,11 +4815,21 @@ function blockerLabel(value) {
 function frictionLabel(value) {
   return ({
     none: "No meaningful friction",
+    optimization: "Optimization / efficiency friction",
     implementation: "Implementation friction",
     "syntax-api": "Syntax / API friction",
     "edge-cases": "Edge-case friction",
     explanation: "Explanation friction",
     "time-management": "Time-management friction",
+  })[value] || "";
+}
+
+function solutionQualityLabel(value) {
+  return ({
+    expected: "Expected time/space approach",
+    suboptimal: "Working but less efficient",
+    unknown: "Efficiency not verified",
+    "not-applicable": "No working solution",
   })[value] || "";
 }
 
@@ -5181,6 +5209,7 @@ function renderPracticeV2ProblemEvidence(problem) {
     ["Problem evidence", `${evidence.label}${evidence.stale ? " · stale" : ""}`],
     ["Last checked", latest?.date ? formatDate(latest.date) : "Not yet"],
     ["Latest result", latestOutcome],
+    ["Approach efficiency", latest && latest.grade !== "red" ? solutionQualityLabel(latest.solutionQuality) || "Not recorded" : "Not applicable"],
     ["Help / friction", support],
     ["Stopwatch", elapsed ? `${elapsed} min` : "Not recorded"],
     ["Exact-title recall", `${exactReview.label} · ${exactReview.detail}`],
@@ -5207,6 +5236,8 @@ function renderEvidenceGuidance({ problem, evidence, latest, skill }) {
     if (evidence?.stale) next.push("Fresh check");
     if (latest.grade === "red") next.push("Repair the main blocker");
     if (latest.grade !== "red" && !isIndependentHistoryEntry(latest)) next.push("Independent result");
+    if (latest.solutionQuality === "suboptimal") next.push("Improve time or auxiliary space");
+    if (latest.solutionQuality === "unknown") next.push("Verify approach efficiency");
     if (skill?.independent && !skill.transferSupported) next.push("Distinct-title transfer proof");
   }
 

@@ -122,9 +122,10 @@ at the solution pattern.
 The user moves through Ready, Attempting, Grading, Reflecting, Saving, and Completed states.
 Selecting a grade is provisional and does not write history, activity records, stages, or review dates.
 The reflection captures stopwatch evidence, assistance, blocker or friction, an optional note,
-and complexity readiness as applicable. A clean solve cannot be saved beyond its locked time box;
-a red or yellow result may exceed it. Red and yellow require time evidence, an assistance answer,
-and a blocker. An independent clean result normalizes assistance to none and clears blockers.
+complexity readiness, and approach efficiency as applicable. A clean solve cannot be saved beyond
+its locked time box; a red or yellow result may exceed it. Red and yellow require time evidence,
+an assistance answer, and a blocker. An independent clean result normalizes assistance to none and
+clears blockers.
 
 The Reflect grade is based on three observable signals: whether working code was reached, whether
 meaningful outside help was needed, and whether the attempt stayed inside its locked time box.
@@ -137,6 +138,14 @@ Complexity readiness is recorded separately as `Not checked`, `Partial`, or `Exp
 `Partial` means the user understood the complexity but could not fully explain or derive it.
 Only `Explained` satisfies the legacy mastery checkbox. A complexity gap can therefore block
 mastery without automatically changing an otherwise independent solve to yellow.
+
+For every working solution, approach efficiency is recorded separately as `Expected`,
+`Suboptimal`, or `Unverified`. A correct independent solution remains independent evidence even
+when its asymptotic time or auxiliary-space complexity is suboptimal. The suboptimal marker creates an optimization gap for the
+adaptive plan instead of mislabeling the attempt as assisted. The user can put the actual
+suboptimal idea in the optional attempt note; the edit dialog's Optimal Solution tab remains the
+reference for the approach they want to recall later. Attempts without working code store this
+field as not applicable.
 
 After 12 recent Practice V2 graded reps without a transfer, mixed, or mock task, the
 recommender prioritizes the strongest eligible transfer candidate that fits the user's current

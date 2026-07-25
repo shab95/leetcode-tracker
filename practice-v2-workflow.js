@@ -8,10 +8,12 @@
   const PHASES = Object.freeze(["ready", "attempting", "grading", "reflecting", "saving", "completed"]);
   const GRADES = Object.freeze(["red", "yellow", "green"]);
   const COMPLEXITY_STATUSES = Object.freeze(["not-checked", "partial", "explained"]);
+  const SOLUTION_QUALITY = Object.freeze(["expected", "suboptimal", "unknown"]);
   const ASSISTANCE = Object.freeze(["none", "hint", "solution", "editorial", "ai", "person"]);
   const BLOCKERS = Object.freeze([
     "getting-started",
     "strategy",
+    "optimization",
     "implementation",
     "syntax-api",
     "edge-cases",
@@ -38,6 +40,7 @@
           note: "",
           complexityStatus: "not-checked",
           complexityKnown: false,
+          solutionQuality: "",
         },
         independent: { friction: "none" },
         nonIndependent: { assistance: "", blocker: "" },
@@ -122,6 +125,12 @@
       if (!ASSISTANCE.includes(assistance)) errors.assistance = "Choose whether you used help.";
       if (!BLOCKERS.includes(blocker)) errors.blocker = "Choose the main blocker for this result.";
     }
+    if (
+      ["yellow", "green"].includes(normalizedGrade) &&
+      !SOLUTION_QUALITY.includes(drafts.shared.solutionQuality)
+    ) {
+      errors.solutionQuality = "Choose whether the working solution used the expected optimization.";
+    }
 
     return {
       ok: Object.keys(errors).length === 0,
@@ -136,6 +145,7 @@
         note: String(drafts.shared.note || "").trim(),
         complexityStatus: drafts.shared.complexityStatus,
         complexityKnown: drafts.shared.complexityStatus === "explained",
+        solutionQuality: normalizedGrade === "red" ? "not-applicable" : drafts.shared.solutionQuality,
       },
     };
   }
@@ -148,6 +158,9 @@
         note: String(value.shared?.note || ""),
         complexityStatus: normalizeComplexityStatus(value.shared),
         complexityKnown: normalizeComplexityStatus(value.shared) === "explained",
+        solutionQuality: SOLUTION_QUALITY.includes(value.shared?.solutionQuality)
+          ? value.shared.solutionQuality
+          : "",
       },
       independent: { friction: String(value.independent?.friction || "none") },
       nonIndependent: {
@@ -177,6 +190,7 @@
     COMPLEXITY_STATUSES,
     GRADES,
     PHASES,
+    SOLUTION_QUALITY,
     createRuntime,
     normalizeRuntime,
     reconcileRuntimeRevision,

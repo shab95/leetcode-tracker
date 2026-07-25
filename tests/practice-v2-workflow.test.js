@@ -11,6 +11,7 @@ function draft(overrides = {}) {
       note: "Watch the invariant.",
       complexityStatus: "explained",
       complexityKnown: true,
+      solutionQuality: "expected",
       ...overrides.shared,
     },
     independent: { friction: "none", ...overrides.independent },
@@ -133,6 +134,20 @@ test("a failed independent attempt may record no assistance", () => {
   assert.equal(result.metadata.blocker, "getting-started");
 });
 
+test("a missed optimal solution is preserved as the main blocker", () => {
+  const result = workflow.validateReflection({
+    grade: "yellow",
+    draft: draft({
+      nonIndependent: { assistance: "hint", blocker: "optimization" },
+      shared: { solutionQuality: "suboptimal" },
+    }),
+    lockedTimeBoxMinutes: 30,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.metadata.blocker, "optimization");
+  assert.equal(result.metadata.solutionQuality, "suboptimal");
+});
+
 test("independent evidence normalizes assistance and blockers away", () => {
   const result = workflow.validateReflection({
     grade: "green",
@@ -161,6 +176,35 @@ test("complexity readiness is separate from an independent grade", () => {
   assert.equal(result.metadata.complexityStatus, "partial");
   assert.equal(result.metadata.complexityKnown, false);
   assert.equal(result.metadata.friction, "explanation");
+});
+
+test("working solutions require a separate approach-efficiency result", () => {
+  const missing = workflow.validateReflection({
+    grade: "green",
+    draft: draft({ shared: { solutionQuality: "" } }),
+    lockedTimeBoxMinutes: 20,
+  });
+  assert.equal(missing.ok, false);
+  assert.match(missing.errors.solutionQuality, /expected optimization/i);
+
+  const suboptimal = workflow.validateReflection({
+    grade: "green",
+    draft: draft({ shared: { solutionQuality: "suboptimal" } }),
+    lockedTimeBoxMinutes: 20,
+  });
+  assert.equal(suboptimal.ok, true);
+  assert.equal(suboptimal.metadata.assistance, "none");
+  assert.equal(suboptimal.metadata.solutionQuality, "suboptimal");
+});
+
+test("a failed attempt does not require or save solution quality", () => {
+  const result = workflow.validateReflection({
+    grade: "red",
+    draft: draft({ shared: { solutionQuality: "" } }),
+    lockedTimeBoxMinutes: 20,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.metadata.solutionQuality, "not-applicable");
 });
 
 test("legacy complexity readiness normalizes to the tri-state value", () => {

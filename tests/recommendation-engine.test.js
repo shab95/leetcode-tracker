@@ -156,6 +156,43 @@ test("a recent weak result can outrank an old due review", () => {
   assert.ok(recommendation.private.rankedCandidates.some((candidate) => candidate.problemId === "retention"));
 });
 
+test("a recent independent but suboptimal solution creates an optimization repair gap", () => {
+  const optimizationGap = problem({
+    id: "optimization-gap",
+    title: "Optimization Gap",
+    titleSlug: "optimization-gap",
+    order: 1,
+    reviewHistory: [grade("2026-07-16", "green", {
+      assistance: "none",
+      taskType: "assessment",
+      solutionQuality: "suboptimal",
+    })],
+    completionCount: 1,
+    nextReview: TODAY,
+  });
+  const alternative = problem({
+    id: "alternative",
+    title: "Alternative",
+    titleSlug: "alternative",
+    order: 2,
+    difficulty: "Easy",
+    topic: "Trees",
+  });
+
+  const recommendation = recommendNextRep({
+    today: TODAY,
+    now: "2026-07-18T13:00:00.000Z",
+    state: state([optimizationGap, alternative]),
+    capacityMinutes: 45,
+  });
+  const evidence = deriveEvidence(state([optimizationGap]), { today: TODAY });
+
+  assert.equal(recommendation.public.problemId, "optimization-gap");
+  assert.equal(recommendation.private.taskType, "repair");
+  assert.ok(recommendation.private.reasonCodes.includes("recent-optimization-gap"));
+  assert.ok(evidence.independentSkillIds.includes("arrays-and-hashing"));
+});
+
 test("a red repair cannot repeat the same title before 24 elapsed hours", () => {
   const recentRepair = problem({
     id: "recent-repair",

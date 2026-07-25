@@ -4222,8 +4222,21 @@ form {
 }
 
 .practice-v2-note,
-.practice-v2-complexity {
+.practice-v2-complexity,
+.practice-v2-solution-quality {
   grid-column: 1 / -1;
+}
+
+.practice-v2-solution-quality > small {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.practice-v2-solution-quality > span small {
+  display: block;
+  margin-top: 2px;
 }
 
 .practice-v2-complexity select {
@@ -4356,6 +4369,17 @@ form {
 }
 
 @media (max-width: 560px) {
+  .practice-v2-reflection-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 22px;
+  }
+
+  .practice-v2-reflection-head > span {
+    max-width: 100%;
+  }
+
   .practice-v2-progress li {
     min-height: 46px;
     font-size: 0;

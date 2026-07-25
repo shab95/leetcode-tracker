@@ -255,13 +255,13 @@ Reflection branches by grade:
 | Grade | Required | Optional or implied |
 | --- | --- | --- |
 | Red | Time or `not tracked`, assistance classification, main blocker | Note |
-| Yellow | Time or `not tracked`, assistance classification, main blocker | Assistance may be `none` when friction or time alone caused yellow; note |
-| Green | Time or `not tracked` | Assistance is implicitly `none`; separate optional friction and note |
+| Yellow | Time or `not tracked`, assistance classification, main blocker, approach efficiency | Assistance may be `none` when friction or time alone caused yellow; note |
+| Green | Time or `not tracked`, approach efficiency | Assistance is implicitly `none`; separate optional friction and note |
 
-Red/yellow blockers are: getting started, strategy, implementation, syntax/API, edge cases,
-complexity explanation, or time management. Green uses a separate optional `friction` field:
-none, minor implementation friction, syntax/API recall, edge-case cleanup, complexity
-explanation, or time management. A green save normalizes `assistance: "none"` and
+Red/yellow blockers are: getting started, strategy, not finding the optimal solution,
+implementation, syntax/API, edge cases, complexity explanation, or time management. Green uses
+a separate optional `friction` field: none, optimization/efficiency, minor implementation
+friction, syntax/API recall, edge-case cleanup, complexity explanation, or time management. A green save normalizes `assistance: "none"` and
 `blocker: null`; it never repurposes a failure blocker as a green value.
 
 If tracked elapsed time exceeds the locked time box, green is inconsistent with the grading
@@ -278,6 +278,17 @@ Complexity evidence is separate from the grade:
 Only `Explained` satisfies the legacy `complexityKnown` mastery condition. Complexity status
 does not silently downgrade an otherwise independent solve; it remains a distinct evidence
 dimension for future recommendations.
+
+Approach efficiency is also separate from the grade for any working solution:
+
+- `Expected`: the solution used the expected interview time and auxiliary-space complexity.
+- `Suboptimal`: the solution worked but has worse asymptotic time or unnecessary auxiliary-space complexity.
+- `Unverified`: the solution worked, but the user did not verify its time and auxiliary-space efficiency.
+
+A correct independent but suboptimal result remains independent evidence. It also records an
+optimization gap, which can make an optimization-focused repair more valuable while the result
+is recent. This avoids falsely calling independent work assisted while also avoiding a false
+claim of complete interview readiness. Red attempts store `not-applicable` for this dimension.
 
 The short note for future recall remains optional.
 
@@ -654,7 +665,7 @@ Top-level additions:
 ```js
 {
   version: 4,
-  algorithmVersion: "readiness-v1.2",
+  algorithmVersion: "readiness-v1.3",
   trainingProfile: { /* section 11 */ },
   practicePlan: {
     onboardingComplete: true,
@@ -673,7 +684,7 @@ New optional fields on future real review-history entries:
   recordedAt: "2026-07-18T00:04:12-04:00",
   taskType: "assessment",
   recommendationId: "uuid",
-  algorithmVersion: "readiness-v1.2",
+  algorithmVersion: "readiness-v1.3",
   reasonCodes: ["missing-independent-evidence", "goal-scope"],
   lockedTimeBoxMinutes: 30,
   elapsedMinutes: 24, // null when the user did not track time
@@ -682,6 +693,7 @@ New optional fields on future real review-history entries:
   assistance: "none", // normalized to none for green
   blocker: null, // red/yellow blocker; null for green
   friction: "syntax", // optional green-only observation
+  solutionQuality: "suboptimal", // expected, suboptimal, unknown, or not-applicable
   primarySkillIds: ["arrays-hashing"]
 }
 ```

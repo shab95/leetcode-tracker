@@ -5,7 +5,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function createPracticeV2Engine() {
   "use strict";
 
-  const ALGORITHM_VERSION = "readiness-v1.2";
+  const ALGORITHM_VERSION = "readiness-v1.3";
   const EVIDENCE_WINDOW_DAYS = 30;
   const WEAKNESS_WINDOW_DAYS = 21;
   const EXACT_TITLE_COOLDOWN_HOURS = 24;
@@ -206,7 +206,15 @@
     const due = Boolean(candidate.nextReview && candidate.nextReview <= today && attempts.length > 0);
     const daysOverdue = due ? Math.max(0, dateDiffDays(candidate.nextReview, today)) : 0;
     const importedOnly = attempts.length === 0 && importedEntries.length > 0;
-    const recentWeakness = lastAttempt && lastAgeDays >= 0 && lastAgeDays <= WEAKNESS_WINDOW_DAYS && ["red", "yellow"].includes(lastAttempt.grade);
+    const recentOptimizationGap = Boolean(
+      lastAttempt &&
+      lastAgeDays >= 0 &&
+      lastAgeDays <= WEAKNESS_WINDOW_DAYS &&
+      lastAttempt.solutionQuality === "suboptimal"
+    );
+    const recentWeakness = lastAttempt && lastAgeDays >= 0 && lastAgeDays <= WEAKNESS_WINDOW_DAYS && (
+      ["red", "yellow"].includes(lastAttempt.grade) || recentOptimizationGap
+    );
     const taskType = chooseTaskType({ candidate, skill, attempts, importedOnly, due, lastAttempt, lastAgeDays, recentWeakness });
     const timeBoxMinutes = timeBoxFor(candidate.difficulty, taskType);
     const requiredMinutes = timeBoxMinutes + 3;
@@ -240,7 +248,15 @@
     components.capacityFit = Math.round(WEIGHTS.capacityFit * Math.min(1, requiredMinutes / Math.max(capacityMinutes, 1)));
     const score = Object.values(components).reduce((sum, value) => sum + value, 0);
 
-    const reasonCodes = reasonCodesFor({ taskType, skill, due, importedOnly, recentWeakness, lastAgeDays });
+    const reasonCodes = reasonCodesFor({
+      taskType,
+      skill,
+      due,
+      importedOnly,
+      recentWeakness,
+      recentOptimizationGap,
+      lastAgeDays,
+    });
     if (evidence.transferDebt && taskType === "transfer") reasonCodes.push("transfer-cadence-due");
 
     return {
@@ -254,6 +270,7 @@
       lastAttempt,
       lastAgeDays,
       importedOnly,
+      recentOptimizationGap,
       cooldownReason: cooldown.reason,
       score,
       scoreComponents: components,
@@ -323,7 +340,7 @@
     return !["hint", "solution", "editorial", "person", "ai"].includes(assistance);
   }
 
-  function reasonCodesFor({ taskType, skill, due, importedOnly, recentWeakness, lastAgeDays }) {
+  function reasonCodesFor({ taskType, skill, due, importedOnly, recentWeakness, recentOptimizationGap, lastAgeDays }) {
     const codes = [`task-${taskType}`];
     if (!skill.checked) codes.push("missing-recent-check");
     if (!skill.independent) codes.push("missing-independent-evidence");
@@ -331,6 +348,7 @@
     if (due) codes.push("exact-review-due");
     if (importedOnly) codes.push("historical-exposure-unverified");
     if (recentWeakness) codes.push("recent-friction");
+    if (recentOptimizationGap) codes.push("recent-optimization-gap");
     if (lastAgeDays != null && lastAgeDays > EVIDENCE_WINDOW_DAYS) codes.push("evidence-stale");
     return codes;
   }
@@ -351,6 +369,9 @@
 
   function privateRationaleFor(candidate) {
     const skill = candidate.topic || "this skill area";
+    if (candidate.taskType === "repair" && candidate.lastAttempt?.solutionQuality === "suboptimal") {
+      return `A recent correct-but-suboptimal result makes an optimization-focused ${skill} follow-up valuable.`;
+    }
     if (candidate.taskType === "repair") return `Recent ${candidate.lastAttempt?.grade || "non-clean"} evidence makes a focused ${skill} follow-up valuable.`;
     if (candidate.taskType === "retention") return `${candidate.title} is ${candidate.daysOverdue} days overdue for exact-title retention.`;
     if (candidate.taskType === "transfer") return `${skill} has independent evidence but still needs a distinct-title transfer result.`;
