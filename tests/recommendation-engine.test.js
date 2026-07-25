@@ -270,6 +270,55 @@ test("yellow and green attempts also wait for their scheduled review", () => {
   }
 });
 
+test("transfer debt guarantees an eligible transfer rep after twelve recent non-transfer reps", () => {
+  const repeated = problem({
+    id: "repeated",
+    title: "Repeated Evidence",
+    titleSlug: "repeated-evidence",
+    topic: "Arrays and Hashing",
+    difficulty: "Easy",
+    completionCount: 12,
+    nextReview: "2026-07-30",
+    reviewHistory: Array.from({ length: 12 }, (_, index) => grade(
+      `2026-07-${String(index + 1).padStart(2, "0")}`,
+      "green",
+      { taskType: "assessment", assistance: "none" },
+    )),
+  });
+  const transfer = problem({
+    id: "transfer",
+    title: "Unfamiliar Candidate",
+    titleSlug: "unfamiliar-candidate",
+    topic: "Arrays and Hashing",
+    difficulty: "Medium",
+  });
+  const urgentRepair = problem({
+    id: "urgent-repair",
+    title: "Urgent Repair",
+    titleSlug: "urgent-repair",
+    topic: "Trees",
+    difficulty: "Easy",
+    completionCount: 1,
+    nextReview: TODAY,
+    reviewHistory: [grade("2026-07-17", "red", {
+      createdAt: "2026-07-17T10:00:00.000Z",
+      taskType: "assessment",
+    })],
+  });
+
+  const recommendation = recommendNextRep({
+    today: TODAY,
+    now: "2026-07-18T12:00:00.000Z",
+    state: state([repeated, transfer, urgentRepair]),
+    capacityMinutes: 45,
+  });
+
+  assert.equal(recommendation.public.problemId, "transfer");
+  assert.equal(recommendation.private.taskType, "transfer");
+  assert.ok(recommendation.private.reasonCodes.includes("transfer-cadence-due"));
+  assert.equal(JSON.stringify(recommendation.public).includes("Arrays and Hashing"), false);
+});
+
 test("an exact-title due review remains eligible as retention", () => {
   const due = problem({
     id: "due",

@@ -233,6 +233,10 @@ rows to `sessions` using the backfilled attempt date, because they are app-enter
 activity. Imported CSV history remains historical context only and does not create session
 activity.
 
+`sessions` is a legacy internal storage name for one saved graded activity event. The current
+Practice UI does not ask users to start or end a study session; available time is simply an
+input that recalculates the next recommendation.
+
 LeetCode imports from the optional Chrome extension use the same historical lane as CSV
 import. The extension first reads LeetCode's signed-in submissions API and falls back to
 rendered progress pages if needed. Captured rows add or merge problem records and

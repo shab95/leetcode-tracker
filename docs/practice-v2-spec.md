@@ -28,7 +28,7 @@ or time spent in the tracker.
 4. Do not leak a solution pattern before an independent attempt.
 5. Ask for only the evidence that can improve a future recommendation.
 6. Recalculate after every completed rep; do not create makeup debt.
-7. Treat stopping after one honest rep as a valid session.
+7. Treat stopping after one honest rep as a valid stopping point.
 8. Prefer explicit uncertainty over fake readiness precision.
 
 ## 3. Information Concealment Contract
@@ -89,7 +89,7 @@ normalizer is already responsible for repairing an invalid value.
 | Imported history | Preserve as exposure-only evidence |
 | Red, yellow, and green history | Preserve as real attempt evidence |
 | Manual backfills | Preserve with their original dates |
-| Sessions | Preserve and continue recording |
+| Legacy `sessions` activity records | Preserve and continue recording internally |
 | Stage, interval, next review | Preserve as exact-title retention evidence |
 | Green streak and mastery | Preserve as V0 retention achievements |
 | Complexity readiness | Preserve |
@@ -176,17 +176,14 @@ stateDiagram-v2
   Saving --> Completed: Atomic save succeeds
   Saving --> Reflecting: Retryable save fails
   Completed --> Undoing: Undo saved rep
-  SessionComplete --> Undoing: Undo last rep
   Undoing --> Reflecting: Inverse event succeeds
   Undoing --> Completed: Undo fails
-  Completed --> Ready: Get next rep
-  Completed --> SessionComplete: End session
-  SessionComplete --> Ready: Start another session
+  Completed --> Ready: Do another rep
 ```
 
 Only a successful atomic Save writes evidence. Beginning a rep, opening LeetCode, choosing
 a provisional grade, or editing reflection fields may update the separate resumable runtime
-draft, but must not change problem history, stages, sessions, activity, leaderboard totals,
+draft, but must not change problem history, stages, activity records, leaderboard totals,
 or readiness aggregates.
 
 ## 7. Practice Screen States
@@ -206,8 +203,8 @@ Show:
 Do not show topic, pattern, list source, notes, solution, expected complexity, previous
 blockers, or a comparison to a known problem.
 
-`Choose another` is a session-only skip. It records no grade and changes no schedule. The
-engine excludes the skipped candidate for the rest of the current browser session and
+`Choose another` is a browser-runtime skip. It records no grade and changes no schedule. The
+engine excludes the skipped candidate until the current runtime resets and
 returns the next eligible candidate. When no suitable alternative exists, keep the original
 recommendation and explain that it is the strongest available rep.
 
@@ -237,7 +234,7 @@ Use three evidence-oriented choices:
 | --- | --- | --- |
 | Could not solve | `red` | Needed the core solution or did not reach working code |
 | Solved with help or heavy friction | `yellow` | Needed meaningful help, exceeded the time box, or struggled substantially |
-| Solved independently | `green` | Working code, important tests, and complexity explained without help |
+| Solved independently | `green` | Working code and important tests completed without meaningful help |
 
 A small syntax correction may still be green if it did not change the strategy and did not
 require meaningful assistance. An API or syntax issue that prevented working code or required
@@ -272,10 +269,17 @@ contract. Reflection explains the mismatch and asks the user to correct the time
 yellow. Untracked green may establish independence, but never speed or timed-performance
 evidence.
 
-Optional fields:
+Complexity evidence is separate from the grade:
 
-- Short note for future recall.
-- Complexity-ready confirmation when relevant.
+- `Not checked`: the user did not verify the explanation.
+- `Partial`: the user understood it but could not fully explain or derive it.
+- `Explained`: the user confidently explained time and space complexity.
+
+Only `Explained` satisfies the legacy `complexityKnown` mastery condition. Complexity status
+does not silently downgrade an otherwise independent solve; it remains a distinct evidence
+dimension for future recommendations.
+
+The short note for future recall remains optional.
 
 The chosen grade remains visible and editable. `Change grade` returns to Grading without
 losing entered time or note. Independent and non-independent reflection branches keep separate
@@ -291,7 +295,8 @@ After the atomic save succeeds, reveal:
 - Any exact-title next-review date.
 - Whether transfer evidence is still missing.
 - The exact-title next-review date when one was scheduled.
-- `Get next rep` and `End session`.
+- `Do another rep`.
+- Calm copy confirming that the user may stop and return later.
 
 Completion copy must remain concise. Detailed scores belong in Memory.
 
@@ -301,19 +306,8 @@ schedule, coverage sets, session totals, activity day, and weekly rhythm from re
 It must never restore a whole tracker snapshot because that could erase unrelated changes.
 
 The server returns an undo token with the save receipt. That receipt remains available after
-Get next rep, session completion, navigation, and reload until another rep is saved. If a new
+navigation and reload until another rep is saved. If a new
 unsaved attempt is active, Undo first asks the user to discard that draft.
-
-### 7.6 Session complete
-
-Show:
-
-- Reps completed.
-- Practice minutes.
-- Weekly rhythm days.
-- Calm confirmation that one honest rep is valid.
-
-Do not show backlog debt, missed-day warnings, or pressure to continue.
 
 ## 8. Reload, Navigation, and Accidental Actions
 
@@ -355,7 +349,7 @@ Behavior:
 - Starting another problem asks the user to cancel or finish the active rep.
 - Reload during Saving reconciles by `attemptId`: show Completed when the save committed, or
   restore Reflecting with Retry when it did not.
-- Completed and Session complete restore their save receipt and undo token after reload.
+- Completed restores its save receipt and undo token after reload.
 - Undo applies the saved inverse event and makes the same problem eligible according to the
   recomputed remaining evidence.
 - Multi-tab stale-save conflicts never overwrite the newer cloud state.
@@ -370,7 +364,6 @@ Browser navigation rules:
 | Reflecting | Move to Grading within Practice; preserve both reflection branches |
 | Saving / Undoing | Disable duplicate actions and reconcile the in-flight operation before changing state |
 | Completed | Navigation is allowed; evidence remains saved and the undo receipt remains available |
-| Session complete | Navigation is allowed; evidence and the undo receipt remain available |
 
 Browser Back never performs Undo. Cancel is explicit, clears only the unsaved runtime record,
 and does not change evidence.
@@ -398,7 +391,7 @@ and does not change evidence.
 | User gets another rep, then requests Undo | Require discarding any new unsaved attempt before applying the prior inverse event |
 
 Browser Back must not mutate evidence. Within Practice it moves to the previous provisional
-state when safe; leaving Practice preserves the session draft. Completed evidence is only
+state when safe; leaving Practice preserves the attempt draft. Completed evidence is only
 reversed through the explicit atomic Undo operation.
 
 ## 9. Recommendation Task Types
@@ -436,10 +429,12 @@ The engine performs these pure steps:
 4. Derive recent blockers, assistance dependence, speed, and evidence staleness.
 5. Determine the highest-value task type for the current goal and available time.
 6. Generate eligible candidates.
-7. Exclude active, just-completed, session-skipped, same-title cooldown, and unsafe hint-leaking candidates.
+7. Exclude active, just-completed, runtime-skipped, same-title cooldown, and unsafe hint-leaking candidates.
 8. Score candidates.
-9. Apply deterministic tie-breakers.
-10. Return one recommendation plus private reason codes and public neutral copy.
+9. Apply the transfer-cadence guard when the latest 12 V2 graded reps contain no transfer,
+   mixed, or mock task and an eligible transfer candidate fits the available time.
+10. Apply deterministic tie-breakers.
+11. Return one recommendation plus private reason codes and public neutral copy.
 
 Candidate score inputs for the first engine:
 
@@ -459,6 +454,10 @@ readiness gap
 
 Weights are versioned constants. Recommendation output must include an explanation trace for
 QA and Memory, but that trace is private until the attempt is saved.
+
+The transfer-cadence guard prevents the plan from repeatedly rewarding exact-title recall.
+It does not reveal the candidate's topic or pattern before the attempt, and it does not select
+a candidate that cannot fit the user's current available time.
 
 ## 11. Goal and Capacity Model
 
@@ -484,10 +483,10 @@ Defaults for an existing user who skips setup:
 General SWE interviews
 8-week rolling horizon
 4 practice days per week
-45 minutes per session
+45 minutes available by default
 ```
 
-The engine adapts to the session capacity:
+The engine adapts to the time available now:
 
 - Under 15 minutes: short retention or repair when available.
 - 20-35 minutes: Easy/Medium assessment, transfer, or learning rep.
@@ -513,7 +512,7 @@ plain recommendation such as `Narrow the target set, add a practice day, or move
 
 ### 11.2 Today's capacity
 
-`Today` is a session input, not a permanent promise. Before the first rep, the user can keep
+`Today` is a recommendation input, not a permanent promise. Before the first rep, the user can keep
 the profile default or choose 15, 30, 45, 60, or custom minutes. The recommender must return
 a candidate whose maximum time box plus reflection overhead fits that capacity.
 
@@ -522,7 +521,7 @@ next recommendation. Finishing early makes the remaining capacity available; exc
 time box records evidence but never creates negative time debt.
 
 The Practice UI should display `45 min available today` only when that value came from the
-profile default or an explicit session choice. It must remain editable before Begin.
+profile default or an explicit availability choice. It must remain editable before Begin.
 
 ### 11.3 Evidence language
 
@@ -606,7 +605,7 @@ The scheduler returns an explicit outcome with the save receipt:
 
 Completed renders that outcome honestly as `Next exact review`, `Still due`, or `No exact-title
 review scheduled`. The UI never calculates `now + interval` on its own. Target dates, rolling
-window ends, and session capacity may affect recommendation priority, but they never write,
+window ends, and available time may affect recommendation priority, but they never write,
 clamp, or reinterpret `nextReview`.
 
 This separation lets the plan learn from a transfer attempt without falsely claiming that
@@ -637,22 +636,16 @@ write behavior so the UI never turns planning estimates into memory facts.
 
 | Clock | Meaning | Editable | May change exact `nextReview` |
 | --- | --- | --- | --- |
-| Today's capacity | Total time the user is willing to spend in this practice session | Before a rep; changes affect the next rep | No |
+| Today's capacity | Time the user currently has available for the next recommendation | Before a rep; changes can select a different rep | No |
 | Locked time box | Maximum target for the active problem | No after Begin | No |
 | Elapsed time | User-entered LeetCode stopwatch result, or `null` when untracked | During reflection | No; it affects speed evidence and grade consistency only |
 | Exact-title review date | Scheduler-owned date for seeing this same title again | Never directly from Practice | Yes, but only through the versioned scheduler after a saved grade |
 | Planning horizon | Target interview date or honest rolling window | In plan settings | No; it changes candidate priority and feasibility only |
 
-For sessions with multiple reps, the runtime stores cumulative tracked minutes separately
-from the active attempt. The next recommendation uses:
-
-```text
-known remaining capacity = session capacity - cumulative tracked minutes
-```
-
-When any completed rep has untracked time, the app must not invent a remaining-minute value.
-It asks the user to confirm how much time remains before recommending another rep. Ending the
-session is always valid.
+The available-time control is not a countdown and is not automatically reduced after a saved
+rep. Before another rep, the user may leave it as-is or choose the time they have now. The
+engine recalculates immediately and may select a different problem. Stopping after any saved
+rep is always valid.
 
 ## 12. State Schema v4
 
@@ -661,7 +654,7 @@ Top-level additions:
 ```js
 {
   version: 4,
-  algorithmVersion: "readiness-v1.1",
+  algorithmVersion: "readiness-v1.2",
   trainingProfile: { /* section 11 */ },
   practicePlan: {
     onboardingComplete: true,
@@ -680,7 +673,7 @@ New optional fields on future real review-history entries:
   recordedAt: "2026-07-18T00:04:12-04:00",
   taskType: "assessment",
   recommendationId: "uuid",
-  algorithmVersion: "readiness-v1.1",
+  algorithmVersion: "readiness-v1.2",
   reasonCodes: ["missing-independent-evidence", "goal-scope"],
   lockedTimeBoxMinutes: 30,
   elapsedMinutes: 24, // null when the user did not track time
@@ -849,7 +842,7 @@ atomic save receipt.
   changes to yellow.
 - Green reflection disables and ignores assistance and failure-blocker inputs; red/yellow disable
   and ignore the green-only friction input.
-- The last undo receipt remains available after Get next rep, session completion, navigation, and
+- The last undo receipt remains available after Do another rep, navigation, and
   reload until another rep is saved.
 - Pre-save responses and runtime drafts contain no private task type, skill ids, rationale, notes,
   solution text, or other pattern-revealing metadata.

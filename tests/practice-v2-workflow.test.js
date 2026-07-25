@@ -9,6 +9,7 @@ function draft(overrides = {}) {
       elapsedMinutes: "12",
       timeTracked: true,
       note: "Watch the invariant.",
+      complexityStatus: "explained",
       complexityKnown: true,
       ...overrides.shared,
     },
@@ -151,14 +152,38 @@ test("complexity readiness is separate from an independent grade", () => {
   const result = workflow.validateReflection({
     grade: "green",
     draft: draft({
-      shared: { complexityKnown: false },
+      shared: { complexityStatus: "partial", complexityKnown: false },
       independent: { friction: "explanation" },
     }),
     lockedTimeBoxMinutes: 20,
   });
   assert.equal(result.ok, true);
+  assert.equal(result.metadata.complexityStatus, "partial");
   assert.equal(result.metadata.complexityKnown, false);
   assert.equal(result.metadata.friction, "explanation");
+});
+
+test("legacy complexity readiness normalizes to the tri-state value", () => {
+  const runtime = workflow.normalizeRuntime({
+    reflectionDrafts: {
+      shared: { complexityKnown: true },
+    },
+  });
+
+  assert.equal(runtime.reflectionDrafts.shared.complexityStatus, "explained");
+  assert.equal(runtime.reflectionDrafts.shared.complexityKnown, true);
+});
+
+test("legacy session completion resumes as a completed rep", () => {
+  const runtime = workflow.normalizeRuntime({ phase: "session-complete" });
+  assert.equal(runtime.phase, "completed");
+});
+
+test("a completed rep can continue or undo but has no session-ending transition", () => {
+  const completed = workflow.createRuntime({ phase: "completed" });
+  assert.equal(workflow.transition(completed, "next").runtime.phase, "ready");
+  assert.equal(workflow.transition(completed, "undo").runtime.phase, "reflecting");
+  assert.equal(workflow.transition(completed, "end").ok, false);
 });
 
 test("independent grade cannot exceed the locked time box", () => {

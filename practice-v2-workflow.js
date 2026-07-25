@@ -5,8 +5,9 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function createPracticeV2Workflow() {
   "use strict";
 
-  const PHASES = Object.freeze(["ready", "attempting", "grading", "reflecting", "saving", "completed", "session-complete"]);
+  const PHASES = Object.freeze(["ready", "attempting", "grading", "reflecting", "saving", "completed"]);
   const GRADES = Object.freeze(["red", "yellow", "green"]);
+  const COMPLEXITY_STATUSES = Object.freeze(["not-checked", "partial", "explained"]);
   const ASSISTANCE = Object.freeze(["none", "hint", "solution", "editorial", "ai", "person"]);
   const BLOCKERS = Object.freeze([
     "getting-started",
@@ -20,7 +21,7 @@
 
   function createRuntime(overrides = {}) {
     return {
-      version: 1,
+      version: 2,
       phase: "ready",
       recommendation: null,
       skippedProblemIds: [],
@@ -31,7 +32,13 @@
       expectedRevision: 0,
       provisionalGrade: "",
       reflectionDrafts: {
-        shared: { elapsedMinutes: "", timeTracked: true, note: "", complexityKnown: false },
+        shared: {
+          elapsedMinutes: "",
+          timeTracked: true,
+          note: "",
+          complexityStatus: "not-checked",
+          complexityKnown: false,
+        },
         independent: { friction: "none" },
         nonIndependent: { assistance: "", blocker: "" },
       },
@@ -43,7 +50,8 @@
   }
 
   function normalizeRuntime(value = {}) {
-    const phase = PHASES.includes(value.phase) ? value.phase : "ready";
+    const savedPhase = value.phase === "session-complete" ? "completed" : value.phase;
+    const phase = PHASES.includes(savedPhase) ? savedPhase : "ready";
     return createRuntime({
       ...value,
       phase: phase === "saving" ? "reflecting" : phase,
@@ -80,8 +88,7 @@
       grading: { back: "attempting", continue: "reflecting" },
       reflecting: { back: "grading", save: "saving" },
       saving: { saved: "completed", failed: "reflecting" },
-      completed: { next: "ready", end: "session-complete", undo: "reflecting" },
-      "session-complete": { next: "ready", undo: "reflecting" },
+      completed: { next: "ready", undo: "reflecting" },
     };
     const next = allowed[current.phase]?.[event];
     if (!next) return { ok: false, runtime: current, error: `Cannot ${event} from ${current.phase}.` };
@@ -127,7 +134,8 @@
         blocker: normalizedGrade === "green" ? null : drafts.nonIndependent.blocker,
         friction: normalizedGrade === "green" ? drafts.independent.friction || "none" : null,
         note: String(drafts.shared.note || "").trim(),
-        complexityKnown: Boolean(drafts.shared.complexityKnown),
+        complexityStatus: drafts.shared.complexityStatus,
+        complexityKnown: drafts.shared.complexityStatus === "explained",
       },
     };
   }
@@ -138,7 +146,8 @@
         elapsedMinutes: value.shared?.elapsedMinutes ?? "",
         timeTracked: value.shared?.timeTracked !== false,
         note: String(value.shared?.note || ""),
-        complexityKnown: Boolean(value.shared?.complexityKnown),
+        complexityStatus: normalizeComplexityStatus(value.shared),
+        complexityKnown: normalizeComplexityStatus(value.shared) === "explained",
       },
       independent: { friction: String(value.independent?.friction || "none") },
       nonIndependent: {
@@ -146,6 +155,11 @@
         blocker: String(value.nonIndependent?.blocker || ""),
       },
     };
+  }
+
+  function normalizeComplexityStatus(shared = {}) {
+    if (COMPLEXITY_STATUSES.includes(shared?.complexityStatus)) return shared.complexityStatus;
+    return shared?.complexityKnown ? "explained" : "not-checked";
   }
 
   function positiveNumber(value, fallback) {
@@ -160,6 +174,7 @@
   return Object.freeze({
     ASSISTANCE,
     BLOCKERS,
+    COMPLEXITY_STATUSES,
     GRADES,
     PHASES,
     createRuntime,

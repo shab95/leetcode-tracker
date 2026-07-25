@@ -246,10 +246,7 @@ const els = {
   practiceV2CompleteEvidence: document.querySelector("#practiceV2CompleteEvidence"),
   practiceV2CompleteReview: document.querySelector("#practiceV2CompleteReview"),
   practiceV2NextBtn: document.querySelector("#practiceV2NextBtn"),
-  practiceV2EndBtn: document.querySelector("#practiceV2EndBtn"),
   practiceV2UndoBtn: document.querySelector("#practiceV2UndoBtn"),
-  practiceV2RestartBtn: document.querySelector("#practiceV2RestartBtn"),
-  practiceV2SessionUndoBtn: document.querySelector("#practiceV2SessionUndoBtn"),
   problemDialog: document.querySelector("#problemDialog"),
   problemForm: document.querySelector("#problemForm"),
   problemId: document.querySelector("#problemId"),
@@ -342,7 +339,7 @@ let problems = [];
 let importMeta = null;
 let sessions = [];
 let recoveryProblemIds = [];
-let algorithmVersion = STATE_V4?.ALGORITHM_VERSION || "readiness-v1";
+let algorithmVersion = PRACTICE_V2_ENGINE?.ALGORITHM_VERSION || STATE_V4?.ALGORITHM_VERSION || "readiness-v1";
 let trainingProfile = cloneState(STATE_V4?.DEFAULT_TRAINING_PROFILE || {});
 let practicePlan = cloneState(STATE_V4?.DEFAULT_PRACTICE_PLAN || {});
 let trackerStateExtras = {};
@@ -522,10 +519,7 @@ els.practiceV2ContinueGradeBtn?.addEventListener("click", continuePracticeV2Grad
 els.practiceV2BackGradeBtn?.addEventListener("click", () => movePracticeV2("back"));
 els.practiceV2ReflectionForm?.addEventListener("submit", savePracticeV2Rep);
 els.practiceV2NextBtn?.addEventListener("click", getNextPracticeV2Rep);
-els.practiceV2EndBtn?.addEventListener("click", () => movePracticeV2("end"));
 els.practiceV2UndoBtn?.addEventListener("click", undoPracticeV2Rep);
-els.practiceV2RestartBtn?.addEventListener("click", getNextPracticeV2Rep);
-els.practiceV2SessionUndoBtn?.addEventListener("click", undoPracticeV2Rep);
 els.practiceV2Capacity?.addEventListener("change", changePracticeV2Capacity);
 els.practiceV2TimeUntracked?.addEventListener("change", capturePracticeV2Reflection);
 [
@@ -763,7 +757,7 @@ function applyRemoteState(state) {
   importMeta = cloneState(migrated.importMeta);
   sessions = cloneState(migrated.sessions);
   recoveryProblemIds = normalizeRecoveryProblemIds(migrated.recoveryProblemIds);
-  algorithmVersion = migrated.algorithmVersion;
+  algorithmVersion = PRACTICE_V2_ENGINE?.ALGORITHM_VERSION || migrated.algorithmVersion;
   trainingProfile = cloneState(migrated.trainingProfile);
   practicePlan = cloneState(migrated.practicePlan);
   trackerStateExtras = extractTrackerStateExtras(migrated);
@@ -815,7 +809,7 @@ function buildTrackerStatePayload(overrides = {}) {
     problems,
     sessions,
     recoveryProblemIds,
-    algorithmVersion,
+    algorithmVersion: PRACTICE_V2_ENGINE?.ALGORITHM_VERSION || algorithmVersion,
     trainingProfile,
     practicePlan,
     ...overrides,
@@ -2692,7 +2686,7 @@ function restorePracticeV2Runtime() {
     expectedRevision: currentRevision,
   });
   reconcilePracticeV2RuntimeRevision();
-  if (practiceV2Runtime.undoReceipt && ["completed", "session-complete"].includes(practiceV2Runtime.phase)) {
+  if (practiceV2Runtime.undoReceipt && practiceV2Runtime.phase === "completed") {
     lastGradeUndo = cloneState(practiceV2Runtime.undoReceipt);
   }
 }
@@ -2755,7 +2749,7 @@ function getPracticeV2Recommendation({ resetExclusions = false } = {}) {
 }
 
 function ensurePracticeV2Recommendation() {
-  if (!practiceV2Runtime || !["ready", "session-complete"].includes(practiceV2Runtime.phase)) return;
+  if (!practiceV2Runtime || practiceV2Runtime.phase !== "ready") return;
   if (
     practiceV2Runtime.phase === "ready" &&
     practiceV2Runtime.recommendation?.public &&
@@ -2777,7 +2771,7 @@ function renderPracticeV2() {
   els.practiceV2Experience.querySelectorAll("[data-v2-state]").forEach((state) => {
     state.hidden = state.dataset.v2State !== phase;
   });
-  const activeStep = { ready: 0, attempting: 1, grading: 2, reflecting: 2, completed: 3, "session-complete": 3 }[phase] || 0;
+  const activeStep = { ready: 0, attempting: 1, grading: 2, reflecting: 2, completed: 3 }[phase] || 0;
   els.practiceV2Experience.querySelectorAll("[data-v2-step]").forEach((step, index) => {
     step.classList.toggle("active", index === activeStep);
     step.classList.toggle("complete", index < activeStep);
@@ -2801,7 +2795,7 @@ function renderPracticeV2() {
     els.practiceV2ReadyTitle.textContent = "No rep fits the time available.";
     els.practiceV2Difficulty.textContent = "-";
     els.practiceV2TimeBox.textContent = "-";
-    els.practiceV2Evidence.textContent = "Try a longer session or return when you have more time.";
+    els.practiceV2Evidence.textContent = "Choose more available time or return when you have room for a focused attempt.";
     els.practiceV2Reason.textContent = "Stopping without penalty is always valid.";
   }
   els.practiceV2BeginBtn.disabled = !publicPick;
@@ -2814,7 +2808,7 @@ function renderPracticeV2() {
 }
 
 function clearPracticeV2Spoilers(phase) {
-  if (["completed", "session-complete"].includes(phase)) return;
+  if (phase === "completed") return;
   if (els.practiceV2CompleteSkill) els.practiceV2CompleteSkill.textContent = "";
   if (els.practiceV2CompleteEvidence) els.practiceV2CompleteEvidence.textContent = "";
   if (els.practiceV2CompleteReview) els.practiceV2CompleteReview.textContent = "";
@@ -2864,7 +2858,7 @@ function changePracticeV2Capacity() {
   const nextTitle = practiceV2Runtime.recommendation?.public?.title || "";
   if (els.practiceV2CapacityHint) {
     els.practiceV2CapacityHint.textContent = nextTitle && nextTitle !== previousTitle
-      ? `Rep updated to ${nextTitle} for a ${practiceV2Runtime.capacityMinutes}-minute session.`
+      ? `With ${practiceV2Runtime.capacityMinutes} minutes available, your next rep is now ${nextTitle}.`
       : nextTitle
         ? `${nextTitle} is still the strongest rep within ${practiceV2Runtime.capacityMinutes} minutes.`
         : `No rep currently fits within ${practiceV2Runtime.capacityMinutes} minutes.`;
@@ -2909,7 +2903,8 @@ function capturePracticeV2Reflection() {
   drafts.shared.elapsedMinutes = els.practiceV2Elapsed.value;
   drafts.shared.timeTracked = !els.practiceV2TimeUntracked.checked;
   drafts.shared.note = els.practiceV2Note.value;
-  drafts.shared.complexityKnown = els.practiceV2Complexity.checked;
+  drafts.shared.complexityStatus = els.practiceV2Complexity.value;
+  drafts.shared.complexityKnown = drafts.shared.complexityStatus === "explained";
   drafts.nonIndependent.assistance = els.practiceV2Assistance.value;
   drafts.nonIndependent.blocker = els.practiceV2Blocker.value;
   drafts.independent.friction = els.practiceV2Friction.value;
@@ -2932,7 +2927,7 @@ function renderPracticeV2Reflection() {
   if (els.practiceV2Blocker) els.practiceV2Blocker.value = drafts.nonIndependent.blocker;
   if (els.practiceV2Friction) els.practiceV2Friction.value = drafts.independent.friction;
   if (els.practiceV2Note) els.practiceV2Note.value = drafts.shared.note;
-  if (els.practiceV2Complexity) els.practiceV2Complexity.checked = drafts.shared.complexityKnown;
+  if (els.practiceV2Complexity) els.practiceV2Complexity.value = drafts.shared.complexityStatus || "not-checked";
   const independent = grade === "green";
   if (els.practiceV2AssistanceField) els.practiceV2AssistanceField.hidden = independent;
   if (els.practiceV2BlockerField) els.practiceV2BlockerField.hidden = independent;

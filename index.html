@@ -258,9 +258,13 @@
                   <span>Note for future you <small>Optional</small></span>
                   <textarea id="practiceV2Note" rows="3" placeholder="One invariant, mistake, or edge case worth remembering"></textarea>
                 </label>
-                <label class="practice-v2-check practice-v2-complexity">
-                  <input id="practiceV2Complexity" type="checkbox" />
-                  <span>I can explain time and space complexity</span>
+                <label class="practice-v2-complexity">
+                  <span>Complexity check</span>
+                  <select id="practiceV2Complexity">
+                    <option value="not-checked">I did not check it</option>
+                    <option value="partial">I understood it, but could not fully explain or derive it</option>
+                    <option value="explained">I explained time and space confidently</option>
+                  </select>
                 </label>
               </div>
               <p class="practice-v2-error" id="practiceV2Error" role="alert"></p>
@@ -281,21 +285,10 @@
                 <div><small>Exact-title review</small><strong id="practiceV2CompleteReview"></strong></div>
               </div>
               <div class="practice-v2-actions">
-                <button class="primary-btn" id="practiceV2NextBtn" type="button">Get next rep</button>
-                <button class="ghost-btn" id="practiceV2EndBtn" type="button">End session</button>
+                <button class="primary-btn" id="practiceV2NextBtn" type="button">Do another rep</button>
                 <button class="text-btn" id="practiceV2UndoBtn" type="button">Undo this rep</button>
               </div>
-            </div>
-
-            <div class="practice-v2-state practice-v2-complete" data-v2-state="session-complete" hidden>
-              <div class="practice-v2-complete-mark" aria-hidden="true"></div>
-              <div class="practice-v2-kicker">Session complete</div>
-              <h3 class="practice-v2-title">One honest rep is enough.</h3>
-              <p class="practice-v2-subcopy">The plan has new evidence and will adapt when you return.</p>
-              <div class="practice-v2-actions">
-                <button class="primary-btn" id="practiceV2RestartBtn" type="button">Do another rep</button>
-                <button class="text-btn" id="practiceV2SessionUndoBtn" type="button">Undo last rep</button>
-              </div>
+              <p class="practice-v2-stop-copy">You can stop here. Your next recommendation will be ready when you return.</p>
             </div>
           </section>
 

@@ -120,7 +120,7 @@ stored solution, and private ranking rationale remain hidden so the recommendati
 at the solution pattern.
 
 The user moves through Ready, Attempting, Grading, Reflecting, Saving, and Completed states.
-Selecting a grade is provisional and does not write history, sessions, stages, or review dates.
+Selecting a grade is provisional and does not write history, activity records, stages, or review dates.
 The reflection captures stopwatch evidence, assistance, blocker or friction, an optional note,
 and complexity readiness as applicable. A clean solve cannot be saved beyond its locked time box;
 a red or yellow result may exceed it. Red and yellow require time evidence, an assistance answer,
@@ -133,8 +133,15 @@ help or heavy friction` covers meaningful hints or help, major debugging, or fin
 time box. `Solved independently` means working code and important tests were completed without
 meaningful help and within the time box. A small syntax/API mistake or edge-case correction can still
 be independent when the user finds and fixes it alone inside the time box; it is captured as friction.
-Complexity readiness is recorded separately, so an exact complexity gap can block mastery without
-automatically changing an otherwise independent solve to yellow.
+Complexity readiness is recorded separately as `Not checked`, `Partial`, or `Explained`.
+`Partial` means the user understood the complexity but could not fully explain or derive it.
+Only `Explained` satisfies the legacy mastery checkbox. A complexity gap can therefore block
+mastery without automatically changing an otherwise independent solve to yellow.
+
+After 12 recent Practice V2 graded reps without a transfer, mixed, or mock task, the
+recommender prioritizes the strongest eligible transfer candidate that fits the user's current
+available time. This cadence guard limits exact-title memorization. The pre-attempt UI still
+hides the candidate's topic, expected pattern, and private reason code.
 
 Back navigation preserves the draft, reload resumes an interrupted attempt, and Undo restores
 the exact pre-attempt tracker snapshot. Only a valid Save invokes the existing grade transition
@@ -176,8 +183,8 @@ motivational only. The scheduling result, next review date, and any hold reason 
 actual algorithm output.
 
 The post-grade prompt may also include an `Undo grade` action. Undo is a safety control for
-the most recent accidental grade in the current session. It restores the problem and recent
-session state from before that grade, then saves the restored state.
+the most recent accidental grade. It removes that attempt's matching history and internal
+activity record, then rebuilds derived state without overwriting unrelated work.
 
 The edit dialog may store an optional optimal-solution reference with approach, time
 complexity, space complexity, and explanation. This is study/reference material and must
@@ -494,16 +501,15 @@ Difficulty thresholds:
 | Medium | 4 |
 | Hard | 5 |
 
-`complexityKnown` means the user has checked:
+`complexityKnown` means the user selected:
 
 ```text
-I can explain time and space complexity
+Explained: I can confidently explain time and space complexity
 ```
 
-This can be confirmed manually in the edit dialog or immediately after any successful
-review grade: `Solved cleanly` or `Solved with hints / slow`. `Could not solve` should
-not prompt for complexity readiness. Complexity readiness is required for mastery, but it
-does not change stage movement, review scheduling, or daily recommendations.
+Practice V2 also records `Not checked` and `Partial` without treating either as mastery-ready.
+Complexity readiness is required for mastery, but it does not change the solve grade, stage
+movement, or exact-title review scheduling.
 
 This is intentionally lightweight. A fuller interview-readiness checklist can come later.
 

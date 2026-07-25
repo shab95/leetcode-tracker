@@ -5,10 +5,11 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function createPracticeV2Engine() {
   "use strict";
 
-  const ALGORITHM_VERSION = "readiness-v1.1";
+  const ALGORITHM_VERSION = "readiness-v1.2";
   const EVIDENCE_WINDOW_DAYS = 30;
   const WEAKNESS_WINDOW_DAYS = 21;
   const EXACT_TITLE_COOLDOWN_HOURS = 24;
+  const TRANSFER_DEBT_WINDOW = 12;
   const TASK_PRECEDENCE = Object.freeze({ repair: 0, assessment: 1, transfer: 2, retention: 3, learn: 4, mixed: 5, mock: 6 });
   const NEW_TIME_BOX = Object.freeze({ Easy: 20, Medium: 30, Hard: 45 });
   const REVIEW_TIME_BOX = Object.freeze({ Easy: 10, Medium: 15, Hard: 20 });
@@ -45,7 +46,11 @@
       .filter((candidate) => candidate.eligible)
       .sort(compareCandidates);
 
-    const winner = candidates[0] || null;
+    const winner = (
+      evidence.transferDebt
+        ? candidates.find((candidate) => candidate.taskType === "transfer")
+        : null
+    ) || candidates[0] || null;
     if (!winner) {
       return {
         algorithmVersion: ALGORITHM_VERSION,
@@ -130,6 +135,13 @@
     }
 
     recentAttempts.sort((a, b) => dateValue(b.date) - dateValue(a.date));
+    const recentVersionedAttempts = recentAttempts
+      .filter((attempt) => attempt.taskType)
+      .slice(0, TRANSFER_DEBT_WINDOW);
+    const transferDebt = (
+      recentVersionedAttempts.length >= TRANSFER_DEBT_WINDOW &&
+      !recentVersionedAttempts.some((attempt) => ["transfer", "mixed", "mock"].includes(attempt.taskType))
+    );
     return {
       today,
       skills,
@@ -137,6 +149,8 @@
       independentSkillIds: [...skills.values()].filter((skill) => skill.independent).map((skill) => skill.id).sort(),
       transferSupportedSkillIds: [...skills.values()].filter((skill) => skill.transferSupported).map((skill) => skill.id).sort(),
       recentAttempts,
+      recentVersionedRepCount: recentVersionedAttempts.length,
+      transferDebt,
     };
   }
 
@@ -226,6 +240,9 @@
     components.capacityFit = Math.round(WEIGHTS.capacityFit * Math.min(1, requiredMinutes / Math.max(capacityMinutes, 1)));
     const score = Object.values(components).reduce((sum, value) => sum + value, 0);
 
+    const reasonCodes = reasonCodesFor({ taskType, skill, due, importedOnly, recentWeakness, lastAgeDays });
+    if (evidence.transferDebt && taskType === "transfer") reasonCodes.push("transfer-cadence-due");
+
     return {
       ...candidate,
       taskType,
@@ -240,7 +257,7 @@
       cooldownReason: cooldown.reason,
       score,
       scoreComponents: components,
-      reasonCodes: reasonCodesFor({ taskType, skill, due, importedOnly, recentWeakness, lastAgeDays }),
+      reasonCodes,
     };
   }
 
@@ -558,6 +575,7 @@
     ALGORITHM_VERSION,
     EVIDENCE_WINDOW_DAYS,
     EXACT_TITLE_COOLDOWN_HOURS,
+    TRANSFER_DEBT_WINDOW,
     WEIGHTS,
     recommendNextRep,
     deriveEvidence,

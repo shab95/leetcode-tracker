@@ -172,6 +172,10 @@ The Practice card shows the time box before you begin: Easy 20 minutes, Medium 3
 and Hard 45 minutes. The timer itself is LeetCode's stopwatch; the tracker records its
 final minute value after the grade.
 
+The available-time control is not a session timer. Changing it recalculates the next adaptive
+rep and may select a different problem. After saving one honest rep, you can stop or choose
+`Do another rep`; there is no separate session to end.
+
 You can also backfill individual attempts from a problem's `Edit -> History` tab. Manual
 backfill is for attempts completed outside the app and uses real grades only, so the review
 schedule is rebuilt from the most recent graded attempt date.
