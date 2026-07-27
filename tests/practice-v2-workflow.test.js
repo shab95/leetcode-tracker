@@ -230,6 +230,21 @@ test("a completed rep can continue or undo but has no session-ending transition"
   assert.equal(workflow.transition(completed, "end").ok, false);
 });
 
+test("completion plan updates describe the saved result rather than the old recommendation", () => {
+  const expected = workflow.completionPlanUpdate({
+    grade: "green",
+    solutionQuality: "expected",
+  });
+  const suboptimal = workflow.completionPlanUpdate({
+    grade: "green",
+    solutionQuality: "suboptimal",
+  });
+
+  assert.match(expected, /efficient independent evidence/i);
+  assert.doesNotMatch(expected, /suboptimal|optimization gap/i);
+  assert.match(suboptimal, /suboptimal result.*optimization gap/i);
+});
+
 test("independent grade cannot exceed the locked time box", () => {
   const result = workflow.validateReflection({
     grade: "green",

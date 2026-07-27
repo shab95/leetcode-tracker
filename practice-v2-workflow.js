@@ -175,6 +175,25 @@
     return shared?.complexityKnown ? "explained" : "not-checked";
   }
 
+  function completionPlanUpdate({ grade, solutionQuality } = {}) {
+    if (grade === "red") {
+      return "The plan will prioritize the recorded blocker before another independent check.";
+    }
+    if (solutionQuality === "suboptimal") {
+      return "A working but suboptimal result leaves an optimization gap for a future follow-up.";
+    }
+    if (solutionQuality === "unknown") {
+      return "Independent evidence was recorded, but approach efficiency still needs verification.";
+    }
+    if (grade === "yellow") {
+      return "The plan will reinforce the recorded weak point before another independent check.";
+    }
+    if (grade === "green" && solutionQuality === "expected") {
+      return "Efficient independent evidence is now current. The plan can shift toward broader transfer.";
+    }
+    return "The saved result will guide the next recommendation.";
+  }
+
   function positiveNumber(value, fallback) {
     const number = Number(value);
     return Number.isFinite(number) && number > 0 ? number : fallback;
@@ -191,6 +210,7 @@
     GRADES,
     PHASES,
     SOLUTION_QUALITY,
+    completionPlanUpdate,
     createRuntime,
     normalizeRuntime,
     reconcileRuntimeRevision,

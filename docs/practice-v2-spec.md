@@ -290,6 +290,10 @@ optimization gap, which can make an optimization-focused repair more valuable wh
 is recent. This avoids falsely calling independent work assisted while also avoiding a false
 claim of complete interview readiness. Red attempts store `not-applicable` for this dimension.
 
+The completion screen's Plan update describes the result that was just saved. It must not reuse
+the pre-attempt recommendation rationale, because that rationale explains why the rep was selected
+and can become stale as soon as the new evidence is recorded.
+
 The short note for future recall remains optional.
 
 The chosen grade remains visible and editable. `Change grade` returns to Grading without

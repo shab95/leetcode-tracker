@@ -3014,13 +3014,14 @@ function savePracticeV2Rep(event) {
 
   const savedProblem = problems.find((item) => item.id === problem.id);
   const savedEntry = [...(savedProblem?.reviewHistory || [])].reverse().find((entry) => entry.attemptId === metadata.attemptId);
+  const savedSolutionQuality = savedEntry?.solutionQuality || validation.metadata.solutionQuality;
   practiceV2Runtime.phase = "completed";
   practiceV2Runtime.completion = {
     problemId: problem.id,
     title: savedProblem?.title || recommendation.public.title,
     topic: savedProblem?.topic || "General",
     grade: practiceV2Runtime.provisionalGrade,
-    rationale: recommendation.private.rationale,
+    recommendationRationale: recommendation.private.rationale,
     nextReview: savedEntry?.nextReview || savedProblem?.nextReview || "",
     scheduleReason: savedEntry?.heldForEarly
       ? "early-clean-hold"
@@ -3031,7 +3032,7 @@ function savePracticeV2Rep(event) {
           : "rescheduled",
     taskType: recommendation.private.taskType,
     elapsedMinutes: validation.metadata.elapsedMinutes,
-    solutionQuality: validation.metadata.solutionQuality,
+    solutionQuality: savedSolutionQuality,
   };
   practiceV2Runtime.undoReceipt = cloneState(lastGradeUndo);
   practiceV2Runtime.skippedProblemIds = [...new Set([...practiceV2Runtime.skippedProblemIds, recommendation.public.problemId])];
@@ -3053,9 +3054,9 @@ function renderPracticeV2Completion() {
       ? " Solution efficiency remains unverified."
       : "";
   els.practiceV2CompleteTitle.textContent = copy?.[0] || "That rep changed the plan.";
-  els.practiceV2CompleteSummary.textContent = `${copy?.[1] || completion.rationale}${solutionQualityCopy}`;
+  els.practiceV2CompleteSummary.textContent = `${copy?.[1] || "The saved result will guide the next recommendation."}${solutionQualityCopy}`;
   els.practiceV2CompleteSkill.textContent = completion.topic;
-  els.practiceV2CompleteEvidence.textContent = completion.rationale;
+  els.practiceV2CompleteEvidence.textContent = PRACTICE_V2_WORKFLOW.completionPlanUpdate(completion);
   els.practiceV2CompleteReview.textContent = completion.nextReview
     ? `${["early-clean-hold", "overdue-hold"].includes(completion.scheduleReason) ? "Still due" : "Next"} ${formatDate(completion.nextReview)}`
     : "No exact-title review scheduled";
