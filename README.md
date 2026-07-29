@@ -168,9 +168,18 @@ recall score for later analysis. The selected grade stays provisional until you 
 `Finish cold check`; only then are the grade, evidence, stage, and review date saved
 together. Selected and unfinished cold checks resume after navigation or reload, while
 undo returns a completed check to the unverified state.
-The Practice card shows the time box before you begin: Easy 20 minutes, Medium 30 minutes,
-and Hard 45 minutes. The timer itself is LeetCode's stopwatch; the tracker records its
-final minute value after the grade.
+The Practice card shows two timing landmarks before you begin:
+
+| Difficulty | Independent checkpoint | Full attempt ceiling |
+| --- | ---: | ---: |
+| Easy | 10 minutes | 20 minutes |
+| Medium | 15 minutes | 30 minutes |
+| Hard | 20 minutes | 45 minutes |
+
+At the checkpoint, stop and learn when no coherent approach has formed. When the approach
+is making real progress, continue up to the full ceiling. These are guides rather than a
+solution lock. The timer itself is LeetCode's stopwatch; the tracker records its final
+minute value after the grade.
 
 The available-time control is not a session timer. Changing it recalculates the next adaptive
 rep and may select a different problem. After saving one honest rep, you can stop or choose

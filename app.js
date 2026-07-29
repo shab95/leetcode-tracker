@@ -31,6 +31,7 @@ const DEFAULT_FEATURES = {
   phoneReminders: false,
   practiceV2: false,
   practiceV2Shadow: false,
+  listProgress: false,
   recoveryLane: false,
 };
 
@@ -92,6 +93,8 @@ const els = {
   backfillHelp: document.querySelector("#backfillHelp"),
   backfillNoteInput: document.querySelector("#backfillNoteInput"),
   blindAttempted: document.querySelector("#blindAttempted"),
+  listProgressPanel: document.querySelector("#listProgressPanel"),
+  listProgressCards: document.querySelector("#listProgressCards"),
   checkedSkillCount: document.querySelector("#checkedSkillCount"),
   independentSkillCount: document.querySelector("#independentSkillCount"),
   transferSkillCount: document.querySelector("#transferSkillCount"),
@@ -211,6 +214,7 @@ const els = {
   practiceV2Experience: document.querySelector("#practiceV2Experience"),
   practiceV2ReadyTitle: document.querySelector("#practiceV2ReadyTitle"),
   practiceV2Difficulty: document.querySelector("#practiceV2Difficulty"),
+  practiceV2IndependentTime: document.querySelector("#practiceV2IndependentTime"),
   practiceV2TimeBox: document.querySelector("#practiceV2TimeBox"),
   practiceV2Evidence: document.querySelector("#practiceV2Evidence"),
   practiceV2Reason: document.querySelector("#practiceV2Reason"),
@@ -219,6 +223,7 @@ const els = {
   practiceV2BeginBtn: document.querySelector("#practiceV2BeginBtn"),
   practiceV2ChangeBtn: document.querySelector("#practiceV2ChangeBtn"),
   practiceV2AttemptTitle: document.querySelector("#practiceV2AttemptTitle"),
+  practiceV2LockedIndependentTime: document.querySelector("#practiceV2LockedIndependentTime"),
   practiceV2LockedTime: document.querySelector("#practiceV2LockedTime"),
   practiceV2OpenLink: document.querySelector("#practiceV2OpenLink"),
   practiceV2FinishBtn: document.querySelector("#practiceV2FinishBtn"),
@@ -391,6 +396,7 @@ let pendingLeetcodeImportExcluded = new Set();
 let leaderboardSort = {
   weekly: { column: "practiceDays", direction: "desc" },
   readiness: { column: "independentSkills", direction: "desc" },
+  lifetime: { column: "uniqueGradedProblems", direction: "desc" },
 };
 let notificationConfig = { available: false, configured: false, vapidPublicKey: "", settings: null, reason: "" };
 let currentPushSubscription = null;
@@ -1209,10 +1215,6 @@ function renderAppRoute() {
   if (els.leaderboardView) els.leaderboardView.hidden = !isLeaderboardRoute;
   if (els.pactsView) els.pactsView.hidden = !isPactsRoute;
   els.dataManagementView.hidden = !isDataRoute;
-  els.addProblemBtn.classList.toggle("is-invisible", isDataRoute);
-  els.addProblemBtn.setAttribute("aria-hidden", isDataRoute ? "true" : "false");
-  els.addProblemBtn.tabIndex = isDataRoute ? -1 : 0;
-
   if (isLeaderboardRoute || isPactsRoute) {
     const loaders = [loadLeaderboardData()];
     if (canUseFriendPulse()) loaders.push(loadFriendPulseData());
@@ -1771,10 +1773,12 @@ function renderLeaderboard() {
   const columns = leaderboardColumns(leaderboardViewMode);
   renderLeaderboardSortControl(columns);
   if (els.leaderboardViewNote) {
-    els.leaderboardViewNote.textContent =
-      leaderboardViewMode === "readiness"
-        ? "Readiness uses the same rolling 30-day evidence window as Practice."
-        : "Weekly signals reset Monday. Imported history does not count.";
+    const notes = {
+      weekly: "Weekly signals reset Monday. Imported history does not count.",
+      readiness: "Readiness uses the same rolling 30-day evidence window as Practice.",
+      lifetime: "All Time counts real grades only. List evidence shows titles graded within the current 30-day evidence window.",
+    };
+    els.leaderboardViewNote.textContent = notes[leaderboardViewMode] || notes.weekly;
   }
   const rows = sortedLeaderboardRows();
   els.leaderboardHead.innerHTML = `
@@ -1826,6 +1830,41 @@ function canUseLeaderboard() {
 }
 
 function leaderboardColumns(viewMode) {
+  if (viewMode === "lifetime") {
+    return [
+      {
+        key: "uniqueGradedProblems",
+        label: "Unique graded",
+        shortLabel: "Graded",
+        description: "Distinct problem titles with at least one real grade. Imported history is excluded.",
+      },
+      {
+        key: "independentProblems",
+        label: "Independent titles",
+        shortLabel: "Independent",
+        description: "Distinct problem titles solved cleanly without hints, solutions, editorials, people, or AI.",
+      },
+      {
+        key: "totalRealReps",
+        label: "Total real reps",
+        shortLabel: "Reps",
+        description: "All real graded attempts recorded over time. Imported history is excluded.",
+      },
+      {
+        key: "blind75Evidence",
+        label: "Blind 75 current",
+        shortLabel: "Blind 75",
+        description: "Blind 75 titles with real graded evidence inside the current 30-day window.",
+      },
+      {
+        key: "neetcode150Evidence",
+        label: "NC 150 current",
+        shortLabel: "NC 150",
+        description: "NeetCode 150 titles with real graded evidence inside the current 30-day window.",
+      },
+    ];
+  }
+
   if (viewMode === "readiness") {
     return [
       {
@@ -1900,6 +1939,13 @@ function leaderboardMetricValue(row, key) {
     if (key === "checkedSkills") return Number(row?.lifetime?.durablePlus || 0);
     if (key === "independentSkills") return Number(row?.lifetime?.mastered || 0);
     if (key === "transferSkills") return 0;
+  }
+
+  if (leaderboardViewMode === "lifetime") {
+    if (key === "uniqueGradedProblems") return Number(row?.lifetime?.totalGradedAttempts || 0);
+    if (key === "independentProblems") return Number(row?.lifetime?.mastered || 0);
+    if (key === "totalRealReps") return Number(row?.lifetime?.totalGradedAttempts || 0);
+    if (key === "blind75Evidence" || key === "neetcode150Evidence") return 0;
   }
 
   return 0;
@@ -2432,6 +2478,7 @@ function setRecoveryMessage(message) {
 }
 
 function renderMemoryHealth() {
+  renderStudyListProgress();
   const evidence = buildMemoryEvidenceModel();
   const remaining = Math.max(0, evidence.skillCount - evidence.transferCount);
 
@@ -2446,6 +2493,62 @@ function renderMemoryHealth() {
   renderAttentionTopics(evidence);
   renderEvidenceChart(evidence);
   renderRecentGradeChart();
+}
+
+function renderStudyListProgress() {
+  if (!els.listProgressPanel || !els.listProgressCards) return;
+
+  const enabled = isFeatureEnabled("listProgress") && Boolean(PRACTICE_V2_ENGINE?.summarizeStudyListEvidence);
+  els.listProgressPanel.hidden = !enabled;
+  if (!enabled) {
+    els.listProgressCards.innerHTML = "";
+    return;
+  }
+
+  const today = toIsoDate(new Date());
+  const lists = Object.values(STUDY_LISTS).map((studyList) => ({
+    label: studyList.label,
+    summary: PRACTICE_V2_ENGINE.summarizeStudyListEvidence({
+      problems,
+      catalog: studyList.problems,
+      today,
+      windowDays: PRACTICE_V2_EVIDENCE_WINDOW_DAYS,
+    }),
+  }));
+
+  els.listProgressCards.innerHTML = lists
+    .map(({ label, summary }) => {
+      const independentWidth = summary.total ? (summary.independent / summary.total) * 100 : 0;
+      const developingWidth = summary.total ? (summary.developing / summary.total) * 100 : 0;
+      const ariaLabel = [
+        `${label}:`,
+        `${summary.independent} recent independent,`,
+        `${summary.developing} recent developing,`,
+        `${summary.unmeasured} without a current grade.`,
+      ].join(" ");
+
+      return `
+        <article class="list-progress-item">
+          <div class="list-progress-head">
+            <div>
+              <h3>${escapeHtml(label)}</h3>
+              <p><strong>${summary.measured}</strong> of ${summary.total} have current graded evidence</p>
+            </div>
+            <strong class="list-progress-ratio">${summary.measured}/${summary.total}</strong>
+          </div>
+          <div class="list-progress-track" role="img" aria-label="${escapeAttr(ariaLabel)}">
+            <span class="list-progress-independent" style="width: ${independentWidth}%"></span>
+            <span class="list-progress-developing" style="width: ${developingWidth}%"></span>
+          </div>
+          <div class="list-progress-legend">
+            <span><i class="legend-swatch independent" aria-hidden="true"></i><strong>${summary.independent}</strong> independent</span>
+            <span><i class="legend-swatch developing" aria-hidden="true"></i><strong>${summary.developing}</strong> developing</span>
+            <span><i class="legend-swatch unmeasured" aria-hidden="true"></i><strong>${summary.unmeasured}</strong> no current grade</span>
+          </div>
+        </article>
+      `;
+    })
+    .join("");
 }
 
 function renderAttentionTopics(evidence = buildMemoryEvidenceModel()) {
@@ -2787,16 +2890,19 @@ function renderPracticeV2() {
   if (publicPick) {
     els.practiceV2ReadyTitle.textContent = publicPick.title;
     els.practiceV2Difficulty.textContent = publicPick.difficulty;
+    els.practiceV2IndependentTime.textContent = `${publicPick.independentCheckpointMinutes} minutes`;
     els.practiceV2TimeBox.textContent = `${publicPick.timeBoxMinutes} minutes`;
     els.practiceV2Evidence.textContent = publicPick.evidenceStatus;
     els.practiceV2Reason.textContent = publicPick.publicReason;
     els.practiceV2AttemptTitle.textContent = publicPick.title;
+    els.practiceV2LockedIndependentTime.textContent = String(publicPick.independentCheckpointMinutes);
     els.practiceV2LockedTime.textContent = String(practiceV2Runtime.lockedTimeBoxMinutes || publicPick.timeBoxMinutes);
     els.practiceV2OpenLink.href = publicPick.url || "#";
     els.practiceV2OpenLink.hidden = !publicPick.url;
   } else if (phase === "ready") {
     els.practiceV2ReadyTitle.textContent = "No rep fits the time available.";
     els.practiceV2Difficulty.textContent = "-";
+    els.practiceV2IndependentTime.textContent = "-";
     els.practiceV2TimeBox.textContent = "-";
     els.practiceV2Evidence.textContent = "Choose more available time or return when you have room for a focused attempt.";
     els.practiceV2Reason.textContent = "Stopping without penalty is always valid.";

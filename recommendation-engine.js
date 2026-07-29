@@ -5,7 +5,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function createPracticeV2Engine() {
   "use strict";
 
-  const ALGORITHM_VERSION = "readiness-v1.3";
+  const ALGORITHM_VERSION = "readiness-v1.4";
   const EVIDENCE_WINDOW_DAYS = 30;
   const WEAKNESS_WINDOW_DAYS = 21;
   const EXACT_TITLE_COOLDOWN_HOURS = 24;
@@ -13,6 +13,7 @@
   const TASK_PRECEDENCE = Object.freeze({ repair: 0, assessment: 1, transfer: 2, retention: 3, learn: 4, mixed: 5, mock: 6 });
   const NEW_TIME_BOX = Object.freeze({ Easy: 20, Medium: 30, Hard: 45 });
   const REVIEW_TIME_BOX = Object.freeze({ Easy: 10, Medium: 15, Hard: 20 });
+  const INDEPENDENT_CHECKPOINT = Object.freeze({ Easy: 10, Medium: 15, Hard: 20 });
   const WEIGHTS = Object.freeze({
     missingChecked: 24,
     missingIndependent: 18,
@@ -73,6 +74,7 @@
         title: winner.title,
         url: winner.url,
         difficulty: winner.difficulty,
+        independentCheckpointMinutes: winner.independentCheckpointMinutes,
         timeBoxMinutes: winner.timeBoxMinutes,
         publicReason: publicReasonFor(winner.taskType),
         evidenceStatus: publicEvidenceStatusFor(winner.taskType),
@@ -154,6 +156,60 @@
     };
   }
 
+  function summarizeStudyListEvidence(input = {}) {
+    const today = normalizeDate(input.today) || normalizeDate(new Date());
+    const windowDays = positiveNumber(input.windowDays, EVIDENCE_WINDOW_DAYS);
+    const problems = Array.isArray(input.problems) ? input.problems : [];
+    const catalog = Array.isArray(input.catalog) ? input.catalog : [];
+    const bySlug = new Map();
+    const byTitle = new Map();
+
+    for (const problem of problems) {
+      const slug = candidateSlug(problem);
+      const title = normalizeTitle(problem.title);
+      if (slug) bySlug.set(slug, problem);
+      if (title) byTitle.set(title, problem);
+    }
+
+    const summary = {
+      total: 0,
+      measured: 0,
+      independent: 0,
+      developing: 0,
+      unmeasured: 0,
+      windowDays,
+    };
+    const seen = new Set();
+
+    for (const planProblem of catalog) {
+      const slug = candidateSlug(planProblem);
+      const title = normalizeTitle(planProblem.title);
+      const catalogKey = slug || title;
+      if (!catalogKey || seen.has(catalogKey)) continue;
+      seen.add(catalogKey);
+      summary.total += 1;
+
+      const problem = bySlug.get(slug) || byTitle.get(title);
+      const recentAttempts = properAttempts(problem)
+        .filter((attempt) => {
+          const ageDays = dateDiffDays(attempt.date, today);
+          return ageDays >= 0 && ageDays <= windowDays;
+        });
+
+      if (recentAttempts.some(qualifiesAsIndependent)) {
+        summary.independent += 1;
+        summary.measured += 1;
+      } else if (recentAttempts.length > 0) {
+        summary.developing += 1;
+        summary.measured += 1;
+      } else {
+        summary.unmeasured += 1;
+      }
+    }
+
+    return summary;
+  }
+
   function buildCandidates(problems = [], catalog = []) {
     const bySlug = new Map();
     const byTitle = new Map();
@@ -217,6 +273,10 @@
     );
     const taskType = chooseTaskType({ candidate, skill, attempts, importedOnly, due, lastAttempt, lastAgeDays, recentWeakness });
     const timeBoxMinutes = timeBoxFor(candidate.difficulty, taskType);
+    const independentCheckpointMinutes = Math.min(
+      timeBoxMinutes,
+      independentCheckpointFor(candidate.difficulty),
+    );
     const requiredMinutes = timeBoxMinutes + 3;
     const cooldown = exactTitleCooldown(candidate, lastAttempt, { today, now });
     const eligible = Boolean(candidate.title && candidate.id && requiredMinutes <= capacityMinutes && !cooldown.blocked);
@@ -263,6 +323,7 @@
       ...candidate,
       taskType,
       timeBoxMinutes,
+      independentCheckpointMinutes,
       requiredMinutes,
       eligible,
       due,
@@ -388,8 +449,13 @@
       score: candidate.score,
       scoreComponents: candidate.scoreComponents,
       reasonCodes: candidate.reasonCodes,
+      independentCheckpointMinutes: candidate.independentCheckpointMinutes,
       timeBoxMinutes: candidate.timeBoxMinutes,
     };
+  }
+
+  function independentCheckpointFor(difficulty) {
+    return INDEPENDENT_CHECKPOINT[normalizeDifficulty(difficulty)];
   }
 
   function timeBoxFor(difficulty, taskType) {
@@ -597,9 +663,11 @@
     EVIDENCE_WINDOW_DAYS,
     EXACT_TITLE_COOLDOWN_HOURS,
     TRANSFER_DEBT_WINDOW,
+    INDEPENDENT_CHECKPOINT,
     WEIGHTS,
     recommendNextRep,
     deriveEvidence,
+    summarizeStudyListEvidence,
     buildCandidates,
     properAttempts,
     skillIdFor,

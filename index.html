@@ -54,10 +54,6 @@
             <a href="/pacts" data-route="pacts" id="pactsNavLink" hidden>Pacts <span class="nav-nudge" id="friendPulseNavBadge" hidden>0</span></a>
             <a href="/settings" data-route="data">Settings <span class="nav-nudge" id="settingsNotificationNudge" hidden>new</span></a>
           </nav>
-          <button class="primary-btn" id="addProblemBtn" type="button">
-            <span aria-hidden="true">+</span>
-            Add Problem
-          </button>
           <div class="account-menu" id="accountMenu" hidden>
             <span id="accountLabel"></span>
             <button class="ghost-btn small-btn" id="logoutBtn" type="button">Logout</button>
@@ -123,7 +119,8 @@
               <h3 class="practice-v2-title" id="practiceV2ReadyTitle">Finding the strongest next rep...</h3>
               <div class="practice-v2-public-facts">
                 <span><small>Difficulty</small><strong id="practiceV2Difficulty">-</strong></span>
-                <span><small>Time box</small><strong id="practiceV2TimeBox">-</strong></span>
+                <span><small>Try independently</small><strong id="practiceV2IndependentTime">-</strong></span>
+                <span><small>Full attempt</small><strong id="practiceV2TimeBox">-</strong></span>
               </div>
               <p class="practice-v2-evidence" id="practiceV2Evidence"></p>
               <p class="practice-v2-reason" id="practiceV2Reason"></p>
@@ -148,10 +145,21 @@
             <div class="practice-v2-state" data-v2-state="attempting" hidden>
               <div class="practice-v2-kicker">Attempt in progress</div>
               <h3 class="practice-v2-title" id="practiceV2AttemptTitle"></h3>
-              <div class="practice-v2-time-lock"><strong id="practiceV2LockedTime">-</strong><span>minute maximum</span></div>
+              <div class="practice-v2-timing-plan">
+                <div>
+                  <small>Independent checkpoint</small>
+                  <strong><span id="practiceV2LockedIndependentTime">-</span> minutes</strong>
+                  <p>If no coherent approach has formed, record the blocker and learn.</p>
+                </div>
+                <div>
+                  <small>Full attempt ceiling</small>
+                  <strong><span id="practiceV2LockedTime">-</span> minutes</strong>
+                  <p>If your approach is moving, keep working up to this limit.</p>
+                </div>
+              </div>
               <ol class="practice-v2-instructions">
                 <li>Start LeetCode's stopwatch.</li>
-                <li>Work independently before opening hints or solutions.</li>
+                <li>Stay independent through the checkpoint before opening hints or solutions.</li>
                 <li>Return with your final stopwatch time.</li>
               </ol>
               <div class="practice-v2-actions">
@@ -649,13 +657,19 @@
                 <h2>Problems</h2>
                 <p id="resultCount">0 problems</p>
               </div>
-              <select id="sortSelect" aria-label="Sort problems">
-                <option value="due">Due first</option>
-                <option value="dueDesc">Due last</option>
-                <option value="updated">Recently updated</option>
-                <option value="difficulty">Difficulty</option>
-                <option value="topic">Topic</option>
-              </select>
+              <div class="library-header-actions">
+                <select id="sortSelect" aria-label="Sort problems">
+                  <option value="due">Due first</option>
+                  <option value="dueDesc">Due last</option>
+                  <option value="updated">Recently updated</option>
+                  <option value="difficulty">Difficulty</option>
+                  <option value="topic">Topic</option>
+                </select>
+                <button class="primary-btn" id="addProblemBtn" type="button">
+                  <span aria-hidden="true">+</span>
+                  Add custom problem
+                </button>
+              </div>
             </div>
 
             <div class="table-scroll">
@@ -731,6 +745,17 @@
             </span>
             <strong id="weeklySolved">0</strong>
           </article>
+        </section>
+
+        <section class="panel list-progress-panel" id="listProgressPanel" aria-label="Study list progress" hidden>
+          <div class="section-head">
+            <div>
+              <span class="memory-card-label">30-day evidence</span>
+              <h2>Study list progress</h2>
+              <p>Only real grades count here. Imported history and older evidence stay empty.</p>
+            </div>
+          </div>
+          <div class="list-progress-grid" id="listProgressCards"></div>
         </section>
 
         <section class="panel memory-panel" aria-label="Memory health">
@@ -892,6 +917,7 @@
             <div class="leaderboard-tabs" role="tablist" aria-label="Leaderboard views">
               <button class="leaderboard-tab is-active" type="button" data-leaderboard-view="weekly">This week</button>
               <button class="leaderboard-tab" type="button" data-leaderboard-view="readiness">Readiness</button>
+              <button class="leaderboard-tab" type="button" data-leaderboard-view="lifetime">All Time</button>
             </div>
             <label class="leaderboard-sort-field">
               <span>Rank by</span>

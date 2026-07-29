@@ -409,6 +409,26 @@ Browser Back must not mutate evidence. Within Practice it moves to the previous 
 state when safe; leaving Practice preserves the attempt draft. Completed evidence is only
 reversed through the explicit atomic Undo operation.
 
+### 8.2 Two-stage attempt timing
+
+Practice distinguishes an independent checkpoint from the full attempt ceiling:
+
+| Difficulty | Stay independent for at least | Continue up to when making progress |
+| --- | ---: | ---: |
+| Easy | 10 minutes | 20 minutes |
+| Medium | 15 minutes | 30 minutes |
+| Hard | 20 minutes | 45 minutes |
+
+At the independent checkpoint, the user makes a judgment rather than hitting a forced lock:
+
+- If no coherent approach has formed, stop, record the blocker, and learn from a hint or solution.
+- If a plausible approach is moving, continue independently up to the full attempt ceiling.
+- Repair and exact-title retention reps may use a shorter full ceiling. In that case, the
+  checkpoint is capped at the assigned ceiling.
+
+This guidance does not automatically reveal a solution, assign a grade, or infer elapsed time.
+The LeetCode stopwatch remains the source for the user's reported duration.
+
 ## 9. Recommendation Task Types
 
 Task type is internal. The Practice UI normally says `Next rep`.
@@ -574,6 +594,19 @@ The V2 Memory page summarizes readiness evidence rather than backlog debt:
 Memory does not show a global due-review count or use exact-title mastery totals as its primary
 readiness signal. Those values can reward repeatedly memorizing a small set of titles without
 showing broad interview transfer.
+
+The QA-first study-list progress experiment uses the same rolling 30-day window to visualize
+current evidence across Blind 75 and NeetCode 150:
+
+- teal means the title has at least one qualifying independent grade in the window;
+- amber means the title has a real grade in the window but no qualifying independent grade;
+- empty means the title has no current real grade, including imported-only, stale, and unseen
+  titles.
+
+This is evidence coverage, not a latest-result status. A later rough attempt does not erase
+independent proof that is still inside the window. Imported history never colors the bar. The
+bar is derived at render time and does not change recommendation scoring, exact-title
+scheduling, mastery, or persisted state.
 
 All sets are derived from the event ledger after save and after undo. The save response returns
 explicit `before`, `after`, `added`, and `removed` set deltas. Completion says `Evidence added`
@@ -790,10 +823,18 @@ The readiness view uses the same rolling 30-day evidence window as the recommend
 - Transfer skills: skill areas with independent evidence on distinct titles, including a
   designated transfer-style rep.
 
+The All Time view exposes cumulative work without reviving stage grinding as the goal:
+
+- Unique graded: distinct problem titles with at least one real grade.
+- Independent titles: distinct titles solved cleanly without meaningful outside help.
+- Total real reps: every red, yellow, or green attempt; imported history is excluded.
+- Blind 75 current: Blind 75 titles with a real grade in the rolling 30-day window.
+- NC 150 current: NeetCode 150 titles with a real grade in the rolling 30-day window.
+
 Problem titles, topics practiced by a specific user, notes, grades, timing, assistance details,
 and raw history remain private. The legacy leaderboard fields remain in the server response for
 older clients during rollout, but the V2 interface does not display backlog reduction, mastery
-stage totals, or lifetime completion counts.
+stage totals, or raw attempt volume as the primary ranking goal.
 
 ## 16. Visual Direction
 

@@ -45,6 +45,7 @@ const FEATURES = Object.freeze({
   phoneReminders: readFeatureFlag("FEATURE_PHONE_REMINDERS"),
   practiceV2: IS_QA || readFeatureFlag("FEATURE_PRACTICE_V2"),
   practiceV2Shadow: IS_QA || readFeatureFlag("FEATURE_PRACTICE_V2_SHADOW"),
+  listProgress: IS_QA || readFeatureFlag("FEATURE_LIST_PROGRESS"),
   recoveryLane: readFeatureFlag("FEATURE_RECOVERY_LANE"),
 });
 const PUBLIC_FILES = new Set([
@@ -1086,6 +1087,11 @@ async function getQaLeaderboard() {
         transferSkills: 4,
       },
       lifetime: {
+        uniqueGradedProblems: 84,
+        independentProblems: 52,
+        totalRealReps: 128,
+        blind75Evidence: 31,
+        neetcode150Evidence: 46,
         durablePlus: 44,
         mastered: 19,
         totalGradedAttempts: 128,
@@ -1114,6 +1120,11 @@ async function getQaLeaderboard() {
         transferSkills: 3,
       },
       lifetime: {
+        uniqueGradedProblems: 71,
+        independentProblems: 39,
+        totalRealReps: 96,
+        blind75Evidence: 24,
+        neetcode150Evidence: 35,
         durablePlus: 31,
         mastered: 11,
         totalGradedAttempts: 96,
@@ -1142,6 +1153,11 @@ async function getQaLeaderboard() {
         transferSkills: 2,
       },
       lifetime: {
+        uniqueGradedProblems: 42,
+        independentProblems: 28,
+        totalRealReps: 53,
+        blind75Evidence: 18,
+        neetcode150Evidence: 22,
         durablePlus: 17,
         mastered: 6,
         totalGradedAttempts: 53,
@@ -1546,6 +1562,21 @@ function buildLeaderboardStats(state, baselineDueCount, weekStart, weekEnd, toda
   const totalGraded = gradedWeekSessions.length;
   const currentDueCount = countDueReviews(problems, today);
   const lifetimeAttempts = getLifetimeGradedAttempts(problems, sessionsWithAttemptTypes);
+  const uniqueGradedProblemIds = new Set(lifetimeAttempts.map((attempt) => attempt.problemId).filter(Boolean));
+  const independentProblemIds = new Set(
+    lifetimeAttempts.filter(isIndependentLeaderboardRep).map((attempt) => attempt.problemId).filter(Boolean),
+  );
+  const currentEvidenceProblemIds = new Set(
+    lifetimeAttempts
+      .filter((attempt) => {
+        const attemptDate = normalizeDate(attempt.date);
+        if (!attemptDate) return false;
+        const ageDays = dateDiffDays(attemptDate, today);
+        return ageDays >= 0 && ageDays <= PracticeV2Engine.EVIDENCE_WINDOW_DAYS;
+      })
+      .map((attempt) => attempt.problemId)
+      .filter(Boolean),
+  );
   const streakAnchor = latestActivityDate(gradedWeekSessions, today);
   const evidence = PracticeV2Engine.deriveEvidence(state, { today });
   const skillBreadth = new Set(
@@ -1571,6 +1602,15 @@ function buildLeaderboardStats(state, baselineDueCount, weekStart, weekEnd, toda
       transferSkills: evidence.transferSupportedSkillIds.length,
     },
     lifetime: {
+      uniqueGradedProblems: uniqueGradedProblemIds.size,
+      independentProblems: independentProblemIds.size,
+      totalRealReps: lifetimeAttempts.length,
+      blind75Evidence: problems.filter(
+        (problem) => currentEvidenceProblemIds.has(problem.id) && (problem.listMemberships || []).includes("blind75"),
+      ).length,
+      neetcode150Evidence: problems.filter(
+        (problem) => currentEvidenceProblemIds.has(problem.id) && (problem.listMemberships || []).includes("neetcode150"),
+      ).length,
       durablePlus: problems.filter((problem) => isAttempted(problem) && clampStage(problem.stage) >= 4).length,
       mastered: problems.filter((problem) => isMastered(problem, today)).length,
       totalGradedAttempts: lifetimeAttempts.length,
@@ -1604,7 +1644,10 @@ function getLifetimeGradedAttempts(problems, sessions) {
       historyKeys.add(key);
       attempts.push({
         key,
+        problemId: problem.id || "",
+        date: normalizeDate(entry.occurredAt || entry.date || entry.createdAt),
         grade: entry.grade,
+        assistance: entry.assistance || "none",
         attemptType: inferHistoryAttemptType(problem, entry),
       });
     }
@@ -1616,7 +1659,10 @@ function getLifetimeGradedAttempts(problems, sessions) {
     if (historyKeys.has(key)) continue;
     attempts.push({
       key,
+      problemId: session.problemId || "",
+      date: normalizeDate(session.date || session.createdAt),
       grade: session.grade,
+      assistance: session.assistance || "none",
       attemptType: session.effectiveAttemptType || session.attemptType || "",
     });
   }

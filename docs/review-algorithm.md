@@ -96,11 +96,16 @@ UTC, so late-night practice should not accidentally become tomorrow's attempt.
 Default time boxes:
 
 ```text
-Review: 10-20 minutes
-New Easy: about 20 minutes
-New Medium: about 30 minutes
-New Hard: about 45 minutes
+Easy: 10-minute independent checkpoint, 20-minute full ceiling
+Medium: 15-minute independent checkpoint, 30-minute full ceiling
+Hard: 20-minute independent checkpoint, 45-minute full ceiling
 ```
+
+At the independent checkpoint, a user with no coherent approach should record the blocker
+and learn rather than continue an unproductive search. A user with a promising approach may
+continue up to the full attempt ceiling. Repair and retention reps may use a shorter ceiling;
+in that case the checkpoint is capped at the assigned ceiling. Neither landmark prevents the
+user from opening a solution or saving an honest result.
 
 The app may remind the user to use LeetCode's built-in stopwatch while solving. Normal
 reviews do not require elapsed time. A cold check may store the stopwatch duration as

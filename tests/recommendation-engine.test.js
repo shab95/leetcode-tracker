@@ -4,6 +4,7 @@ const test = require("node:test");
 const {
   deriveEvidence,
   recommendNextRep,
+  summarizeStudyListEvidence,
 } = require("../recommendation-engine.js");
 
 const TODAY = "2026-07-18";
@@ -57,6 +58,7 @@ test("recommendations are deterministic and public output does not reveal the sk
   assert.deepEqual(Object.keys(first.public).sort(), [
     "difficulty",
     "evidenceStatus",
+    "independentCheckpointMinutes",
     "problemId",
     "publicReason",
     "recommendationId",
@@ -68,6 +70,33 @@ test("recommendations are deterministic and public output does not reveal the sk
   assert.equal("skill" in first.public, false);
   assert.equal("taskType" in first.public, false);
   assert.equal(first.private.taskType, "learn");
+});
+
+test("recommendations expose an independent checkpoint before the full attempt ceiling", () => {
+  const easy = recommendNextRep({
+    today: TODAY,
+    state: state([problem({ id: "easy", title: "Easy Candidate", difficulty: "Easy" })]),
+    capacityMinutes: 45,
+  });
+  const medium = recommendNextRep({
+    today: TODAY,
+    state: state([problem({ id: "medium", title: "Medium Candidate", difficulty: "Medium" })]),
+    capacityMinutes: 45,
+  });
+  const hard = recommendNextRep({
+    today: TODAY,
+    state: state([problem({ id: "hard", title: "Hard Candidate", difficulty: "Hard" })]),
+    capacityMinutes: 60,
+  });
+
+  assert.deepEqual(
+    [easy.public.independentCheckpointMinutes, medium.public.independentCheckpointMinutes, hard.public.independentCheckpointMinutes],
+    [10, 15, 20],
+  );
+  assert.deepEqual(
+    [easy.public.timeBoxMinutes, medium.public.timeBoxMinutes, hard.public.timeBoxMinutes],
+    [20, 30, 45],
+  );
 });
 
 test("recommendation selection is input-order independent and does not mutate state", () => {
@@ -431,4 +460,79 @@ test("transfer evidence requires distinct titles and a designated transfer attem
   assert.equal(repeatedEvidence.skills.get(skillId).transferSupported, false);
   assert.equal(distinctEvidence.skills.get(skillId).checkedTitles.size, 2);
   assert.equal(distinctEvidence.skills.get(skillId).transferSupported, true);
+});
+
+test("study list progress counts only recent real graded evidence", () => {
+  const catalog = [
+    { title: "Recent Independent", slug: "recent-independent" },
+    { title: "Recent Developing", slug: "recent-developing" },
+    { title: "Assisted Green", slug: "assisted-green" },
+    { title: "Imported Only", slug: "imported-only" },
+    { title: "Stale Independent", slug: "stale-independent" },
+    { title: "Unseen", slug: "unseen" },
+  ];
+  const problems = [
+    problem({
+      title: "Recent Independent",
+      titleSlug: "recent-independent",
+      reviewHistory: [
+        grade("2026-07-05", "green", { assistance: "none" }),
+        grade("2026-07-16", "red"),
+      ],
+    }),
+    problem({
+      title: "Recent Developing",
+      titleSlug: "recent-developing",
+      reviewHistory: [grade("2026-07-12", "yellow")],
+    }),
+    problem({
+      title: "Assisted Green",
+      titleSlug: "assisted-green",
+      reviewHistory: [grade("2026-07-10", "green", { assistance: "hint" })],
+    }),
+    problem({
+      title: "Imported Only",
+      titleSlug: "imported-only",
+      reviewHistory: [{ date: "2026-07-15", grade: "imported" }],
+    }),
+    problem({
+      title: "Stale Independent",
+      titleSlug: "stale-independent",
+      reviewHistory: [grade("2026-05-01", "green", { assistance: "none" })],
+    }),
+  ];
+
+  const summary = summarizeStudyListEvidence({
+    problems,
+    catalog,
+    today: TODAY,
+    windowDays: 30,
+  });
+
+  assert.deepEqual(summary, {
+    total: 6,
+    measured: 3,
+    independent: 1,
+    developing: 2,
+    unmeasured: 3,
+    windowDays: 30,
+  });
+});
+
+test("study list progress excludes future-dated grades", () => {
+  const summary = summarizeStudyListEvidence({
+    problems: [
+      problem({
+        title: "Future Attempt",
+        titleSlug: "future-attempt",
+        reviewHistory: [grade("2026-07-19", "green", { assistance: "none" })],
+      }),
+    ],
+    catalog: [{ title: "Future Attempt", slug: "future-attempt" }],
+    today: TODAY,
+  });
+
+  assert.equal(summary.independent, 0);
+  assert.equal(summary.developing, 0);
+  assert.equal(summary.unmeasured, 1);
 });
