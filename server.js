@@ -1085,11 +1085,15 @@ async function getQaLeaderboard() {
         checkedSkills: 11,
         independentSkills: 8,
         transferSkills: 4,
+        blind75CurrentEvidence: 31,
+        neetcode150CurrentEvidence: 46,
       },
       lifetime: {
         uniqueGradedProblems: 84,
         independentProblems: 52,
         totalRealReps: 128,
+        blind75Graded: 58,
+        neetcode150Graded: 84,
         blind75Evidence: 31,
         neetcode150Evidence: 46,
         durablePlus: 44,
@@ -1118,11 +1122,15 @@ async function getQaLeaderboard() {
         checkedSkills: 13,
         independentSkills: 7,
         transferSkills: 3,
+        blind75CurrentEvidence: 24,
+        neetcode150CurrentEvidence: 35,
       },
       lifetime: {
         uniqueGradedProblems: 71,
         independentProblems: 39,
         totalRealReps: 96,
+        blind75Graded: 49,
+        neetcode150Graded: 71,
         blind75Evidence: 24,
         neetcode150Evidence: 35,
         durablePlus: 31,
@@ -1151,11 +1159,15 @@ async function getQaLeaderboard() {
         checkedSkills: 7,
         independentSkills: 6,
         transferSkills: 2,
+        blind75CurrentEvidence: 18,
+        neetcode150CurrentEvidence: 22,
       },
       lifetime: {
         uniqueGradedProblems: 42,
         independentProblems: 28,
         totalRealReps: 53,
+        blind75Graded: 32,
+        neetcode150Graded: 42,
         blind75Evidence: 18,
         neetcode150Evidence: 22,
         durablePlus: 17,
@@ -1577,6 +1589,19 @@ function buildLeaderboardStats(state, baselineDueCount, weekStart, weekEnd, toda
       .map((attempt) => attempt.problemId)
       .filter(Boolean),
   );
+  const blind75CurrentEvidence = problems.filter(
+    (problem) => currentEvidenceProblemIds.has(problem.id) && (problem.listMemberships || []).includes("blind75"),
+  ).length;
+  const neetcode150CurrentEvidence = problems.filter(
+    (problem) =>
+      currentEvidenceProblemIds.has(problem.id) && (problem.listMemberships || []).includes("neetcode150"),
+  ).length;
+  const blind75Graded = problems.filter(
+    (problem) => uniqueGradedProblemIds.has(problem.id) && (problem.listMemberships || []).includes("blind75"),
+  ).length;
+  const neetcode150Graded = problems.filter(
+    (problem) => uniqueGradedProblemIds.has(problem.id) && (problem.listMemberships || []).includes("neetcode150"),
+  ).length;
   const streakAnchor = latestActivityDate(gradedWeekSessions, today);
   const evidence = PracticeV2Engine.deriveEvidence(state, { today });
   const skillBreadth = new Set(
@@ -1600,17 +1625,18 @@ function buildLeaderboardStats(state, baselineDueCount, weekStart, weekEnd, toda
       checkedSkills: evidence.checkedSkillIds.length,
       independentSkills: evidence.independentSkillIds.length,
       transferSkills: evidence.transferSupportedSkillIds.length,
+      blind75CurrentEvidence,
+      neetcode150CurrentEvidence,
     },
     lifetime: {
       uniqueGradedProblems: uniqueGradedProblemIds.size,
       independentProblems: independentProblemIds.size,
       totalRealReps: lifetimeAttempts.length,
-      blind75Evidence: problems.filter(
-        (problem) => currentEvidenceProblemIds.has(problem.id) && (problem.listMemberships || []).includes("blind75"),
-      ).length,
-      neetcode150Evidence: problems.filter(
-        (problem) => currentEvidenceProblemIds.has(problem.id) && (problem.listMemberships || []).includes("neetcode150"),
-      ).length,
+      blind75Graded,
+      neetcode150Graded,
+      // Keep the original keys during rollout for clients that still read them.
+      blind75Evidence: blind75CurrentEvidence,
+      neetcode150Evidence: neetcode150CurrentEvidence,
       durablePlus: problems.filter((problem) => isAttempted(problem) && clampStage(problem.stage) >= 4).length,
       mastered: problems.filter((problem) => isMastered(problem, today)).length,
       totalGradedAttempts: lifetimeAttempts.length,

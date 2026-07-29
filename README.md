@@ -303,7 +303,9 @@ Hosted users can optionally enable the leaderboard. Its V2 views use aggregate s
 
 - `This week`: practice days, real graded reps, distinct skill areas, and independent reps.
 - `Readiness`: skill areas checked, solved independently, and supported by transfer evidence
-  during the rolling 30-day evidence window.
+  during the rolling 30-day evidence window, plus current Blind 75 and NeetCode 150 coverage.
+- `All Time`: cumulative unique graded titles, independent titles, total real reps, and
+  lifetime uniquely graded Blind 75 and NeetCode 150 coverage.
 - There is no composite score. Problem names, topics practiced by a person, notes, grades,
   timing, assistance details, and raw history stay private.
 

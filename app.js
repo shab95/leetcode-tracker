@@ -1775,8 +1775,8 @@ function renderLeaderboard() {
   if (els.leaderboardViewNote) {
     const notes = {
       weekly: "Weekly signals reset Monday. Imported history does not count.",
-      readiness: "Readiness uses the same rolling 30-day evidence window as Practice.",
-      lifetime: "All Time counts real grades only. List evidence shows titles graded within the current 30-day evidence window.",
+      readiness: "Readiness shows evidence that is still current inside Practice's rolling 30-day window.",
+      lifetime: "All Time shows cumulative real graded coverage. Imported history does not count.",
     };
     els.leaderboardViewNote.textContent = notes[leaderboardViewMode] || notes.weekly;
   }
@@ -1851,16 +1851,16 @@ function leaderboardColumns(viewMode) {
         description: "All real graded attempts recorded over time. Imported history is excluded.",
       },
       {
-        key: "blind75Evidence",
-        label: "Blind 75 current",
+        key: "blind75Graded",
+        label: "Blind 75 graded",
         shortLabel: "Blind 75",
-        description: "Blind 75 titles with real graded evidence inside the current 30-day window.",
+        description: "Distinct Blind 75 titles that have ever received a real grade. Imported history is excluded.",
       },
       {
-        key: "neetcode150Evidence",
-        label: "NC 150 current",
+        key: "neetcode150Graded",
+        label: "NC 150 graded",
         shortLabel: "NC 150",
-        description: "NeetCode 150 titles with real graded evidence inside the current 30-day window.",
+        description: "Distinct NeetCode 150 titles that have ever received a real grade. Imported history is excluded.",
       },
     ];
   }
@@ -1884,6 +1884,18 @@ function leaderboardColumns(viewMode) {
         label: "Transfer skills",
         shortLabel: "Transfer",
         description: "Skill areas supported by independent results on distinct titles, including a designated transfer-style rep, in the last 30 days.",
+      },
+      {
+        key: "blind75CurrentEvidence",
+        label: "Blind 75 current",
+        shortLabel: "Blind 75",
+        description: "Blind 75 titles with real graded evidence inside the current 30-day window.",
+      },
+      {
+        key: "neetcode150CurrentEvidence",
+        label: "NC 150 current",
+        shortLabel: "NC 150",
+        description: "NeetCode 150 titles with real graded evidence inside the current 30-day window.",
       },
     ];
   }
@@ -1939,13 +1951,16 @@ function leaderboardMetricValue(row, key) {
     if (key === "checkedSkills") return Number(row?.lifetime?.durablePlus || 0);
     if (key === "independentSkills") return Number(row?.lifetime?.mastered || 0);
     if (key === "transferSkills") return 0;
+    if (key === "blind75CurrentEvidence") return Number(row?.lifetime?.blind75Evidence || 0);
+    if (key === "neetcode150CurrentEvidence") return Number(row?.lifetime?.neetcode150Evidence || 0);
   }
 
   if (leaderboardViewMode === "lifetime") {
     if (key === "uniqueGradedProblems") return Number(row?.lifetime?.totalGradedAttempts || 0);
     if (key === "independentProblems") return Number(row?.lifetime?.mastered || 0);
     if (key === "totalRealReps") return Number(row?.lifetime?.totalGradedAttempts || 0);
-    if (key === "blind75Evidence" || key === "neetcode150Evidence") return 0;
+    if (key === "blind75Graded") return Number(row?.lifetime?.blind75Evidence || 0);
+    if (key === "neetcode150Graded") return Number(row?.lifetime?.neetcode150Evidence || 0);
   }
 
   return 0;

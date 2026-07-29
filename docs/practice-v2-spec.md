@@ -822,14 +822,16 @@ The readiness view uses the same rolling 30-day evidence window as the recommend
 - Independent skills: skill areas with a qualifying clean, unassisted result.
 - Transfer skills: skill areas with independent evidence on distinct titles, including a
   designated transfer-style rep.
+- Blind 75 current: Blind 75 titles with a real grade in the rolling 30-day window.
+- NC 150 current: NeetCode 150 titles with a real grade in the rolling 30-day window.
 
 The All Time view exposes cumulative work without reviving stage grinding as the goal:
 
 - Unique graded: distinct problem titles with at least one real grade.
 - Independent titles: distinct titles solved cleanly without meaningful outside help.
 - Total real reps: every red, yellow, or green attempt; imported history is excluded.
-- Blind 75 current: Blind 75 titles with a real grade in the rolling 30-day window.
-- NC 150 current: NeetCode 150 titles with a real grade in the rolling 30-day window.
+- Blind 75 graded: distinct Blind 75 titles that have ever received a real grade.
+- NC 150 graded: distinct NeetCode 150 titles that have ever received a real grade.
 
 Problem titles, topics practiced by a specific user, notes, grades, timing, assistance details,
 and raw history remain private. The legacy leaderboard fields remain in the server response for
