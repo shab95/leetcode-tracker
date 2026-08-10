@@ -233,7 +233,7 @@ Use three evidence-oriented choices:
 | Display label | Stored grade | Meaning |
 | --- | --- | --- |
 | Could not solve | `red` | Needed the core solution or did not reach working code |
-| Solved with help or heavy friction | `yellow` | Needed meaningful help, exceeded the time box, or struggled substantially |
+| Solved with help or heavy friction | `yellow` | Needed meaningful help, major debugging, or struggled substantially |
 | Solved independently | `green` | Working code and important tests completed without meaningful help |
 
 A small syntax correction may still be green if it did not change the strategy and did not
@@ -264,10 +264,11 @@ a separate optional `friction` field: none, optimization/efficiency, minor imple
 friction, syntax/API recall, edge-case cleanup, complexity explanation, or time management. A green save normalizes `assistance: "none"` and
 `blocker: null`; it never repurposes a failure blocker as a green value.
 
-If tracked elapsed time exceeds the locked time box, green is inconsistent with the grading
-contract. Reflection explains the mismatch and asks the user to correct the time or choose
-yellow. Untracked green may establish independence, but never speed or timed-performance
-evidence.
+The locked time box is a target, not a grading gate. If tracked elapsed time exceeds it, the
+attempt may still be green when the user reached working code without meaningful help. Reflection
+shows the overrun and stores `timingStatus`, `minutesOverTarget`, and `timeBoxRatio` as separate
+speed evidence. This preserves an honest stopwatch value while allowing the plan to target speed
+later. Untracked green may establish independence, but never speed or timed-performance evidence.
 
 Complexity evidence is separate from the grade:
 
@@ -685,8 +686,8 @@ write behavior so the UI never turns planning estimates into memory facts.
 | Clock | Meaning | Editable | May change exact `nextReview` |
 | --- | --- | --- | --- |
 | Today's capacity | Time the user currently has available for the next recommendation | Before a rep; changes can select a different rep | No |
-| Locked time box | Maximum target for the active problem | No after Begin | No |
-| Elapsed time | User-entered LeetCode stopwatch result, or `null` when untracked | During reflection | No; it affects speed evidence and grade consistency only |
+| Locked time box | Coaching target for the active problem | No after Begin | No |
+| Elapsed time | User-entered LeetCode stopwatch result, or `null` when untracked | During reflection | No; it affects speed evidence only and never forces a dishonest grade |
 | Exact-title review date | Scheduler-owned date for seeing this same title again | Never directly from Practice | Yes, but only through the versioned scheduler after a saved grade |
 | Planning horizon | Target interview date or honest rolling window | In plan settings | No; it changes candidate priority and feasibility only |
 
@@ -897,8 +898,8 @@ atomic save receipt.
 - Only a qualifying green can add independent evidence, and transfer-supported evidence still
   requires the distinct-title and designated-task rules.
 - Elapsed time starts blank; untracked time remains `null`.
-- Green tracked beyond the locked time box cannot save until the time is corrected or the grade
-  changes to yellow.
+- Green tracked beyond the locked time box saves normally, preserves the honest elapsed time, and
+  records an over-target speed signal without changing independent evidence.
 - Green reflection disables and ignores assistance and failure-blocker inputs; red/yellow disable
   and ignore the green-only friction input.
 - The last undo receipt remains available after Do another rep, navigation, and

@@ -127,18 +127,20 @@ at the solution pattern.
 The user moves through Ready, Attempting, Grading, Reflecting, Saving, and Completed states.
 Selecting a grade is provisional and does not write history, activity records, stages, or review dates.
 The reflection captures stopwatch evidence, assistance, blocker or friction, an optional note,
-complexity readiness, and approach efficiency as applicable. A clean solve cannot be saved beyond
-its locked time box; a red or yellow result may exceed it. Red and yellow require time evidence,
-an assistance answer, and a blocker. An independent clean result normalizes assistance to none and
-clears blockers.
+complexity readiness, and approach efficiency as applicable. The locked time box is a coaching
+target, not a save gate. An independent solve may exceed it and remains independent when no
+meaningful help was used; the overrun is stored separately as speed evidence. Red and yellow require
+time evidence, an assistance answer, and a blocker. An independent clean result normalizes
+assistance to none and clears blockers.
 
-The Reflect grade is based on three observable signals: whether working code was reached, whether
-meaningful outside help was needed, and whether the attempt stayed inside its locked time box.
+The Reflect grade is based primarily on two observable signals: whether working code was reached and
+whether meaningful outside help was needed. Timing is a separate performance signal.
 `Could not solve` means no working solution was reached or the full answer was needed. `Solved with
-help or heavy friction` covers meaningful hints or help, major debugging, or finishing only after the
-time box. `Solved independently` means working code and important tests were completed without
-meaningful help and within the time box. A small syntax/API mistake or edge-case correction can still
-be independent when the user finds and fixes it alone inside the time box; it is captured as friction.
+help or heavy friction` covers meaningful hints or help, major debugging, or substantial struggle.
+`Solved independently` means working code and important tests were completed without meaningful
+help. A small syntax/API mistake, edge-case correction, or modest time overrun can still be
+independent when the user resolves it alone; those details are captured as friction and timing
+evidence rather than rewriting the grade.
 Complexity readiness is recorded separately as `Not checked`, `Partial`, or `Explained`.
 `Partial` means the user understood the complexity but could not fully explain or derive it.
 Only `Explained` satisfies the legacy mastery checkbox. A complexity gap can therefore block
@@ -163,10 +165,11 @@ and scheduler. Practice V2 changes task selection and evidence capture, not the 
 early-clean rule, extremely-overdue rule, mastery rule, or historical data model.
 
 Use `Could not solve` when the user needed the solution or could not reach working code.
-Use `Solved with hints / slow` when the user needed meaningful help, exceeded the target
-time, or got there with heavy debugging. Use `Solved cleanly` only when the user solved
-without meaningful help, coded a working answer, tested important edge cases, and stayed
-inside the time box. Complexity readiness remains a separate mastery signal.
+Use `Solved with hints / slow` when the user needed meaningful help or got there with heavy
+debugging or substantial struggle. Use `Solved cleanly` when the user solved without meaningful
+help, coded a working answer, and tested important edge cases. An elapsed time above the target is
+stored honestly as a speed gap and does not automatically change the grade. Complexity readiness
+remains a separate mastery signal.
 
 The grade answers how independently the user completed the attempt. Learning-signal tags
 answer why the attempt was difficult. For example, wrong syntax, a language mistake, or a

@@ -245,14 +245,29 @@ test("completion plan updates describe the saved result rather than the old reco
   assert.match(suboptimal, /suboptimal result.*optimization gap/i);
 });
 
-test("independent grade cannot exceed the locked time box", () => {
+test("completion plan keeps independence and calls out an over-target speed gap", () => {
+  const update = workflow.completionPlanUpdate({
+    grade: "green",
+    solutionQuality: "expected",
+    timingStatus: "over-target",
+    minutesOverTarget: 5,
+  });
+  assert.match(update, /independent evidence is now current/i);
+  assert.match(update, /exceeded by 5 minutes/i);
+  assert.match(update, /speed remains.*separate improvement signal/i);
+});
+
+test("independent grade may exceed the target while preserving honest timing evidence", () => {
   const result = workflow.validateReflection({
     grade: "green",
     draft: draft({ shared: { elapsedMinutes: "31" } }),
     lockedTimeBoxMinutes: 30,
   });
-  assert.equal(result.ok, false);
-  assert.match(result.errors.elapsedMinutes, /exceeded the 30-minute time box/i);
+  assert.equal(result.ok, true);
+  assert.equal(result.metadata.elapsedMinutes, 31);
+  assert.equal(result.metadata.timingStatus, "over-target");
+  assert.equal(result.metadata.minutesOverTarget, 1);
+  assert.equal(result.metadata.timeBoxRatio, 1.03);
 });
 
 test("friction grade may exceed the locked time box", () => {
@@ -263,4 +278,23 @@ test("friction grade may exceed the locked time box", () => {
   });
   assert.equal(result.ok, true);
   assert.equal(result.metadata.elapsedMinutes, 41);
+  assert.equal(result.metadata.timingStatus, "over-target");
+});
+
+test("timing evidence distinguishes within target, over target, and untracked", () => {
+  assert.deepEqual(workflow.timingSignal({ elapsedMinutes: 20, lockedTimeBoxMinutes: 20 }), {
+    status: "within-target",
+    minutesOverTarget: 0,
+    ratio: 1,
+  });
+  assert.deepEqual(workflow.timingSignal({ elapsedMinutes: 25, lockedTimeBoxMinutes: 20 }), {
+    status: "over-target",
+    minutesOverTarget: 5,
+    ratio: 1.25,
+  });
+  assert.deepEqual(workflow.timingSignal({ elapsedMinutes: null, lockedTimeBoxMinutes: 20 }), {
+    status: "untracked",
+    minutesOverTarget: null,
+    ratio: null,
+  });
 });

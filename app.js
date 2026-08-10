@@ -235,6 +235,7 @@ const els = {
   practiceV2SelectedGrade: document.querySelector("#practiceV2SelectedGrade"),
   practiceV2Elapsed: document.querySelector("#practiceV2Elapsed"),
   practiceV2TimeUntracked: document.querySelector("#practiceV2TimeUntracked"),
+  practiceV2TimingFeedback: document.querySelector("#practiceV2TimingFeedback"),
   practiceV2AssistanceField: document.querySelector("#practiceV2AssistanceField"),
   practiceV2Assistance: document.querySelector("#practiceV2Assistance"),
   practiceV2BlockerField: document.querySelector("#practiceV2BlockerField"),
@@ -3056,6 +3057,7 @@ function renderPracticeV2Reflection() {
   }
   if (els.practiceV2Note) els.practiceV2Note.value = drafts.shared.note;
   if (els.practiceV2Complexity) els.practiceV2Complexity.value = drafts.shared.complexityStatus || "not-checked";
+  renderPracticeV2TimingFeedback();
   const independent = grade === "green";
   if (els.practiceV2AssistanceField) els.practiceV2AssistanceField.hidden = independent;
   if (els.practiceV2BlockerField) els.practiceV2BlockerField.hidden = independent;
@@ -3063,6 +3065,28 @@ function renderPracticeV2Reflection() {
   if (els.practiceV2SolutionQualityField) {
     els.practiceV2SolutionQualityField.hidden = grade === "red";
   }
+}
+
+function renderPracticeV2TimingFeedback() {
+  if (!els.practiceV2TimingFeedback || !practiceV2Runtime) return;
+  const elapsed = practiceV2Runtime.reflectionDrafts.shared.timeTracked
+    ? Number(practiceV2Runtime.reflectionDrafts.shared.elapsedMinutes)
+    : null;
+  const timing = PRACTICE_V2_WORKFLOW.timingSignal({
+    elapsedMinutes: elapsed,
+    lockedTimeBoxMinutes: practiceV2Runtime.lockedTimeBoxMinutes,
+  });
+  if (timing.status === "untracked") {
+    els.practiceV2TimingFeedback.hidden = true;
+    els.practiceV2TimingFeedback.textContent = "";
+    return;
+  }
+  const target = Number(practiceV2Runtime.lockedTimeBoxMinutes);
+  els.practiceV2TimingFeedback.hidden = false;
+  els.practiceV2TimingFeedback.dataset.timingStatus = timing.status;
+  els.practiceV2TimingFeedback.textContent = timing.status === "over-target"
+    ? `${timing.minutesOverTarget} ${timing.minutesOverTarget === 1 ? "minute" : "minutes"} over the ${target}-minute target. This can still be independent if you used no meaningful help; speed will remain an improvement signal.`
+    : `Within the ${target}-minute target. Timing supports current speed evidence.`;
 }
 
 function practiceV2ProblemForRecommendation() {
@@ -3154,6 +3178,8 @@ function savePracticeV2Rep(event) {
     taskType: recommendation.private.taskType,
     elapsedMinutes: validation.metadata.elapsedMinutes,
     solutionQuality: savedSolutionQuality,
+    timingStatus: validation.metadata.timingStatus,
+    minutesOverTarget: validation.metadata.minutesOverTarget,
   };
   practiceV2Runtime.undoReceipt = cloneState(lastGradeUndo);
   practiceV2Runtime.skippedProblemIds = [...new Set([...practiceV2Runtime.skippedProblemIds, recommendation.public.problemId])];
@@ -4883,6 +4909,7 @@ function renderAttemptMetadata(entry) {
     const details = [
       context,
       entry.durationMinutes || entry.elapsedMinutes ? `${entry.durationMinutes || entry.elapsedMinutes} min` : "",
+      timingEvidenceLabel(entry),
       support,
       entry.grade === "green" ? "" : blockerLabel(entry.blocker),
       entry.grade === "red" ? "" : solutionQualityLabel(entry.solutionQuality),
@@ -4901,6 +4928,15 @@ function renderAttemptMetadata(entry) {
   ].filter(Boolean);
   if (details.length === 0) return `<div class="history-attempt-meta"><span>Cold check</span></div>`;
   return `<div class="history-attempt-meta"><span>Cold check</span>${details.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>`;
+}
+
+function timingEvidenceLabel(entry) {
+  if (entry?.timingStatus === "within-target") return "Within target";
+  if (entry?.timingStatus !== "over-target") return "";
+  const overage = Number(entry.minutesOverTarget);
+  return Number.isFinite(overage) && overage > 0
+    ? `${overage} min over target`
+    : "Over target";
 }
 
 function attemptResultLabel(value) {

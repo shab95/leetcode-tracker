@@ -188,13 +188,13 @@
                 </button>
                 <button type="button" data-v2-grade="yellow" role="radio" aria-checked="false">
                   <strong>Solved with help or heavy friction</strong>
-                  <span>Meaningful hint or help, major debugging, a missed optimal approach, or a working solution only after the time box.</span>
+                  <span>Meaningful hint or help, major debugging, or substantial strategy or implementation friction.</span>
                   <small>Next: record the assistance and main blocker.</small>
                 </button>
                 <button type="button" data-v2-grade="green" role="radio" aria-checked="false">
                   <strong>Solved independently</strong>
-                  <span>Working code and important tests without meaningful help, inside the time box.</span>
-                  <small>Next: record minor friction and complexity readiness.</small>
+                  <span>Working code and important tests without meaningful help. Speed is recorded separately.</span>
+                  <small>Next: record timing, minor friction, and complexity readiness.</small>
                 </button>
               </div>
               <div class="practice-v2-gray-areas" aria-label="Common grading examples">
@@ -202,7 +202,8 @@
                 <ul>
                   <li><span>Small syntax or API mistake fixed alone</span><b>Independent + syntax friction</b></li>
                   <li><span>Edge case fixed alone and within time</span><b>Independent + edge-case friction</b></li>
-                  <li><span>Needed a hint, heavy debugging, or extra time</span><b>Help / heavy friction</b></li>
+                  <li><span>Slightly over target, but correct without help</span><b>Independent + timing gap</b></li>
+                  <li><span>Needed a hint or heavy debugging</span><b>Help / heavy friction</b></li>
                   <li><span>Never reached working code</span><b>Could not solve</b></li>
                 </ul>
               </div>
@@ -226,6 +227,7 @@
                   <input id="practiceV2TimeUntracked" type="checkbox" />
                   <span>I did not track it</span>
                 </label>
+                <p class="practice-v2-timing-feedback" id="practiceV2TimingFeedback" aria-live="polite" hidden></p>
                 <label id="practiceV2AssistanceField">
                   <span>Assistance used</span>
                   <select id="practiceV2Assistance">

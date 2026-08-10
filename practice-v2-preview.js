@@ -331,14 +331,6 @@ reflectionForm?.addEventListener("submit", (event) => {
     elapsedMinutesInput.reportValidity();
     return;
   }
-  const lockedTimeBox = Number(attemptTimeBox.textContent);
-  if (selectedGrade === "green" && elapsed !== null && elapsed > lockedTimeBox) {
-    elapsedMinutesInput.setCustomValidity(
-      `This exceeded the ${lockedTimeBox}-minute time box. Choose the friction grade or correct the elapsed time.`,
-    );
-    elapsedMinutesInput.reportValidity();
-    return;
-  }
   elapsedMinutesInput.setCustomValidity("");
   if (selectedGrade !== "green" && !assistanceSelect.value) {
     assistanceSelect.reportValidity();

@@ -109,15 +109,7 @@
     if (timeTracked && (!Number.isFinite(elapsed) || elapsed < 1 || elapsed > 180)) {
       errors.elapsedMinutes = "Enter 1-180 stopwatch minutes, or choose Not tracked.";
     }
-    if (
-      normalizedGrade === "green" &&
-      elapsed !== null &&
-      Number.isFinite(elapsed) &&
-      Number.isFinite(Number(lockedTimeBoxMinutes)) &&
-      elapsed > Number(lockedTimeBoxMinutes)
-    ) {
-      errors.elapsedMinutes = `This exceeded the ${lockedTimeBoxMinutes}-minute time box. Correct the time or choose the friction grade.`;
-    }
+    const timing = timingSignal({ elapsedMinutes: elapsed, lockedTimeBoxMinutes });
 
     if (normalizedGrade === "red" || normalizedGrade === "yellow") {
       const assistance = drafts.nonIndependent.assistance;
@@ -139,6 +131,9 @@
         durationMinutes: elapsed,
         elapsedMinutes: elapsed,
         timeTracked,
+        timingStatus: timing.status,
+        minutesOverTarget: timing.minutesOverTarget,
+        timeBoxRatio: timing.ratio,
         assistance: normalizedGrade === "green" ? "none" : drafts.nonIndependent.assistance,
         blocker: normalizedGrade === "green" ? null : drafts.nonIndependent.blocker,
         friction: normalizedGrade === "green" ? drafts.independent.friction || "none" : null,
@@ -147,6 +142,20 @@
         complexityKnown: drafts.shared.complexityStatus === "explained",
         solutionQuality: normalizedGrade === "red" ? "not-applicable" : drafts.shared.solutionQuality,
       },
+    };
+  }
+
+  function timingSignal({ elapsedMinutes, lockedTimeBoxMinutes } = {}) {
+    const elapsed = Number(elapsedMinutes);
+    const target = Number(lockedTimeBoxMinutes);
+    if (!Number.isFinite(elapsed) || elapsed < 1 || !Number.isFinite(target) || target < 1) {
+      return { status: "untracked", minutesOverTarget: null, ratio: null };
+    }
+    const minutesOverTarget = Math.max(0, Math.round((elapsed - target) * 100) / 100);
+    return {
+      status: minutesOverTarget > 0 ? "over-target" : "within-target",
+      minutesOverTarget,
+      ratio: Math.round((elapsed / target) * 100) / 100,
     };
   }
 
@@ -175,7 +184,7 @@
     return shared?.complexityKnown ? "explained" : "not-checked";
   }
 
-  function completionPlanUpdate({ grade, solutionQuality } = {}) {
+  function completionPlanUpdate({ grade, solutionQuality, timingStatus, minutesOverTarget } = {}) {
     if (grade === "red") {
       return "The plan will prioritize the recorded blocker before another independent check.";
     }
@@ -187,6 +196,11 @@
     }
     if (grade === "yellow") {
       return "The plan will reinforce the recorded weak point before another independent check.";
+    }
+    if (grade === "green" && timingStatus === "over-target") {
+      const overage = Number(minutesOverTarget);
+      const detail = Number.isFinite(overage) && overage > 0 ? ` by ${overage} ${overage === 1 ? "minute" : "minutes"}` : "";
+      return `Independent evidence is now current. The target was exceeded${detail}, so speed remains a separate improvement signal.`;
     }
     if (grade === "green" && solutionQuality === "expected") {
       return "Efficient independent evidence is now current. The plan can shift toward broader transfer.";
@@ -215,6 +229,7 @@
     normalizeRuntime,
     reconcileRuntimeRevision,
     transition,
+    timingSignal,
     validateReflection,
   });
 });
