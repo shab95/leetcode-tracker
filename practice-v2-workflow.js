@@ -32,6 +32,8 @@
       startedAt: "",
       lockedTimeBoxMinutes: null,
       expectedRevision: 0,
+      recommendationDate: "",
+      staleRevision: false,
       provisionalGrade: "",
       reflectionDrafts: {
         shared: {
@@ -77,10 +79,12 @@
         recommendation: null,
         skippedProblemIds: [],
         expectedRevision: revision,
+        recommendationDate: "",
+        staleRevision: false,
       };
     }
 
-    return runtime;
+    return { ...runtime, staleRevision: true };
   }
 
   function transition(runtime, event) {

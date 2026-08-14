@@ -3,11 +3,18 @@ const test = require("node:test");
 
 const {
   deriveEvidence,
+  localDateKey,
+  properAttempts,
   recommendNextRep,
   summarizeStudyListEvidence,
 } = require("../recommendation-engine.js");
 
 const TODAY = "2026-07-18";
+
+test("the engine derives default dates from the user's local calendar", () => {
+  const lateLocalEvening = new Date(2026, 6, 18, 23, 30, 0);
+  assert.equal(localDateKey(lateLocalEvening), "2026-07-18");
+});
 
 function problem(overrides = {}) {
   const title = overrides.title || "Example Problem";
@@ -115,6 +122,76 @@ test("recommendation selection is input-order independent and does not mutate st
   assert.deepEqual(originalState, before);
   assert.equal(reversed.public.problemId, forward.public.problemId);
   assert.equal(reversed.public.recommendationId, forward.public.recommendationId);
+});
+
+test("same-day attempts use their real timestamps instead of source array order", () => {
+  const earlier = grade(TODAY, "red", {
+    id: "earlier-attempt",
+    occurredAt: `${TODAY}T09:00:00.000Z`,
+    createdAt: `${TODAY}T09:00:00.000Z`,
+  });
+  const later = grade(TODAY, "green", {
+    id: "later-attempt",
+    occurredAt: `${TODAY}T10:00:00.000Z`,
+    createdAt: `${TODAY}T10:00:00.000Z`,
+    assistance: "none",
+  });
+
+  const forward = properAttempts(problem({ reviewHistory: [earlier, later] }));
+  const reversed = properAttempts(problem({ reviewHistory: [later, earlier] }));
+
+  assert.deepEqual(forward.map((attempt) => attempt.id), ["earlier-attempt", "later-attempt"]);
+  assert.deepEqual(reversed.map((attempt) => attempt.id), ["earlier-attempt", "later-attempt"]);
+  assert.equal(reversed.at(-1).grade, "green");
+});
+
+test("legacy date-only attempts have a deterministic fallback order", () => {
+  const alpha = {
+    id: "alpha",
+    date: TODAY,
+    createdAt: `${TODAY}T20:00:00.000Z`,
+    grade: "yellow",
+    backfilled: true,
+  };
+  const omega = {
+    id: "omega",
+    date: TODAY,
+    createdAt: `${TODAY}T08:00:00.000Z`,
+    grade: "green",
+    assistance: "none",
+    backfilled: true,
+  };
+
+  const forward = properAttempts(problem({ reviewHistory: [omega, alpha] }));
+  const reversed = properAttempts(problem({ reviewHistory: [alpha, omega] }));
+
+  assert.deepEqual(forward.map((attempt) => attempt.id), ["alpha", "omega"]);
+  assert.deepEqual(reversed.map((attempt) => attempt.id), ["alpha", "omega"]);
+});
+
+test("transfer debt is stable when its twelve-attempt boundary falls within one day", () => {
+  const sameDayProblems = Array.from({ length: 13 }, (_, index) => problem({
+    id: `same-day-${index}`,
+    title: `Same Day ${index}`,
+    topic: `Skill ${index}`,
+    reviewHistory: [grade(TODAY, "green", {
+      id: `attempt-${index}`,
+      occurredAt: `${TODAY}T${String(index).padStart(2, "0")}:00:00.000Z`,
+      createdAt: `${TODAY}T${String(index).padStart(2, "0")}:00:00.000Z`,
+      taskType: index === 0 ? "transfer" : "assessment",
+      assistance: "none",
+    })],
+  }));
+
+  const forward = deriveEvidence(state(sameDayProblems), { today: TODAY });
+  const reversed = deriveEvidence(state([...sameDayProblems].reverse()), { today: TODAY });
+
+  assert.equal(forward.transferDebt, true);
+  assert.equal(reversed.transferDebt, true);
+  assert.deepEqual(
+    forward.recentAttempts.map((attempt) => attempt.id),
+    reversed.recentAttempts.map((attempt) => attempt.id),
+  );
 });
 
 test("public recommendation text does not leak topic or internal reason labels", () => {
@@ -385,6 +462,49 @@ test("transfer debt guarantees an eligible transfer rep after twelve recent non-
   assert.equal(JSON.stringify(recommendation.public).includes("Arrays and Hashing"), false);
 });
 
+test("transfer debt never relabels the same independent title as transfer", () => {
+  const memorizedTitle = problem({
+    id: "memorized-title",
+    title: "Memorized Title",
+    titleSlug: "memorized-title",
+    topic: "Arrays and Hashing",
+    difficulty: "Easy",
+    completionCount: 12,
+    reviewHistory: Array.from({ length: 12 }, (_, index) => grade(
+      `2026-07-${String(index + 1).padStart(2, "0")}`,
+      "green",
+      { taskType: "assessment", assistance: "none" },
+    )),
+  });
+  const urgentRepair = problem({
+    id: "urgent-repair",
+    title: "Urgent Repair",
+    titleSlug: "urgent-repair",
+    topic: "Trees",
+    difficulty: "Easy",
+    completionCount: 1,
+    nextReview: TODAY,
+    reviewHistory: [grade("2026-07-17", "red", {
+      createdAt: "2026-07-17T10:00:00.000Z",
+      taskType: "assessment",
+    })],
+  });
+
+  const recommendation = recommendNextRep({
+    today: TODAY,
+    now: "2026-07-18T12:00:00.000Z",
+    state: state([memorizedTitle, urgentRepair]),
+    capacityMinutes: 45,
+  });
+
+  assert.equal(recommendation.public.problemId, "urgent-repair");
+  assert.equal(recommendation.private.taskType, "repair");
+  const memorizedTrace = recommendation.private.rankedCandidates.find(
+    (candidate) => candidate.problemId === "memorized-title",
+  );
+  assert.equal(memorizedTrace.taskType, "assessment");
+});
+
 test("an exact-title due review remains eligible as retention", () => {
   const due = problem({
     id: "due",
@@ -535,4 +655,107 @@ test("study list progress excludes future-dated grades", () => {
   assert.equal(summary.independent, 0);
   assert.equal(summary.developing, 0);
   assert.equal(summary.unmeasured, 1);
+});
+
+test("a future-dated grade cannot hide an otherwise eligible recommendation", () => {
+  const futureAttempt = problem({
+    id: "future-attempt",
+    title: "Future Attempt",
+    titleSlug: "future-attempt",
+    nextReview: "2026-07-22",
+    reviewHistory: [grade("2026-07-19", "green", {
+      assistance: "none",
+      occurredAt: "2026-07-19T12:00:00.000Z",
+      nextReview: "2026-07-22",
+    })],
+  });
+
+  const recommendation = recommendNextRep({
+    today: TODAY,
+    now: "2026-07-18T12:00:00.000Z",
+    state: state([futureAttempt]),
+    capacityMinutes: 45,
+  });
+
+  assert.equal(recommendation.public.problemId, "future-attempt");
+  assert.equal(recommendation.private.taskType, "learn");
+  assert.equal(recommendation.private.reasonCodes.includes("exact-review-due"), false);
+});
+
+test("the current problem schedule stays authoritative when no future evidence exists", () => {
+  const rescheduled = problem({
+    id: "rescheduled-current-state",
+    title: "Rescheduled Current State",
+    titleSlug: "rescheduled-current-state",
+    nextReview: TODAY,
+    reviewHistory: [grade("2026-07-15", "green", {
+      assistance: "none",
+      occurredAt: "2026-07-15T12:00:00.000Z",
+      nextReview: "2026-07-20",
+    })],
+  });
+
+  const recommendation = recommendNextRep({
+    today: TODAY,
+    now: "2026-07-18T12:00:00.000Z",
+    state: state([rescheduled]),
+    capacityMinutes: 45,
+  });
+
+  assert.equal(recommendation.public.problemId, "rescheduled-current-state");
+  assert.equal(recommendation.private.taskType, "retention");
+  assert.ok(recommendation.private.reasonCodes.includes("exact-review-due"));
+});
+
+test("a later same-day timestamp cannot replace valid current evidence", () => {
+  const candidate = problem({
+    id: "clock-skew",
+    title: "Clock Skew Candidate",
+    titleSlug: "clock-skew-candidate",
+    nextReview: "2026-07-21",
+    reviewHistory: [
+      grade("2026-07-17", "red", {
+        id: "valid-red",
+        occurredAt: "2026-07-17T10:00:00.000Z",
+        nextReview: TODAY,
+      }),
+      grade(TODAY, "green", {
+        id: "future-green",
+        assistance: "none",
+        occurredAt: "2026-07-18T18:00:00.000Z",
+        nextReview: "2026-07-21",
+      }),
+    ],
+  });
+
+  const recommendation = recommendNextRep({
+    today: TODAY,
+    now: "2026-07-18T12:00:00.000Z",
+    state: state([candidate]),
+    capacityMinutes: 45,
+  });
+
+  assert.equal(recommendation.public.problemId, "clock-skew");
+  assert.equal(recommendation.private.taskType, "repair");
+  assert.ok(recommendation.private.reasonCodes.includes("exact-review-due"));
+});
+
+test("same-day future occurrence times are excluded from Memory evidence", () => {
+  const evidence = deriveEvidence(state([
+    problem({
+      id: "future-clock-evidence",
+      title: "Future Clock Evidence",
+      reviewHistory: [grade(TODAY, "green", {
+        assistance: "none",
+        occurredAt: "2026-07-18T18:00:00.000Z",
+      })],
+    }),
+  ]), {
+    today: TODAY,
+    now: "2026-07-18T12:00:00.000Z",
+  });
+
+  assert.deepEqual(evidence.checkedSkillIds, []);
+  assert.deepEqual(evidence.independentSkillIds, []);
+  assert.equal(evidence.recentAttempts.length, 0);
 });

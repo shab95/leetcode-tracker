@@ -247,6 +247,7 @@ const els = {
   practiceV2Note: document.querySelector("#practiceV2Note"),
   practiceV2Complexity: document.querySelector("#practiceV2Complexity"),
   practiceV2Error: document.querySelector("#practiceV2Error"),
+  practiceV2SaveBtn: document.querySelector("#practiceV2SaveBtn"),
   practiceV2BackGradeBtn: document.querySelector("#practiceV2BackGradeBtn"),
   practiceV2CompleteTitle: document.querySelector("#practiceV2CompleteTitle"),
   practiceV2CompleteSummary: document.querySelector("#practiceV2CompleteSummary"),
@@ -288,6 +289,7 @@ const els = {
   savePostGradeNoteBtn: document.querySelector("#savePostGradeNoteBtn"),
   saveLeaderboardOnlyProfileBtn: document.querySelector("#saveLeaderboardOnlyProfileBtn"),
   saveLeaderboardProfileBtn: document.querySelector("#saveLeaderboardProfileBtn"),
+  saveProblemBtn: document.querySelector("#saveProblemBtn"),
   saveStatus: document.querySelector("#saveStatus"),
   searchInput: document.querySelector("#searchInput"),
   seedBlindBtn: document.querySelector("#seedBlindBtn"),
@@ -355,6 +357,8 @@ let dailyPicks = { review: null, newProblem: null };
 let skippedDailyPicks = { review: new Set(), new: new Set() };
 let lastServerSavedAt = "";
 let currentRevision = 0;
+let remoteSaveTail = Promise.resolve();
+let remoteSavePendingCount = 0;
 let remoteStateRefreshInFlight = false;
 let lastRemoteStateRefreshAt = 0;
 let appEnv = { env: "prod", isQa: false, authRequired: false, storageMode: "local", features: { ...DEFAULT_FEATURES } };
@@ -368,6 +372,11 @@ let coldPracticeProblemId = "";
 let activeAttempt = null;
 let coldGradeDraft = null;
 let lastGradeUndo = null;
+let undoInFlight = false;
+let problemMutationInFlight = false;
+let recoveryMutationInFlight = false;
+let settingsDataMutationInFlight = false;
+let postGradeMutationInFlight = false;
 let practiceV2Runtime = PRACTICE_V2_WORKFLOW?.createRuntime() || null;
 let currentNewSourceId = els.newSourceSelect.value || "blind75";
 let tableSort = { column: "nextReview", direction: "asc" };
@@ -749,7 +758,7 @@ async function initApp() {
       setSaveStatus("saved", "Ready to save to your cloud account.");
     } else if (problems.length > 0 || importMeta || sessions.length > 0) {
       setSaveStatus("saving", "Migrating browser data to local file...");
-      persist();
+      await persist();
     } else {
       setSaveStatus("saved", "Ready to save to local file.");
     }
@@ -945,18 +954,108 @@ function clearColdWorkflowSession() {
 }
 
 function persist() {
+  invalidateReadyPracticeV2Recommendation();
+  writeBrowserFallbackState();
+  return saveRemoteState();
+}
+
+function blockTrackerMutationWhileSaving() {
+  if (remoteSavePendingCount <= 0) return false;
+  setSaveStatus(
+    "saving",
+    appEnv.authRequired
+      ? "Finishing your previous cloud save..."
+      : "Finishing your previous local save...",
+  );
+  return true;
+}
+
+function captureTrackerMutationState() {
+  return {
+    problems: cloneState(problems),
+    importMeta: importMeta ? cloneState(importMeta) : null,
+    sessions: cloneState(sessions),
+    recoveryProblemIds: cloneState(recoveryProblemIds),
+    algorithmVersion,
+    trainingProfile: cloneState(trainingProfile),
+    practicePlan: cloneState(practicePlan),
+    trackerStateExtras: cloneState(trackerStateExtras),
+    lastGradeUndo: lastGradeUndo ? cloneState(lastGradeUndo) : null,
+    coldPracticeProblemId,
+    activeAttempt: activeAttempt ? cloneState(activeAttempt) : null,
+    coldGradeDraft: coldGradeDraft ? cloneState(coldGradeDraft) : null,
+    pendingNoteProblemId,
+    pendingNoteHistoryEntryId,
+    pendingAttemptContext,
+    practiceV2Runtime: practiceV2Runtime ? cloneState(practiceV2Runtime) : null,
+  };
+}
+
+function restoreTrackerMutationState(snapshot) {
+  problems = snapshot.problems;
+  importMeta = snapshot.importMeta;
+  sessions = snapshot.sessions;
+  recoveryProblemIds = snapshot.recoveryProblemIds;
+  algorithmVersion = snapshot.algorithmVersion;
+  trainingProfile = snapshot.trainingProfile;
+  practicePlan = snapshot.practicePlan;
+  trackerStateExtras = snapshot.trackerStateExtras;
+  lastGradeUndo = snapshot.lastGradeUndo;
+  coldPracticeProblemId = snapshot.coldPracticeProblemId;
+  activeAttempt = snapshot.activeAttempt;
+  coldGradeDraft = snapshot.coldGradeDraft;
+  pendingNoteProblemId = snapshot.pendingNoteProblemId;
+  pendingNoteHistoryEntryId = snapshot.pendingNoteHistoryEntryId;
+  pendingAttemptContext = snapshot.pendingAttemptContext;
+  practiceV2Runtime = snapshot.practiceV2Runtime;
+  reconcilePracticeV2RuntimeRevision();
+  writeBrowserFallbackState();
+  persistColdWorkflowSession();
+  persistPracticeV2Runtime();
+  render();
+}
+
+function setProblemMutationBusy(busy, label = "Saving...") {
+  problemMutationInFlight = busy;
+  if (els.saveProblemBtn) {
+    els.saveProblemBtn.disabled = busy;
+    els.saveProblemBtn.textContent = busy ? label : "Save";
+  }
+  if (els.deleteBtn) els.deleteBtn.disabled = busy;
+  if (els.addBackfillBtn) els.addBackfillBtn.disabled = busy;
+  if (els.cancelBtn) els.cancelBtn.disabled = busy;
+  if (els.closeDialogBtn) els.closeDialogBtn.disabled = busy;
+}
+
+function setSettingsDataMutationBusy(busy) {
+  settingsDataMutationInFlight = busy;
+  [els.seedBlindBtn, els.seedNeetcodeBtn, els.setupSeedBlindBtn, els.setupSeedNeetcodeBtn, els.applyLeetcodeImportBtn]
+    .filter(Boolean)
+    .forEach((button) => {
+      button.disabled = busy;
+    });
+  if (els.csvImportInput) els.csvImportInput.disabled = busy;
+  if (els.jsonImportInput) els.jsonImportInput.disabled = busy;
+}
+
+function setPostGradeMutationBusy(busy) {
+  postGradeMutationInFlight = busy;
+  if (els.savePostGradeNoteBtn) {
+    els.savePostGradeNoteBtn.disabled = busy;
+    els.savePostGradeNoteBtn.textContent = busy ? "Saving..." : "Save note";
+  }
+  if (els.skipPostGradeNoteBtn) els.skipPostGradeNoteBtn.disabled = busy;
+  if (els.undoGradeBtn) els.undoGradeBtn.disabled = busy;
+}
+
+function writeBrowserFallbackState() {
   if (!appEnv.authRequired) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(problems));
     localStorage.setItem(SESSION_KEY, JSON.stringify(sessions));
     localStorage.setItem(RECOVERY_LANE_KEY, JSON.stringify(recoveryProblemIds));
     if (importMeta) localStorage.setItem(IMPORT_META_KEY, JSON.stringify(importMeta));
+    else localStorage.removeItem(IMPORT_META_KEY);
   }
-  saveRemoteState();
-}
-
-function persistImportMeta() {
-  if (!appEnv.authRequired) localStorage.setItem(IMPORT_META_KEY, JSON.stringify(importMeta));
-  saveRemoteState();
 }
 
 async function loadRemoteState() {
@@ -971,7 +1070,7 @@ async function loadRemoteState() {
 }
 
 async function refreshHostedStateIfIdle() {
-  if (!appEnv.authRequired || !isHostedAllowed || remoteStateRefreshInFlight) return;
+  if (!appEnv.authRequired || !isHostedAllowed || remoteStateRefreshInFlight || remoteSavePendingCount > 0) return;
   if (Date.now() - lastRemoteStateRefreshAt < 1000) return;
 
   const practiceV2Phase = practiceV2Runtime?.phase || "ready";
@@ -986,6 +1085,7 @@ async function refreshHostedStateIfIdle() {
   lastRemoteStateRefreshAt = Date.now();
   try {
     const remoteState = await loadRemoteState();
+    if (remoteSavePendingCount > 0) return;
     const remoteRevision = Number(remoteState?.revision || 0);
     if (!remoteState || remoteRevision <= currentRevision) return;
 
@@ -1099,7 +1199,7 @@ function renderQaTools() {
 }
 
 async function resetQaData() {
-  if (!appEnv.isQa) return;
+  if (!appEnv.isQa || blockTrackerMutationWhileSaving()) return;
   if (!window.confirm("Reset QA data back to the clean fixture?")) return;
 
   setSaveStatus("saving", "Resetting QA data...");
@@ -1120,43 +1220,53 @@ async function resetQaData() {
 }
 
 function saveRemoteState() {
-  const payload = buildTrackerStatePayload({
+  const stateSnapshot = buildTrackerStatePayload({ savedAt: new Date().toISOString() });
+  remoteSavePendingCount += 1;
+  const operation = remoteSaveTail
+    .then(() => performRemoteStateSave(stateSnapshot))
+    .finally(() => {
+      remoteSavePendingCount = Math.max(0, remoteSavePendingCount - 1);
+    });
+  remoteSaveTail = operation.then(() => undefined, () => undefined);
+  return operation;
+}
+
+async function performRemoteStateSave(stateSnapshot) {
+  const payload = {
+    ...stateSnapshot,
     savedAt: new Date().toISOString(),
     revision: currentRevision,
-  });
+  };
 
   setSaveStatus("saving", appEnv.authRequired ? "Saving to your cloud account..." : "Saving to local file...");
-  fetch(API_STATE_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  })
-    .then((response) => {
-      if (response.status === 409) {
-        const error = new Error("conflict");
-        error.isConflict = true;
-        throw error;
-      }
-      if (!response.ok) throw new Error("Save failed");
-      return response.json();
-    })
-    .then((result) => {
-      lastServerSavedAt = result.savedAt || new Date().toISOString();
-      currentRevision = Number(result.revision || currentRevision);
-      setSaveStatus("saved", buildSavedMessage(lastServerSavedAt));
-      if (canUseFriendPulse()) loadFriendPulseData().then(renderFriendPulse);
-    })
-    .catch((error) => {
-      if (error.isConflict) {
-        setSaveStatus("warning", "Cloud save conflict. Another tab or device saved newer data. Export if needed, then reload.");
-        return;
-      }
-      setSaveStatus(
-        "warning",
-        appEnv.authRequired ? "Cloud save failed. Your account was not updated." : "Local file save failed. Browser fallback updated.",
-      );
-      console.warn("Could not save tracker data to the server.");
+  try {
+    const response = await fetch(API_STATE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
     });
+    if (response.status === 409) {
+      setSaveStatus("warning", "Cloud save conflict. Another tab or device saved newer data. Export if needed, then reload.");
+      return { ok: false, conflict: true, revision: currentRevision };
+    }
+    if (!response.ok) throw new Error("Save failed");
+
+    const result = await response.json();
+    lastServerSavedAt = result.savedAt || new Date().toISOString();
+    currentRevision = Number(result.revision || currentRevision);
+    setSaveStatus("saved", buildSavedMessage(lastServerSavedAt));
+    reconcilePracticeV2RuntimeRevision();
+    if (practiceV2Runtime?.phase === "ready") renderPracticeV2();
+    if (canUseFriendPulse()) loadFriendPulseData().then(renderFriendPulse);
+    return { ok: true, revision: currentRevision, savedAt: lastServerSavedAt };
+  } catch {
+    setSaveStatus(
+      "warning",
+      appEnv.authRequired ? "Cloud save failed. Your account was not updated." : "Local file save failed. The change was not kept.",
+    );
+    console.warn("Could not save tracker data to the server.");
+    return { ok: false, conflict: false, revision: currentRevision };
+  }
 }
 
 function setSaveStatus(status, message) {
@@ -2256,9 +2366,11 @@ function renderStats() {
 }
 
 function buildMemoryEvidenceModel() {
+  const now = new Date();
   const evidence = PRACTICE_V2_ENGINE?.deriveEvidence
     ? PRACTICE_V2_ENGINE.deriveEvidence(buildTrackerStatePayload(), {
-        today: toIsoDate(new Date()),
+        today: toIsoDate(now),
+        now: now.toISOString(),
         catalog: practiceV2Catalog(),
       })
     : { skills: new Map(), checkedSkillIds: [], independentSkillIds: [], transferSupportedSkillIds: [], recentAttempts: [] };
@@ -2431,8 +2543,8 @@ function nextRecoveryTiming(recoveryProblems) {
   return next ? `${next.title} ${reviewTimingLabel(next.nextReview)}` : "grade one to schedule it";
 }
 
-function addToRecoveryLane(id) {
-  if (!canUseRecoveryLane()) return;
+async function addToRecoveryLane(id) {
+  if (!canUseRecoveryLane() || recoveryMutationInFlight || blockTrackerMutationWhileSaving()) return;
   const problem = problems.find((item) => item.id === id);
   if (!problem) return;
 
@@ -2451,20 +2563,40 @@ function addToRecoveryLane(id) {
     return;
   }
 
+  const stateBeforeMutation = captureTrackerMutationState();
+  recoveryMutationInFlight = true;
   recoveryProblemIds = normalizeRecoveryProblemIds([...recoveryProblemIds, id]);
-  persist();
+  const saveResult = await persist();
+  recoveryMutationInFlight = false;
+  if (!saveResult.ok) {
+    restoreTrackerMutationState(stateBeforeMutation);
+    setRecoveryMessage(saveResult.conflict
+      ? "Another tab or device changed your tracker. Reload before updating Recovery Lane."
+      : "Recovery Lane could not be updated because the save failed.");
+    return;
+  }
   render();
   setRecoveryMessage(`${problem.title} added to Recovery Lane.`);
 }
 
-function removeFromRecoveryLane(id, options = {}) {
-  if (!canUseRecoveryLane()) return;
+async function removeFromRecoveryLane(id, options = {}) {
+  if (!canUseRecoveryLane() || recoveryMutationInFlight || (!options.skipPersist && blockTrackerMutationWhileSaving())) return;
   const problem = problems.find((item) => item.id === id);
   const nextIds = recoveryProblemIds.filter((problemId) => problemId !== id);
   if (nextIds.length === recoveryProblemIds.length) return;
 
+  const stateBeforeMutation = captureTrackerMutationState();
+  recoveryMutationInFlight = true;
   recoveryProblemIds = nextIds;
-  if (!options.skipPersist) persist();
+  const saveResult = options.skipPersist ? { ok: true } : await persist();
+  recoveryMutationInFlight = false;
+  if (!saveResult.ok) {
+    restoreTrackerMutationState(stateBeforeMutation);
+    setRecoveryMessage(saveResult.conflict
+      ? "Another tab or device changed your tracker. Reload before updating Recovery Lane."
+      : "Recovery Lane could not be updated because the save failed.");
+    return;
+  }
   render();
   if (!options.silent && problem) setRecoveryMessage(`${problem.title} removed from Recovery Lane.`);
 }
@@ -2521,13 +2653,15 @@ function renderStudyListProgress() {
     return;
   }
 
-  const today = toIsoDate(new Date());
+  const now = new Date();
+  const today = toIsoDate(now);
   const lists = Object.values(STUDY_LISTS).map((studyList) => ({
     label: studyList.label,
     summary: PRACTICE_V2_ENGINE.summarizeStudyListEvidence({
       problems,
       catalog: studyList.problems,
       today,
+      now: now.toISOString(),
       windowDays: PRACTICE_V2_EVIDENCE_WINDOW_DAYS,
     }),
   }));
@@ -2802,7 +2936,18 @@ function practiceV2StorageKey() {
 
 function restorePracticeV2Runtime() {
   if (!PRACTICE_V2_WORKFLOW || !isFeatureEnabled("practiceV2")) return;
-  const saved = loadJson(practiceV2StorageKey(), null);
+  let saved = null;
+  try {
+    const sessionValue = sessionStorage.getItem(practiceV2StorageKey());
+    const legacyValue = localStorage.getItem(practiceV2StorageKey());
+    saved = JSON.parse(sessionValue || legacyValue || "null");
+    if (!sessionValue && legacyValue) {
+      sessionStorage.setItem(practiceV2StorageKey(), legacyValue);
+      localStorage.removeItem(practiceV2StorageKey());
+    }
+  } catch {
+    saved = null;
+  }
   practiceV2Runtime = PRACTICE_V2_WORKFLOW.normalizeRuntime(saved || {
     capacityMinutes: Number(trainingProfile.defaultSessionMinutes || 45),
     expectedRevision: currentRevision,
@@ -2816,16 +2961,22 @@ function restorePracticeV2Runtime() {
 function reconcilePracticeV2RuntimeRevision() {
   if (!practiceV2Runtime || !PRACTICE_V2_WORKFLOW?.reconcileRuntimeRevision) return;
   const previousRevision = Number(practiceV2Runtime.expectedRevision || 0);
+  const wasStale = Boolean(practiceV2Runtime.staleRevision);
   practiceV2Runtime = PRACTICE_V2_WORKFLOW.reconcileRuntimeRevision(practiceV2Runtime, currentRevision);
-  if (Number(practiceV2Runtime.expectedRevision || 0) !== previousRevision) persistPracticeV2Runtime();
+  if (
+    Number(practiceV2Runtime.expectedRevision || 0) !== previousRevision ||
+    Boolean(practiceV2Runtime.staleRevision) !== wasStale
+  ) {
+    persistPracticeV2Runtime();
+  }
 }
 
 function persistPracticeV2Runtime() {
   if (!practiceV2Runtime || !isFeatureEnabled("practiceV2")) return;
   try {
-    localStorage.setItem(practiceV2StorageKey(), JSON.stringify(practiceV2Runtime));
+    sessionStorage.setItem(practiceV2StorageKey(), JSON.stringify(practiceV2Runtime));
   } catch {
-    // Runtime persistence is best effort in local/QA mode; evidence remains in tracker state.
+    // Runtime persistence is best effort; evidence remains in tracker state.
   }
 }
 
@@ -2835,6 +2986,7 @@ function clearPracticeV2Runtime() {
     expectedRevision: currentRevision,
   }) || null;
   try {
+    sessionStorage.removeItem(practiceV2StorageKey());
     localStorage.removeItem(practiceV2StorageKey());
   } catch {
     // Ignore unavailable browser storage in QA reset paths.
@@ -2872,14 +3024,27 @@ function getPracticeV2Recommendation({ resetExclusions = false } = {}) {
 
 function ensurePracticeV2Recommendation() {
   if (!practiceV2Runtime || practiceV2Runtime.phase !== "ready") return;
+  const today = toIsoDate(new Date());
   if (
     practiceV2Runtime.phase === "ready" &&
     practiceV2Runtime.recommendation?.public &&
-    practiceV2Runtime.recommendation.algorithmVersion === PRACTICE_V2_ENGINE.ALGORITHM_VERSION
+    practiceV2Runtime.recommendation.algorithmVersion === PRACTICE_V2_ENGINE.ALGORITHM_VERSION &&
+    Number(practiceV2Runtime.expectedRevision || 0) === currentRevision &&
+    practiceV2Runtime.recommendationDate === today
   ) return;
   if (practiceV2Runtime.phase === "ready") practiceV2Runtime.recommendation = null;
   practiceV2Runtime.recommendation = getPracticeV2Recommendation();
   practiceV2Runtime.expectedRevision = currentRevision;
+  practiceV2Runtime.recommendationDate = today;
+  practiceV2Runtime.staleRevision = false;
+  persistPracticeV2Runtime();
+}
+
+function invalidateReadyPracticeV2Recommendation() {
+  if (!practiceV2Runtime || practiceV2Runtime.phase !== "ready") return;
+  practiceV2Runtime.recommendation = null;
+  practiceV2Runtime.recommendationDate = "";
+  practiceV2Runtime.skippedProblemIds = [];
   persistPracticeV2Runtime();
 }
 
@@ -2956,6 +3121,14 @@ function movePracticeV2(event) {
 
 function beginPracticeV2Rep() {
   if (!practiceV2Runtime?.recommendation?.public) return;
+  if (
+    practiceV2Runtime.recommendationDate !== toIsoDate(new Date()) ||
+    Number(practiceV2Runtime.expectedRevision || 0) !== currentRevision
+  ) {
+    invalidateReadyPracticeV2Recommendation();
+    renderPracticeV2();
+    return;
+  }
   practiceV2Runtime.attemptId = crypto.randomUUID();
   practiceV2Runtime.startedAt = new Date().toISOString();
   practiceV2Runtime.lockedTimeBoxMinutes = practiceV2Runtime.recommendation.public.timeBoxMinutes;
@@ -2968,6 +3141,7 @@ function chooseAnotherPracticeV2Rep() {
   if (!currentId) return;
   practiceV2Runtime.skippedProblemIds = [...new Set([...practiceV2Runtime.skippedProblemIds, currentId])];
   practiceV2Runtime.recommendation = getPracticeV2Recommendation();
+  practiceV2Runtime.recommendationDate = toIsoDate(new Date());
   persistPracticeV2Runtime();
   renderPracticeV2();
 }
@@ -3040,15 +3214,19 @@ function capturePracticeV2Reflection() {
 
 function renderPracticeV2Reflection() {
   if (!practiceV2Runtime) return;
+  const saving = practiceV2Runtime.phase === "saving";
   const grade = practiceV2Runtime.provisionalGrade;
   const drafts = practiceV2Runtime.reflectionDrafts;
   const labels = { red: "Could not solve", yellow: "Solved with help or heavy friction", green: "Solved independently" };
   if (els.practiceV2SelectedGrade) els.practiceV2SelectedGrade.textContent = labels[grade] || "";
   if (els.practiceV2Elapsed) {
     els.practiceV2Elapsed.value = drafts.shared.elapsedMinutes;
-    els.practiceV2Elapsed.disabled = !drafts.shared.timeTracked;
+    els.practiceV2Elapsed.disabled = saving || !drafts.shared.timeTracked;
   }
-  if (els.practiceV2TimeUntracked) els.practiceV2TimeUntracked.checked = !drafts.shared.timeTracked;
+  if (els.practiceV2TimeUntracked) {
+    els.practiceV2TimeUntracked.checked = !drafts.shared.timeTracked;
+    els.practiceV2TimeUntracked.disabled = saving;
+  }
   if (els.practiceV2Assistance) els.practiceV2Assistance.value = drafts.nonIndependent.assistance;
   if (els.practiceV2Blocker) els.practiceV2Blocker.value = drafts.nonIndependent.blocker;
   if (els.practiceV2Friction) els.practiceV2Friction.value = drafts.independent.friction;
@@ -3065,6 +3243,21 @@ function renderPracticeV2Reflection() {
   if (els.practiceV2SolutionQualityField) {
     els.practiceV2SolutionQualityField.hidden = grade === "red";
   }
+  [
+    els.practiceV2Assistance,
+    els.practiceV2Blocker,
+    els.practiceV2Friction,
+    els.practiceV2SolutionQuality,
+    els.practiceV2Note,
+    els.practiceV2Complexity,
+  ].filter(Boolean).forEach((control) => {
+    control.disabled = saving;
+  });
+  if (els.practiceV2SaveBtn) {
+    els.practiceV2SaveBtn.disabled = saving;
+    els.practiceV2SaveBtn.textContent = saving ? "Saving..." : "Save rep";
+  }
+  if (els.practiceV2BackGradeBtn) els.practiceV2BackGradeBtn.disabled = saving;
 }
 
 function renderPracticeV2TimingFeedback() {
@@ -3107,7 +3300,7 @@ function materializePracticeV2Problem() {
   return { problem: addProblemFromPlan(plan), created: true };
 }
 
-function savePracticeV2Rep(event) {
+async function savePracticeV2Rep(event) {
   event.preventDefault();
   if (!practiceV2Runtime || practiceV2Runtime.phase !== "reflecting") return;
   capturePracticeV2Reflection();
@@ -3121,6 +3314,13 @@ function savePracticeV2Rep(event) {
     return;
   }
   els.practiceV2Error.textContent = "";
+  if (
+    practiceV2Runtime.staleRevision ||
+    Number(practiceV2Runtime.expectedRevision || 0) !== currentRevision
+  ) {
+    els.practiceV2Error.textContent = "Tracker data changed after this rep started. Go back and choose a fresh recommendation before saving.";
+    return;
+  }
   const { problem, created } = materializePracticeV2Problem();
   if (!problem) {
     els.practiceV2Error.textContent = "This recommendation changed. Choose another rep and try again.";
@@ -3128,8 +3328,6 @@ function savePracticeV2Rep(event) {
   }
 
   const problemSnapshot = created ? null : cloneState(problem);
-  const sessionsSnapshot = cloneState(sessions);
-  const recoverySnapshot = cloneState(recoveryProblemIds);
   const recommendation = cloneState(practiceV2Runtime.recommendation);
   const metadata = {
     ...validation.metadata,
@@ -3144,11 +3342,9 @@ function savePracticeV2Rep(event) {
   practiceV2Runtime.phase = "saving";
   persistPracticeV2Runtime();
   renderPracticeV2();
-  applyGrade(problem.id, practiceV2Runtime.provisionalGrade, {
+  const gradeResult = await applyGrade(problem.id, practiceV2Runtime.provisionalGrade, {
     createdProblemId: created ? problem.id : "",
     problemSnapshot,
-    sessionsSnapshot,
-    recoverySnapshot,
     attemptType,
     attemptContext: "practice-v2",
     attemptMetadata: metadata,
@@ -3156,6 +3352,15 @@ function savePracticeV2Rep(event) {
     complexityKnown: validation.metadata.complexityKnown,
     suppressPostGradePrompt: true,
   });
+  if (!gradeResult.ok) {
+    practiceV2Runtime.phase = "reflecting";
+    els.practiceV2Error.textContent = gradeResult.saveResult?.conflict
+      ? "Another tab or device saved newer tracker data. Reload before saving this rep."
+      : "This rep could not be saved. Your reflection is still here so you can try again.";
+    persistPracticeV2Runtime();
+    renderPracticeV2();
+    return;
+  }
 
   const savedProblem = problems.find((item) => item.id === problem.id);
   const savedEntry = [...(savedProblem?.reviewHistory || [])].reverse().find((entry) => entry.attemptId === metadata.attemptId);
@@ -3182,6 +3387,8 @@ function savePracticeV2Rep(event) {
     minutesOverTarget: validation.metadata.minutesOverTarget,
   };
   practiceV2Runtime.undoReceipt = cloneState(lastGradeUndo);
+  practiceV2Runtime.expectedRevision = currentRevision;
+  practiceV2Runtime.staleRevision = false;
   practiceV2Runtime.skippedProblemIds = [...new Set([...practiceV2Runtime.skippedProblemIds, recommendation.public.problemId])];
   persistPracticeV2Runtime();
   renderPracticeV2();
@@ -3213,27 +3420,39 @@ function getNextPracticeV2Rep() {
   if (!practiceV2Runtime) return;
   practiceV2Runtime.phase = "ready";
   practiceV2Runtime.recommendation = null;
+  practiceV2Runtime.recommendationDate = "";
   practiceV2Runtime.attemptId = "";
   practiceV2Runtime.startedAt = "";
   practiceV2Runtime.lockedTimeBoxMinutes = null;
   practiceV2Runtime.provisionalGrade = "";
   practiceV2Runtime.reflectionDrafts = PRACTICE_V2_WORKFLOW.createRuntime().reflectionDrafts;
   practiceV2Runtime.completion = null;
+  practiceV2Runtime.undoReceipt = null;
+  practiceV2Runtime.expectedRevision = currentRevision;
+  practiceV2Runtime.staleRevision = false;
+  if (els.gradeResult) els.gradeResult.textContent = "";
   persistPracticeV2Runtime();
   renderPracticeV2();
 }
 
-function undoPracticeV2Rep() {
+async function undoPracticeV2Rep() {
   if (!practiceV2Runtime?.undoReceipt) return;
   if (["attempting", "grading", "reflecting"].includes(practiceV2Runtime.phase)) {
     if (!window.confirm("Discard this unsaved attempt and undo the last saved rep?")) return;
   }
-  lastGradeUndo = cloneState(practiceV2Runtime.undoReceipt);
+  const receipt = cloneState(practiceV2Runtime.undoReceipt);
+  const result = await undoLastGrade({ receipt, suppressMessage: true });
+  if (!result.ok) {
+    window.alert(result.reason || "That rep could not be undone safely.");
+    return;
+  }
   practiceV2Runtime.phase = "reflecting";
   practiceV2Runtime.completion = null;
   practiceV2Runtime.undoReceipt = null;
+  practiceV2Runtime.expectedRevision = currentRevision;
+  practiceV2Runtime.staleRevision = false;
+  if (els.gradeResult) els.gradeResult.textContent = "";
   persistPracticeV2Runtime();
-  undoLastGrade();
   renderPracticeV2();
 }
 
@@ -4116,7 +4335,7 @@ function topicPenalty(topic, recentTopics) {
   return recentTopics.filter((recentTopic) => recentTopic === topic).length;
 }
 
-function gradeDailyPick(cardType, grade) {
+async function gradeDailyPick(cardType, grade) {
   const pick = cardType === "review" ? dailyPicks.review : dailyPicks.newProblem;
   if (!pick) return;
 
@@ -4130,19 +4349,15 @@ function gradeDailyPick(cardType, grade) {
   }
 
   const problemSnapshot = existing ? cloneState(existing) : null;
-  const sessionsSnapshot = cloneState(sessions);
-  const recoverySnapshot = cloneState(recoveryProblemIds);
   if (existing && cardType === "new" && !isColdCheck) {
     existing.listMemberships = mergeMemberships(existing.listMemberships, [getSelectedStudyList().membership]);
   }
   const problem = existing || addProblemFromPlan(pick);
   activeAttempt = null;
   persistColdWorkflowSession();
-  applyGrade(problem.id, grade, {
+  await applyGrade(problem.id, grade, {
     createdProblemId: existing ? "" : problem.id,
     problemSnapshot,
-    sessionsSnapshot,
-    recoverySnapshot,
     attemptType: attemptContext,
     attemptContext,
   });
@@ -4174,9 +4389,14 @@ function beginColdGradeDraft(problem, grade) {
   showColdGradeDraftPrompt(problem);
 }
 
-function applyGrade(id, grade, undoContext = {}) {
+async function applyGrade(id, grade, undoContext = {}) {
+  if (blockTrackerMutationWhileSaving()) {
+    return { ok: false, saveResult: { ok: false, busy: true, conflict: false }, receipt: null };
+  }
   const today = toIsoDate(new Date());
   const now = new Date().toISOString();
+  const previousUndo = lastGradeUndo;
+  const wasInRecoveryBefore = recoveryProblemIds.includes(id);
 
   let gradeTransition = null;
 
@@ -4195,6 +4415,7 @@ function applyGrade(id, grade, undoContext = {}) {
     });
     const reviewEntry = {
       date: today,
+      occurredAt: now,
       createdAt: now,
       grade,
       id: crypto.randomUUID(),
@@ -4246,14 +4467,16 @@ function applyGrade(id, grade, undoContext = {}) {
       title: gradedProblem.title,
       createdProblemId: undoContext.createdProblemId || "",
       problemSnapshot: undoContext.problemSnapshot || null,
-      sessionsSnapshot: undoContext.sessionsSnapshot || cloneState(sessions),
-      recoverySnapshot: undoContext.recoverySnapshot || cloneState(recoveryProblemIds),
+      historyEntryId: latestHistoryEntry?.id || "",
+      problemUpdatedAtAfter: gradedProblem.updatedAt,
+      wasInRecoveryBefore,
       restoreColdPractice: undoContext.attemptType === "cold",
     };
     maybeGraduateRecoveryProblem(gradedProblem);
     sessions = [
       {
         date: today,
+        occurredAt: now,
         problemId: id,
         title: gradedProblem.title,
         topic: gradedProblem.topic,
@@ -4273,11 +4496,22 @@ function applyGrade(id, grade, undoContext = {}) {
   if (activeAttempt?.problemId === id) activeAttempt = null;
   persistColdWorkflowSession();
 
-  persist();
+  const receipt = cloneState(lastGradeUndo);
+  const saveResult = await persist();
+  if (!saveResult.ok) {
+    restoreGradeMutation(receipt);
+    lastGradeUndo = previousUndo;
+    writeBrowserFallbackState();
+    persistColdWorkflowSession();
+    render();
+    return { ok: false, saveResult, receipt };
+  }
+
   render();
   if (els.gradeResult && gradeTransition) els.gradeResult.textContent = buildGradeResultSummary(gradeTransition);
   celebrateRep(undoContext.attemptType || "");
   if (!undoContext.suppressPostGradePrompt) showPostGradeNotePrompt(gradedProblem);
+  return { ok: true, saveResult, receipt };
 }
 
 function celebrateRep(attemptType) {
@@ -4291,26 +4525,83 @@ function celebrateRep(attemptType) {
   }, 1600);
 }
 
-function undoLastGrade() {
-  if (!lastGradeUndo) return;
-
-  const { problemId, createdProblemId, problemSnapshot, sessionsSnapshot, recoverySnapshot, restoreColdPractice, title } = lastGradeUndo;
-  problems = createdProblemId
-    ? problems.filter((problem) => problem.id !== createdProblemId)
-    : problems.map((problem) => (problem.id === problemId ? normalizeProblem(problemSnapshot) : problem));
-  sessions = sessionsSnapshot;
-  recoveryProblemIds = Array.isArray(recoverySnapshot) ? recoverySnapshot : recoveryProblemIds;
-  if (restoreColdPractice && problemSnapshot) {
-    coldPracticeProblemId = problemId;
-    activeAttempt = { type: "cold", problemId, title: problemSnapshot.title };
+function restoreGradeMutation(receipt) {
+  if (!receipt?.problemId || !receipt.historyEntryId) {
+    return { ok: false, reason: "This older undo record cannot be applied safely." };
   }
-  lastGradeUndo = null;
 
-  persist();
+  const currentProblem = problems.find((problem) => problem.id === receipt.problemId);
+  const matchingHistory = currentProblem?.reviewHistory?.find((entry) => entry.id === receipt.historyEntryId);
+  if (!currentProblem || !matchingHistory) {
+    return { ok: false, reason: "That attempt is no longer the current saved record." };
+  }
+  if (receipt.problemUpdatedAtAfter && currentProblem.updatedAt !== receipt.problemUpdatedAtAfter) {
+    return { ok: false, reason: "This problem changed after that attempt, so undo was stopped to protect newer work." };
+  }
+
+  if (receipt.createdProblemId) {
+    problems = problems.filter((problem) => problem.id !== receipt.createdProblemId);
+    recoveryProblemIds = recoveryProblemIds.filter((problemId) => problemId !== receipt.createdProblemId);
+  } else if (receipt.problemSnapshot) {
+    problems = problems.map((problem) => (
+      problem.id === receipt.problemId ? normalizeProblem(receipt.problemSnapshot) : problem
+    ));
+  } else {
+    return { ok: false, reason: "The earlier problem state is unavailable, so undo was stopped." };
+  }
+
+  sessions = sessions.filter((session) => session.historyEntryId !== receipt.historyEntryId);
+  if (receipt.wasInRecoveryBefore && !recoveryProblemIds.includes(receipt.problemId)) {
+    recoveryProblemIds = [...recoveryProblemIds, receipt.problemId];
+  }
+  if (receipt.restoreColdPractice && receipt.problemSnapshot) {
+    coldPracticeProblemId = receipt.problemId;
+    activeAttempt = { type: "cold", problemId: receipt.problemId, title: receipt.problemSnapshot.title };
+  }
+  return { ok: true, reason: "" };
+}
+
+async function undoLastGrade({ receipt = lastGradeUndo, suppressMessage = false } = {}) {
+  if (!receipt || undoInFlight) return { ok: false, reason: "Nothing is available to undo." };
+  if (blockTrackerMutationWhileSaving()) {
+    return { ok: false, reason: "Finish saving the previous change before undoing this attempt." };
+  }
+  undoInFlight = true;
+  const stateBeforeUndo = {
+    problems: cloneState(problems),
+    sessions: cloneState(sessions),
+    recoveryProblemIds: cloneState(recoveryProblemIds),
+    coldPracticeProblemId,
+    activeAttempt: cloneState(activeAttempt),
+  };
+  const restored = restoreGradeMutation(receipt);
+  if (!restored.ok) {
+    undoInFlight = false;
+    if (!suppressMessage && els.gradeResult) els.gradeResult.textContent = restored.reason;
+    return restored;
+  }
+
+  const saveResult = await persist();
+  if (!saveResult.ok) {
+    problems = stateBeforeUndo.problems;
+    sessions = stateBeforeUndo.sessions;
+    recoveryProblemIds = stateBeforeUndo.recoveryProblemIds;
+    coldPracticeProblemId = stateBeforeUndo.coldPracticeProblemId;
+    activeAttempt = stateBeforeUndo.activeAttempt;
+    writeBrowserFallbackState();
+    persistColdWorkflowSession();
+    render();
+    undoInFlight = false;
+    return { ok: false, reason: "Undo could not be saved, so the attempt was left unchanged." };
+  }
+
+  if (lastGradeUndo?.historyEntryId === receipt.historyEntryId) lastGradeUndo = null;
   clearPostGradeNote();
   persistColdWorkflowSession();
   render();
-  if (els.gradeResult) els.gradeResult.textContent = `Undid last grade for ${title}.`;
+  if (!suppressMessage && els.gradeResult) els.gradeResult.textContent = `Undid last grade for ${receipt.title}.`;
+  undoInFlight = false;
+  return { ok: true, reason: "" };
 }
 
 function showPostGradeNotePrompt(problem, preferredEntry = null) {
@@ -4404,7 +4695,7 @@ function resumePendingColdBenchmark() {
         .filter((entry) => entry.attemptContext === "cold" && entry.benchmarkPending)
         .map((entry) => ({ problem, entry })),
     )
-    .sort((a, b) => dateValue(b.entry.createdAt || b.entry.date) - dateValue(a.entry.createdAt || a.entry.date))[0];
+    .sort((a, b) => compareHistoryEntriesNewestFirst(a.entry, b.entry))[0];
 
   if (pending) showPostGradeNotePrompt(pending.problem, pending.entry);
 }
@@ -4530,7 +4821,8 @@ function captureColdDraftForm() {
   persistColdWorkflowSession();
 }
 
-function savePostGradeNote() {
+async function savePostGradeNote() {
+  if (postGradeMutationInFlight || blockTrackerMutationWhileSaving()) return;
   if (coldGradeDraft) {
     finishColdGradeDraft();
     return;
@@ -4542,6 +4834,8 @@ function savePostGradeNote() {
   const attemptMetadata = getPostGradeAttemptMetadata();
   if (pendingAttemptContext === "cold" && !attemptMetadata) return;
 
+  const stateBeforeMutation = captureTrackerMutationState();
+  setPostGradeMutationBusy(true);
   const now = new Date().toISOString();
   const shouldUpdateComplexity = !els.postGradeComplexityField.hidden;
   problems = problems.map((problem) =>
@@ -4568,7 +4862,17 @@ function savePostGradeNote() {
     );
   }
 
-  persist();
+  const saveResult = await persist();
+  setPostGradeMutationBusy(false);
+  if (!saveResult.ok) {
+    restoreTrackerMutationState(stateBeforeMutation);
+    if (els.gradeResult) {
+      els.gradeResult.textContent = saveResult.conflict
+        ? "Your note was not saved because another tab changed the tracker. Reload and try again."
+        : "Your note could not be saved. It is still here so you can try again.";
+    }
+    return;
+  }
   clearPostGradeNote();
   render();
   const savedSignals = tags.length > 0 || Boolean(attemptMetadata);
@@ -4577,7 +4881,7 @@ function savePostGradeNote() {
   }
 }
 
-function finishColdGradeDraft() {
+async function finishColdGradeDraft() {
   if (!coldGradeDraft) return;
   captureColdDraftForm();
   const problem = problems.find((item) => item.id === coldGradeDraft.problemId && isSeenUnverified(item));
@@ -4590,16 +4894,12 @@ function finishColdGradeDraft() {
   if (!attemptMetadata) return;
   const draft = cloneState(coldGradeDraft);
   const problemSnapshot = cloneState(problem);
-  const sessionsSnapshot = cloneState(sessions);
-  const recoverySnapshot = cloneState(recoveryProblemIds);
   coldGradeDraft = null;
   activeAttempt = null;
   clearPostGradeNote();
   persistColdWorkflowSession();
-  applyGrade(problem.id, draft.grade, {
+  const gradeResult = await applyGrade(problem.id, draft.grade, {
     problemSnapshot,
-    sessionsSnapshot,
-    recoverySnapshot,
     attemptType: "cold",
     attemptContext: "cold",
     attemptMetadata,
@@ -4608,6 +4908,17 @@ function finishColdGradeDraft() {
     complexityKnown: draft.grade === "red" ? problem.complexityKnown : draft.complexityKnown,
     suppressPostGradePrompt: true,
   });
+  if (!gradeResult.ok) {
+    coldGradeDraft = draft;
+    coldPracticeProblemId = problem.id;
+    activeAttempt = { type: "cold", problemId: problem.id, title: problem.title };
+    persistColdWorkflowSession();
+    showColdGradeDraftPrompt(problem);
+    els.postGradeBenchmarkError.textContent = gradeResult.saveResult?.conflict
+      ? "Another tab or device saved newer tracker data. Reload before finishing this cold check."
+      : "The cold check could not be saved. Your answers are still here so you can try again.";
+    return;
+  }
   showColdCheckCompletion(problem.id);
 }
 
@@ -4862,7 +5173,7 @@ function renderHistoryTab(problem) {
     return;
   }
 
-  const history = [...(problem.reviewHistory || [])].sort((a, b) => dateValue(b.date) - dateValue(a.date));
+  const history = [...(problem.reviewHistory || [])].sort(compareHistoryEntriesNewestFirst);
   els.addBackfillBtn.disabled = false;
   els.backfillHelp.textContent =
     "Add a real graded attempt you completed elsewhere. Imported rows stay visible above, but only real grades build current evidence and schedule same-title recall.";
@@ -5003,7 +5314,8 @@ function practiceTaskTypeLabel(value) {
   })[value] || "";
 }
 
-function addBackfillAttempt() {
+async function addBackfillAttempt() {
+  if (problemMutationInFlight || blockTrackerMutationWhileSaving()) return;
   const id = els.problemId.value;
   const problem = problems.find((item) => item.id === id);
   if (!problem) return;
@@ -5027,9 +5339,21 @@ function addBackfillAttempt() {
     return;
   }
 
+  const sameDayGrade = (problem.reviewHistory || []).find((entry) => (
+    isProperGrade(entry.grade) && normalizeDate(entry.date || entry.occurredAt || entry.completedAt) === date
+  ));
+  if (sameDayGrade) {
+    alert("A graded attempt already exists on that date. Delete that history entry first if you need to replace it.");
+    return;
+  }
+
+  const stateBeforeMutation = captureTrackerMutationState();
+  setProblemMutationBusy(true, "Adding...");
+
   const now = new Date().toISOString();
   const entry = {
     date,
+    createdAt: now,
     grade,
     backfilled: true,
     id: crypto.randomUUID(),
@@ -5062,7 +5386,19 @@ function addBackfillAttempt() {
   lastGradeUndo = null;
   clearPostGradeNote();
 
-  persist();
+  const saveResult = await persist();
+  if (!saveResult.ok) {
+    restoreTrackerMutationState(stateBeforeMutation);
+    setProblemMutationBusy(false);
+    renderReviewSummary(problem);
+    renderHistoryTab(problem);
+    alert(saveResult.conflict
+      ? "Another tab or device saved newer data. Reload before adding this backfill."
+      : "The backfill could not be saved. Your entry is still in the form so you can try again.");
+    return;
+  }
+
+  setProblemMutationBusy(false);
   render();
   renderReviewSummary(nextProblem);
   els.statusInput.value = nextProblem.status;
@@ -5076,7 +5412,8 @@ function addBackfillAttempt() {
   ].filter(Boolean).join(" ");
 }
 
-function deleteHistoryEntry(entryKey) {
+async function deleteHistoryEntry(entryKey) {
+  if (problemMutationInFlight || blockTrackerMutationWhileSaving()) return;
   const id = els.problemId.value;
   const problem = problems.find((item) => item.id === id);
   if (!problem || !entryKey) return;
@@ -5087,6 +5424,9 @@ function deleteHistoryEntry(entryKey) {
   if (!window.confirm(`Delete the ${historyGradeLabel(entry.grade).toLowerCase()} attempt from ${formatDate(entry.date)}?`)) {
     return;
   }
+
+  const stateBeforeMutation = captureTrackerMutationState();
+  setProblemMutationBusy(true, "Saving...");
 
   const nextProblem = rebuildProblemFromHistory({
     ...problem,
@@ -5108,7 +5448,19 @@ function deleteHistoryEntry(entryKey) {
   lastGradeUndo = null;
   clearPostGradeNote();
 
-  persist();
+  const saveResult = await persist();
+  if (!saveResult.ok) {
+    restoreTrackerMutationState(stateBeforeMutation);
+    setProblemMutationBusy(false);
+    renderReviewSummary(problem);
+    renderHistoryTab(problem);
+    alert(saveResult.conflict
+      ? "Another tab or device saved newer data. Reload before deleting this history entry."
+      : "The history entry could not be deleted because the save failed.");
+    return;
+  }
+
+  setProblemMutationBusy(false);
   render();
   renderReviewSummary(nextProblem);
   els.statusInput.value = nextProblem.status;
@@ -5130,6 +5482,37 @@ function historyEntryKey(entry) {
   ].join("|");
 }
 
+function compareHistoryEntriesChronologically(a, b) {
+  const aDate = normalizeDate(a?.date || a?.occurredAt || a?.completedAt || a?.createdAt);
+  const bDate = normalizeDate(b?.date || b?.occurredAt || b?.completedAt || b?.createdAt);
+  const dateDifference = dateValue(aDate) - dateValue(bDate);
+  if (dateDifference) return dateDifference;
+
+  // Date-only imported rows are historical context, so place them before real
+  // grades on the same day instead of letting array order change replay state.
+  const kindDifference = historyEntrySortGroup(a) - historyEntrySortGroup(b);
+  if (kindDifference) return kindDifference;
+
+  const timestampDifference = historyEntryOrderTimestamp(a, aDate) - historyEntryOrderTimestamp(b, bDate);
+  if (timestampDifference) return timestampDifference;
+
+  return historyEntryKey(a).localeCompare(historyEntryKey(b));
+}
+
+function compareHistoryEntriesNewestFirst(a, b) {
+  return compareHistoryEntriesChronologically(b, a);
+}
+
+function historyEntrySortGroup(entry) {
+  return isProperGrade(entry?.grade) ? 1 : 0;
+}
+
+function historyEntryOrderTimestamp(entry, normalizedDate = "") {
+  const occurrenceTimestamp = entry?.occurredAt || entry?.completedAt || "";
+  const timestamp = Date.parse(occurrenceTimestamp || (!entry?.backfilled ? entry?.createdAt || "" : ""));
+  return Number.isFinite(timestamp) ? timestamp : dateValue(normalizedDate);
+}
+
 function renderLearningSignalTags(tags = []) {
   const cleanTags = Array.isArray(tags) ? tags.filter((tag) => LEARNING_SIGNAL_KEYS.includes(tag)) : [];
   if (cleanTags.length === 0) return "";
@@ -5145,7 +5528,7 @@ function learningSignalLabel(tag) {
 }
 
 function rebuildProblemFromHistory(problem) {
-  const sortedHistory = [...(problem.reviewHistory || [])].sort((a, b) => dateValue(a.date) - dateValue(b.date));
+  const sortedHistory = [...(problem.reviewHistory || [])].sort(compareHistoryEntriesChronologically);
   const firstAttemptAt = sortedHistory[0]?.date || problem.firstAttemptAt || "";
   const latestContextEntry = [...sortedHistory].reverse().find((entry) => !isProperGrade(entry.grade)) || null;
   let stage = 0;
@@ -5449,8 +5832,11 @@ function getMasteryBlockers(problem) {
   return blockers;
 }
 
-function saveProblem(event) {
+async function saveProblem(event) {
   event.preventDefault();
+  if (problemMutationInFlight || blockTrackerMutationWhileSaving()) return;
+  const stateBeforeMutation = captureTrackerMutationState();
+  setProblemMutationBusy(true);
   const id = els.problemId.value || crypto.randomUUID();
   const existing = problems.find((problem) => problem.id === id);
   const status = els.statusInput.value;
@@ -5493,13 +5879,29 @@ function saveProblem(event) {
     : [masteredNext, ...problems];
   recoveryProblemIds = normalizeRecoveryProblemIds(recoveryProblemIds);
 
-  persist();
+  const saveResult = await persist();
+  if (!saveResult.ok) {
+    restoreTrackerMutationState(stateBeforeMutation);
+    setProblemMutationBusy(false);
+    alert(saveResult.conflict
+      ? "Another tab or device saved newer data. Reload before saving this problem."
+      : "This problem could not be saved. The editor is still open so you can try again.");
+    return;
+  }
+
+  setProblemMutationBusy(false);
   render();
   els.problemDialog.close();
 }
 
-function deleteCurrentProblem() {
+async function deleteCurrentProblem() {
+  if (problemMutationInFlight || blockTrackerMutationWhileSaving()) return;
   const id = els.problemId.value;
+  const problem = problems.find((item) => item.id === id);
+  if (!problem) return;
+  if (!window.confirm(`Delete ${problem.title}? This removes its saved history too.`)) return;
+  const stateBeforeMutation = captureTrackerMutationState();
+  setProblemMutationBusy(true, "Deleting...");
   problems = problems.filter((problem) => problem.id !== id);
   recoveryProblemIds = recoveryProblemIds.filter((problemId) => problemId !== id);
   sessions = sessions.filter((session) => session.problemId !== id);
@@ -5507,23 +5909,36 @@ function deleteCurrentProblem() {
     clearColdWorkflowSession();
     clearPostGradeNote();
   }
-  persist();
+  const saveResult = await persist();
+  if (!saveResult.ok) {
+    restoreTrackerMutationState(stateBeforeMutation);
+    setProblemMutationBusy(false);
+    alert(saveResult.conflict
+      ? "Another tab or device saved newer data. Reload before deleting this problem."
+      : "This problem could not be deleted because the save failed.");
+    return;
+  }
+
+  setProblemMutationBusy(false);
   render();
   els.problemDialog.close();
 }
 
 function seedBlind75() {
-  seedStudyList("blind75");
+  return seedStudyList("blind75");
 }
 
 function seedNeetcode150() {
-  seedStudyList("neetcode150");
+  return seedStudyList("neetcode150");
 }
 
-function seedStudyList(listId) {
+async function seedStudyList(listId) {
+  if (settingsDataMutationInFlight || blockTrackerMutationWhileSaving()) return;
   const studyList = STUDY_LISTS[listId];
   if (!studyList) return;
 
+  const stateBeforeMutation = captureTrackerMutationState();
+  setSettingsDataMutationBusy(true);
   const now = new Date().toISOString();
   let added = 0;
   let removed = 0;
@@ -5565,7 +5980,15 @@ function seedStudyList(listId) {
     added += 1;
   });
 
-  persist();
+  const saveResult = await persist();
+  setSettingsDataMutationBusy(false);
+  if (!saveResult.ok) {
+    restoreTrackerMutationState(stateBeforeMutation);
+    alert(saveResult.conflict
+      ? `Another tab or device changed your tracker. Reload before syncing ${studyList.label}.`
+      : `${studyList.label} could not be synced because the save failed.`);
+    return;
+  }
   render();
   alert(`${studyList.label} synced. Added ${added} new problems and removed ${removed} stale memberships.`);
 }
@@ -5621,15 +6044,19 @@ function planToProblem(planProblem, membership = "blind75") {
 }
 
 function importCsv(event) {
+  if (settingsDataMutationInFlight || blockTrackerMutationWhileSaving()) return;
   const [file] = event.target.files;
   if (!file) return;
 
   const reader = new FileReader();
-  reader.addEventListener("load", () => {
+  reader.addEventListener("load", async () => {
     try {
+      if (blockTrackerMutationWhileSaving()) return;
       const rows = parseCsv(String(reader.result));
       if (rows.length === 0) throw new Error("No CSV rows found");
       const imported = rows.map(csvRowToProblem).filter(Boolean);
+      const stateBeforeMutation = captureTrackerMutationState();
+      setSettingsDataMutationBusy(true);
       mergeImportedProblems(imported);
       importMeta = {
         importedAt: toIsoDate(new Date()),
@@ -5637,11 +6064,19 @@ function importCsv(event) {
         rowCount: imported.length,
         schemaVersion: EXPORT_VERSION,
       };
-      persist();
-      persistImportMeta();
+      const saveResult = await persist();
+      setSettingsDataMutationBusy(false);
+      if (!saveResult.ok) {
+        restoreTrackerMutationState(stateBeforeMutation);
+        alert(saveResult.conflict
+          ? "Another tab or device changed your tracker. Reload before importing the CSV."
+          : "The CSV was read, but its changes could not be saved.");
+        return;
+      }
       render();
       alert(`Imported ${imported.length} CSV rows. The local server file is now the source of truth.`);
     } catch (error) {
+      setSettingsDataMutationBusy(false);
       console.error(error);
       alert("That CSV could not be imported. Check the file format and try again.");
     } finally {
@@ -5757,12 +6192,14 @@ function exportJson() {
 }
 
 function importJson(event) {
+  if (settingsDataMutationInFlight || blockTrackerMutationWhileSaving()) return;
   const [file] = event.target.files;
   if (!file) return;
 
   const reader = new FileReader();
-  reader.addEventListener("load", () => {
+  reader.addEventListener("load", async () => {
     try {
+      if (blockTrackerMutationWhileSaving()) return;
       const parsed = JSON.parse(String(reader.result));
       const imported = Array.isArray(parsed)
         ? { version: 3, problems: parsed, sessions: [] }
@@ -5775,6 +6212,8 @@ function importJson(event) {
       ) {
         return;
       }
+      const stateBeforeMutation = captureTrackerMutationState();
+      setSettingsDataMutationBusy(true);
       const expectedRevision = currentRevision;
       const migrated = migrateTrackerState({ ...imported, exportedAt: undefined });
       applyRemoteState({
@@ -5782,9 +6221,18 @@ function importJson(event) {
         savedAt: lastServerSavedAt,
         revision: expectedRevision,
       });
-      persist();
+      const saveResult = await persist();
+      setSettingsDataMutationBusy(false);
+      if (!saveResult.ok) {
+        restoreTrackerMutationState(stateBeforeMutation);
+        alert(saveResult.conflict
+          ? "Another tab or device changed your tracker. Reload before importing this backup."
+          : "The backup was read, but its changes could not be saved.");
+        return;
+      }
       render();
     } catch (error) {
+      setSettingsDataMutationBusy(false);
       console.error(error);
       alert("That JSON file does not look like a tracker export.");
     } finally {
@@ -6047,12 +6495,14 @@ function leetcodeImportActionLabel(candidate) {
   return "Skip";
 }
 
-function applyLeetcodeProgressImport() {
-  if (!canUseLeetcodeImport()) return;
+async function applyLeetcodeProgressImport() {
+  if (!canUseLeetcodeImport() || settingsDataMutationInFlight || blockTrackerMutationWhileSaving()) return;
   const plan = pendingLeetcodeImportPlan || buildLeetcodeImportPlan(pendingLeetcodeImportRows);
   const includedRows = plan.importable.filter(isLeetcodeImportIncluded);
   if (includedRows.length === 0) return;
 
+  const stateBeforeMutation = captureTrackerMutationState();
+  setSettingsDataMutationBusy(true);
   const now = new Date().toISOString();
   let added = 0;
   includedRows.forEach((candidate) => {
@@ -6065,8 +6515,15 @@ function applyLeetcodeProgressImport() {
     rowCount: added,
     schemaVersion: EXPORT_VERSION,
   };
-  persist();
-  persistImportMeta();
+  const saveResult = await persist();
+  setSettingsDataMutationBusy(false);
+  if (!saveResult.ok) {
+    restoreTrackerMutationState(stateBeforeMutation);
+    alert(saveResult.conflict
+      ? "Another tab or device changed your tracker. Reload before applying this LeetCode import."
+      : "The LeetCode history was prepared, but its changes could not be saved.");
+    return;
+  }
   render();
   els.leetcodeImportDialog.close();
   updateLeetcodeImportStatus(now);
@@ -6081,7 +6538,7 @@ function upsertLeetcodeImportedProblem(candidate, now) {
 
   if (existing) {
     if (hasLeetcodeImportedEntry(existing, candidate)) return false;
-    const nextHistory = [...(existing.reviewHistory || []), entry].sort((a, b) => dateValue(a.date) - dateValue(b.date));
+    const nextHistory = [...(existing.reviewHistory || []), entry].sort(compareHistoryEntriesChronologically);
     const hasProperHistory = nextHistory.some((item) => isProperGrade(item.grade));
     const baseProblem = {
       ...existing,
@@ -6120,7 +6577,7 @@ function upsertLeetcodeImportedProblem(candidate, now) {
 }
 
 function normalizeImportedOnlyProblem(problem) {
-  const history = [...(problem.reviewHistory || [])].sort((a, b) => dateValue(a.date) - dateValue(b.date));
+  const history = [...(problem.reviewHistory || [])].sort(compareHistoryEntriesChronologically);
   const latest = history.at(-1);
   const count = history.length;
   const stage = problem.importStage == null ? inferStageFromCount(count) : clampLeetcodeImportStage(problem.importStage);

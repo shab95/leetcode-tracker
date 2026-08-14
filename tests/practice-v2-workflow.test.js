@@ -71,6 +71,8 @@ test("a newer tracker revision invalidates an idle cached recommendation", () =>
   assert.equal(runtime.phase, "ready");
   assert.equal(runtime.expectedRevision, 5);
   assert.equal(runtime.recommendation, null);
+  assert.equal(runtime.recommendationDate, "");
+  assert.equal(runtime.staleRevision, false);
   assert.deepEqual(runtime.skippedProblemIds, []);
 });
 
@@ -96,6 +98,7 @@ test("revision reconciliation never discards an attempt in progress", () => {
   assert.equal(runtime.phase, "reflecting");
   assert.equal(runtime.expectedRevision, 4);
   assert.equal(runtime.attemptId, "attempt-1");
+  assert.equal(runtime.staleRevision, true);
   assert.deepEqual(runtime.reflectionDrafts, draft());
 });
 

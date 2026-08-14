@@ -126,6 +126,8 @@ at the solution pattern.
 
 The user moves through Ready, Attempting, Grading, Reflecting, Saving, and Completed states.
 Selecting a grade is provisional and does not write history, activity records, stages, or review dates.
+Completed appears only after persistence confirms the save. If a save fails or conflicts with newer
+cloud data, the reflection remains available and the app does not present the rep as completed.
 The reflection captures stopwatch evidence, assistance, blocker or friction, an optional note,
 complexity readiness, and approach efficiency as applicable. The locked time box is a coaching
 target, not a save gate. An independent solve may exceed it and remains independent when no
@@ -160,9 +162,23 @@ available time. This cadence guard limits exact-title memorization. The pre-atte
 hides the candidate's topic, expected pattern, and private reason code.
 
 Back navigation preserves the draft, reload resumes an interrupted attempt, and Undo restores
-the exact pre-attempt tracker snapshot. Only a valid Save invokes the existing grade transition
-and scheduler. Practice V2 changes task selection and evidence capture, not the stage intervals,
-early-clean rule, extremely-overdue rule, mastery rule, or historical data model.
+only the problem and activity entry created by that rep. A stale Undo is refused when that problem
+has changed, so it cannot overwrite unrelated work from another tab or device. Active drafts are
+scoped to the current browser tab. If tracker state changes after a rep begins, the draft remains
+visible but Save is blocked until the user returns to Ready and receives a fresh recommendation.
+Only a valid Save invokes the existing grade transition and scheduler. Practice V2 changes task
+selection and evidence capture, not the stage intervals, early-clean rule, extremely-overdue rule,
+mastery rule, or historical data model.
+
+Recommendation evidence has a strict temporal boundary. A graded or imported history row dated
+after the user's current local date remains visible as audit history, but it does not affect
+readiness, task selection, due status, or study-list progress until that date arrives. An explicit
+attempt timestamp later than the current clock is treated the same way. Future timestamps cannot
+start an exact-title cooldown or replace the latest valid attempt. When a future row has also
+written a future review date into derived problem state, the recommender prefers the latest valid
+history row's saved review date and otherwise treats the derived date as untrusted. Without future
+evidence, the problem's current `nextReview` remains authoritative; an older history row cannot
+silently override a legitimate schedule edit or recalculation.
 
 Use `Could not solve` when the user needed the solution or could not reach working code.
 Use `Solved with hints / slow` when the user needed meaningful help or got there with heavy
@@ -215,8 +231,15 @@ entries.
 When backfilled grades are saved, replay proper graded history in chronological order and
 let the most recent graded attempt define the current stage, green streak, last review
 date, last grade, and next review date. Compute the next review from the backfilled attempt
-date, not from the date the user entered the backfill. If that next review date is already
+date, not from today's date. If that next review date is already
 in the past, the problem is simply overdue.
+
+When multiple real attempts share a calendar date, use their recorded occurrence timestamps
+to replay them in the order they happened. The manual backfill form allows one real grade per
+problem per calendar date because a date-only backfill cannot truthfully establish within-day
+order. Users must delete the existing row before replacing that day's grade. Legacy
+date-only duplicates use a stable deterministic fallback, so source-array order cannot change
+the resulting evidence, stage, or recommendation.
 
 Imported CSV rows remain historical context and can count as prior attempts, but only
 proper grades should drive manual backfill scheduling. Manual backfills entered with a
@@ -599,6 +622,19 @@ Use honest progress labels:
 - **7-Day Activity**: Problems attempted or reviewed in the last 7 days. Multiple attempts on the same problem count once.
 
 ## Data Notes
+
+State-changing actions are persistence-acknowledged. Grading, Undo, problem edits,
+history edits, notes, list seeding, and imports should show success only after the
+server or local state file confirms the save. Saves are serialized so rapid actions
+cannot reuse a stale cloud revision. If a save fails or returns a stale-revision
+conflict, restore the affected in-memory state and keep the user's editable input
+available where possible. Multi-row imports are one atomic save rather than a series
+of partially committed rows.
+
+When an idle hosted tab regains focus, it may refresh newer cloud state. It must not
+refresh while a local save is queued or in flight, and it must never replace an active
+Practice V2 attempt. An active attempt whose starting state revision is stale remains
+visible for recovery, but cannot be saved as fresh evidence.
 
 Persist the minimum needed state:
 

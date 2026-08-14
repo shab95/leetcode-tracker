@@ -5,7 +5,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function createPracticeV2Engine() {
   "use strict";
 
-  const ALGORITHM_VERSION = "readiness-v1.4";
+  const ALGORITHM_VERSION = "readiness-v1.9";
   const EVIDENCE_WINDOW_DAYS = 30;
   const WEAKNESS_WINDOW_DAYS = 21;
   const EXACT_TITLE_COOLDOWN_HOURS = 24;
@@ -39,7 +39,7 @@
     const now = normalizeTimestamp(input.now) || `${today}T12:00:00.000Z`;
     const capacityMinutes = positiveNumber(input.capacityMinutes, positiveNumber(profile.defaultSessionMinutes, 45));
     const catalog = Array.isArray(input.catalog) ? input.catalog : [];
-    const evidence = deriveEvidence(state, { today, catalog });
+    const evidence = deriveEvidence(state, { today, now, catalog });
     const excluded = buildExcludedSet(input);
     const candidates = buildCandidates(state.problems, catalog)
       .filter((candidate) => !excluded.has(candidate.id) && !excluded.has(candidate.slug))
@@ -96,6 +96,7 @@
   function deriveEvidence(stateInput = {}, options = {}) {
     const state = normalizeState(stateInput);
     const today = normalizeDate(options.today) || normalizeDate(new Date());
+    const now = normalizeTimestamp(options.now);
     const catalog = Array.isArray(options.catalog) ? options.catalog : [];
     const skills = new Map();
     const recentAttempts = [];
@@ -103,7 +104,7 @@
     for (const problem of state.problems) {
       const skillId = skillIdFor(problem.topic);
       const skill = skills.get(skillId) || createSkillEvidence(skillId, problem.topic);
-      const attempts = properAttempts(problem);
+      const attempts = properAttempts(problem, { throughDate: today, throughTimestamp: now });
 
       for (const attempt of attempts) {
         const ageDays = dateDiffDays(attempt.date, today);
@@ -136,7 +137,7 @@
       skill.transferSupported = skill.independentTitles.size >= 2 && skill.designatedTransferTitles.size > 0;
     }
 
-    recentAttempts.sort((a, b) => dateValue(b.date) - dateValue(a.date));
+    recentAttempts.sort(compareAttemptsNewestFirst);
     const recentVersionedAttempts = recentAttempts
       .filter((attempt) => attempt.taskType)
       .slice(0, TRANSFER_DEBT_WINDOW);
@@ -158,6 +159,7 @@
 
   function summarizeStudyListEvidence(input = {}) {
     const today = normalizeDate(input.today) || normalizeDate(new Date());
+    const now = normalizeTimestamp(input.now);
     const windowDays = positiveNumber(input.windowDays, EVIDENCE_WINDOW_DAYS);
     const problems = Array.isArray(input.problems) ? input.problems : [];
     const catalog = Array.isArray(input.catalog) ? input.catalog : [];
@@ -190,7 +192,7 @@
       summary.total += 1;
 
       const problem = bySlug.get(slug) || byTitle.get(title);
-      const recentAttempts = properAttempts(problem)
+      const recentAttempts = properAttempts(problem, { throughDate: today, throughTimestamp: now })
         .filter((attempt) => {
           const ageDays = dateDiffDays(attempt.date, today);
           return ageDays >= 0 && ageDays <= windowDays;
@@ -254,13 +256,16 @@
 
   function scoreCandidate(candidate, context) {
     const { evidence, profile, today, now, capacityMinutes } = context;
-    const attempts = properAttempts(candidate.problem);
-    const importedEntries = importedAttempts(candidate.problem);
+    const allAttempts = properAttempts(candidate.problem);
+    const attempts = properAttempts(candidate.problem, { throughDate: today, throughTimestamp: now });
+    const importedEntries = importedAttempts(candidate.problem, { throughDate: today });
+    const hasFutureAttempts = attempts.length < allAttempts.length;
     const lastAttempt = attempts[attempts.length - 1] || null;
     const lastAgeDays = lastAttempt ? dateDiffDays(lastAttempt.date, today) : null;
     const skill = evidence.skills.get(candidate.skillId) || createSkillEvidence(candidate.skillId, candidate.topic);
-    const due = Boolean(candidate.nextReview && candidate.nextReview <= today && attempts.length > 0);
-    const daysOverdue = due ? Math.max(0, dateDiffDays(candidate.nextReview, today)) : 0;
+    const effectiveNextReview = eligibleNextReview(candidate, lastAttempt, hasFutureAttempts);
+    const due = Boolean(effectiveNextReview && effectiveNextReview <= today && attempts.length > 0);
+    const daysOverdue = due ? Math.max(0, dateDiffDays(effectiveNextReview, today)) : 0;
     const importedOnly = attempts.length === 0 && importedEntries.length > 0;
     const recentOptimizationGap = Boolean(
       lastAttempt &&
@@ -278,7 +283,7 @@
       independentCheckpointFor(candidate.difficulty),
     );
     const requiredMinutes = timeBoxMinutes + 3;
-    const cooldown = exactTitleCooldown(candidate, lastAttempt, { today, now });
+    const cooldown = exactTitleCooldown({ ...candidate, nextReview: effectiveNextReview }, lastAttempt, { today, now });
     const eligible = Boolean(candidate.title && candidate.id && requiredMinutes <= capacityMinutes && !cooldown.blocked);
     const components = {};
 
@@ -339,14 +344,14 @@
     };
   }
 
-  function chooseTaskType({ skill, attempts, importedOnly, due, lastAttempt, lastAgeDays, recentWeakness }) {
+  function chooseTaskType({ candidate, skill, attempts, importedOnly, due, lastAttempt, lastAgeDays, recentWeakness }) {
     if (recentWeakness) return "repair";
     if (importedOnly || (attempts.length > 0 && lastAgeDays > 60 && !due)) return "assessment";
     if (!skill.transferSupported && skill.independent && attempts.length === 0) return "transfer";
     if (due) return "retention";
     if (attempts.length === 0) return "learn";
     if (!skill.independent || lastAttempt?.grade !== "green") return "assessment";
-    if (!skill.transferSupported) return "transfer";
+    if (!skill.transferSupported && !skill.independentTitles.has(candidate.slug)) return "transfer";
     return "assessment";
   }
 
@@ -379,20 +384,46 @@
     };
   }
 
-  function properAttempts(problem = {}) {
+  function properAttempts(problem = {}, options = {}) {
+    const throughDate = normalizeDate(options.throughDate);
+    const throughTimestamp = timestampValue(options.throughTimestamp);
     return (Array.isArray(problem.reviewHistory) ? problem.reviewHistory : [])
       .filter((entry) => ["red", "yellow", "green"].includes(entry?.grade))
       .map((entry) => ({
         ...entry,
-        date: normalizeDate(entry.occurredAt || entry.date || entry.createdAt),
+        date: normalizeDate(entry.date || entry.occurredAt || entry.completedAt || entry.createdAt),
         taskType: String(entry.taskType || ""),
       }))
       .filter((entry) => entry.date)
-      .sort((a, b) => dateValue(a.date) - dateValue(b.date));
+      .filter((entry) => attemptIsWithinCutoff(entry, { throughDate, throughTimestamp }))
+      .sort(compareAttemptsChronologically);
   }
 
-  function importedAttempts(problem = {}) {
-    return (Array.isArray(problem.reviewHistory) ? problem.reviewHistory : []).filter((entry) => entry?.grade === "imported");
+  function importedAttempts(problem = {}, options = {}) {
+    const throughDate = normalizeDate(options.throughDate);
+    return (Array.isArray(problem.reviewHistory) ? problem.reviewHistory : [])
+      .filter((entry) => entry?.grade === "imported")
+      .map((entry) => ({
+        ...entry,
+        date: normalizeDate(entry.date || entry.occurredAt || entry.completedAt || entry.createdAt),
+      }))
+      .filter((entry) => !throughDate || !entry.date || entry.date <= throughDate);
+  }
+
+  function attemptIsWithinCutoff(attempt, { throughDate, throughTimestamp }) {
+    if (throughDate && attempt.date > throughDate) return false;
+    if (!Number.isFinite(throughTimestamp)) return true;
+
+    const occurredAt = attemptOccurrenceTimestamp(attempt);
+    return !Number.isFinite(occurredAt) || occurredAt <= throughTimestamp;
+  }
+
+  function eligibleNextReview(candidate, lastAttempt, hasFutureAttempts) {
+    if (!hasFutureAttempts) return normalizeDate(candidate.nextReview) || normalizeDate(lastAttempt?.nextReview);
+
+    const historyNextReview = normalizeDate(lastAttempt?.nextReview);
+    if (historyNextReview) return historyNextReview;
+    return "";
   }
 
   function qualifiesAsIndependent(attempt) {
@@ -489,9 +520,15 @@
   function exactTitleCooldown(candidate, lastAttempt, { today, now }) {
     if (!lastAttempt) return { blocked: false, reason: "" };
 
-    const attemptAt = attemptTimestamp(lastAttempt);
+    const attemptAt = attemptOccurrenceTimestamp(lastAttempt);
     const currentTime = timestampValue(now);
-    if (attemptAt && currentTime && currentTime - attemptAt < EXACT_TITLE_COOLDOWN_HOURS * 3600000) {
+    const elapsed = currentTime - attemptAt;
+    if (
+      Number.isFinite(attemptAt) &&
+      Number.isFinite(currentTime) &&
+      elapsed >= 0 &&
+      elapsed < EXACT_TITLE_COOLDOWN_HOURS * 3600000
+    ) {
       return { blocked: true, reason: "same-title-cooldown" };
     }
 
@@ -511,6 +548,44 @@
 
   function attemptTimestamp(attempt) {
     return timestampValue(attempt.occurredAt || attempt.completedAt || attempt.createdAt);
+  }
+
+  function attemptOccurrenceTimestamp(attempt) {
+    const explicitTimestamp = timestampValue(attempt.occurredAt || attempt.completedAt);
+    if (Number.isFinite(explicitTimestamp)) return explicitTimestamp;
+    if (attempt.backfilled || String(attempt.attemptContext || "").includes("backfill")) return NaN;
+    return timestampValue(attempt.createdAt);
+  }
+
+  function compareAttemptsChronologically(a, b) {
+    const dateDifference = dateValue(a.date) - dateValue(b.date);
+    if (dateDifference) return dateDifference;
+
+    const timestampDifference = attemptOrderTimestamp(a) - attemptOrderTimestamp(b);
+    if (timestampDifference) return timestampDifference;
+
+    return attemptStableKey(a).localeCompare(attemptStableKey(b));
+  }
+
+  function compareAttemptsNewestFirst(a, b) {
+    return compareAttemptsChronologically(b, a);
+  }
+
+  function attemptOrderTimestamp(attempt) {
+    const timestamp = attemptOccurrenceTimestamp(attempt);
+    return Number.isFinite(timestamp) ? timestamp : dateValue(attempt.date);
+  }
+
+  function attemptStableKey(attempt) {
+    return [
+      attempt.problemId || "",
+      attempt.titleKey || "",
+      attempt.id || "",
+      attempt.grade || "",
+      attempt.taskType || "",
+      attempt.assistance || "",
+      attempt.note || "",
+    ].map(String).join("|");
   }
 
   function recentSkillPenalty(skillId, attempts) {
@@ -602,7 +677,16 @@
     if (!value) return "";
     if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
     const date = value instanceof Date ? value : new Date(value);
-    return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
+    return Number.isNaN(date.getTime()) ? "" : localDateKey(date);
+  }
+
+  function localDateKey(value = new Date()) {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
   }
 
   function normalizeTimestamp(value) {
@@ -669,6 +753,7 @@
     deriveEvidence,
     summarizeStudyListEvidence,
     buildCandidates,
+    localDateKey,
     properAttempts,
     skillIdFor,
   });
