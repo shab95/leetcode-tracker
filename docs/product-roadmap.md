@@ -1,261 +1,161 @@
 # Product Roadmap
 
-This roadmap is about the product shape, not the review algorithm itself. The tracker
-should still keep full history, stages, notes, memory signals, settings, and leaderboard
-data. Experimental motivation surfaces such as reminders, pacts, and Recovery Lane should
-stay feature-flagged until they clearly reduce friction. The main product change is that
-the first screen should feel like a practice launchpad instead of a management dashboard.
+**Updated:** August 14, 2026
 
-The core question for the app is:
+## North Star
 
-```text
-What should I do right now?
-```
+The product should answer one question immediately:
 
-Everything else should support that answer without creating guilt, noise, or extra
-decisions before practice begins.
+> What is the highest-value problem I can practice with the time I have today?
+
+The tracker is no longer centered on clearing a due queue or carrying a small set of exact
+problems to mastery. Its job is to build interview readiness through a balanced sequence of
+independent problem solving, spaced exact-title recall, transfer across related problems,
+targeted repair, and honest reflection.
+
+Success is not the number of rows, stages, or hours logged. Success means the user can solve
+unfamiliar interview problems independently, within a useful time range, explain the approach
+and complexity, and retain that ability over time.
 
 ## Product Principles
 
-- Keep the spaced-repetition tracker as the engine.
-- Make the Practice tab action-first and low-friction.
-- Preserve memory signals, library browsing, settings, and leaderboard, but move them away
-  from the first decision point.
-- Treat motivation as momentum protection, not pressure.
-- Reward honest effort, including misses and slow solves, because those are useful memory
-  signals.
-- Avoid public shame mechanics. Social features should create commitment and support, not
-  punishment.
-- Prefer small daily wins over large planning surfaces.
-
-## Roadmap Overview
-
-### Phase 1: Practice-First Front Door
-
-Refocus the first screen around starting work.
-
-- Put the daily practice surface before stats and tables.
-- Rename the main tab to `Practice` and the main practice section to `Daily Rep`.
-- Keep one review and one new problem, and make the next review action feel primary.
-- Move the problem table and heavy browsing controls to a separate `Library` route.
-- Move stats to `Memory` so they stay useful without becoming the front door.
-- Keep Recovery Lane hidden by default behind `FEATURE_RECOVERY_LANE`.
-- Keep due review counts de-emphasized so a large backlog does not become the first thing
-  the user sees.
-- Tuck skip/source controls into a smaller `Change pick` area.
-
-### Phase 2: Strong Completion Loop
-
-Make the moment after grading feel satisfying and useful.
-
-- Show a calm completion message after any real grade:
-  `Today complete. Momentum protected.`
-- Keep grade-specific feedback constructive:
-  - Missed: `Good signal. We will bring it back sooner.`
-  - Slow/hints: `Useful rep. The path is getting clearer.`
-  - Clean: `Clean recall logged.`
-- Continue showing the stage result, next review date, and any hold reason.
-- Keep `Undo grade` available for accidental clicks.
-- Ask for one optional future-you note after grading.
-
-### Phase 3: Learning Signals
-
-Capture why a rep was hard without turning the app into a journal.
-
-- Add optional post-grade tags:
-  - wrong pattern
-  - missed invariant
-  - edge case
-  - implementation bug
-  - needed hint
-  - too slow
-  - could not explain complexity
-- Store tags in review history.
-- Show tags in the History tab and Memory.
-- Use tags later to suggest targeted drills.
+- Recommend one adaptive rep, not a dashboard of choices.
+- Respect the user's available time without mistaking short availability for low ambition.
+- Separate correctness, independence, speed, solution quality, and explanation quality.
+- Preserve misses and friction as useful evidence; never turn them into guilt.
+- Prefer transfer and breadth once exact-title recall is sufficiently established.
+- Conceal problem-family hints before an attempt when they would give away the approach.
+- Make every recommendation auditable after the attempt, without exposing the solution before it.
+- Keep all historical data and provide a rollback path for algorithm and UI changes.
+- Add a feature only when it improves practice quality, return rate, or trustworthy measurement.
+
+## Shipped Foundation
+
+### Durable Tracker
+
+- Local JSON mode, QA fixtures/reset, and hosted per-user SQLite state.
+- Google OAuth, email allowlist, revisions, rolling backups, and safe static serving.
+- CSV, JSON, and LeetCode historical imports without treating imported acceptance as mastery.
+- Blind 75 and NeetCode 150 membership on shared problem records.
+- Notes, optimal-solution reference, history, manual backfill, and targeted history deletion.
 
-### Phase 4: Return Rituals
+### Adaptive Practice V2
+
+- One `Next rep` selected from the current state, available time, and training profile.
+- Recommendation types for independent evidence, exact-title retention, transfer, repair,
+  optimization follow-up, assessment, and new coverage.
+- A Ready -> Attempt -> Reflect -> Complete workflow with tab-scoped draft recovery.
+- Reflection that records grade, elapsed time, blocker/friction, approach efficiency,
+  complexity confidence, and an optional note as separate evidence dimensions.
+- Same-title cooldowns, future-evidence exclusion, authoritative due dates, and safeguards
+  against repeatedly recommending a recently completed problem.
+- A concise completion explanation and targeted Undo that removes only the saved rep.
 
-Let the user choose an energy level instead of choosing from the full app.
+### Supporting Surfaces
+
+- Library for search, filtering, editing, and evidence-oriented problem status.
+- Memory for readiness coverage, recent evidence, skill pressure, and list progress based only
+  on real graded evidence.
+- Optional leaderboard with current and lifetime views.
+- Settings for theme, imports, backups, feature preferences, and hosted controls.
+- Minimum Practice as a gentle return signal, not a scheduling input.
+
+## Current Priority: Validate The Coach
+
+The next phase is not another large surface. It is proving that the adaptive coach consistently
+chooses useful work and learns from outcomes.
+
+### 1. Recommendation Quality Audits
+
+- Store and inspect the reason codes, candidate type, evidence age, time fit, and algorithm
+  version for every completed recommendation.
+- Regularly review sequences for repeated titles, topic overconcentration, neglected coverage,
+  stale evidence, and mismatches between the stated rationale and the actual saved result.
+- Add deterministic regression fixtures for every recommendation bug found in real use.
+- Compare expected and actual time without forcing an honest independent solve into a weaker
+  grade solely for exceeding a time box.
+
+**Release gate:** no known path may recommend a title inside its cooldown, use future evidence,
+discard an authoritative due review, or overwrite newer state.
+
+### 2. Close The Learning Loop
+
+When a user reaches a correct but suboptimal solution or needs outside help, the product should
+make the next learning action explicit without keeping them on the same problem too long.
+
+- Distinguish `correct but suboptimal`, `needed help`, `implementation friction`, and
+  `could not form the approach`.
+- Offer a short reconstruction step after learning an optimal solution.
+- Schedule a later transfer or retention check instead of immediate repeated regurgitation.
+- Use blocker history to choose the kind of follow-up, not to reveal the hidden pattern in
+  advance.
+
+**Success signal:** fewer repeated blocker types and stronger independent results on different
+problems that require related reasoning.
+
+### 3. Interview Calibration
+
+Once enough independent evidence exists, add periodic calibration that resembles an interview
+more closely than ordinary practice.
+
+- One unseen or stale problem under a clear time ceiling.
+- No pattern/topic reveal before the attempt.
+- Evaluate problem framing, implementation, testing, complexity explanation, and communication.
+- Report readiness bands and gaps, not a single pseudo-precise score.
+
+**Prerequisite:** recommendation and reflection data must be reliable enough that calibration
+does not merely measure UI usage.
+
+### 4. Readiness Explanations
+
+- Make Blind 75 and NeetCode 150 progress distinguish independent, assisted/repair, stale, and
+  missing real evidence.
+- Keep historical imports outside readiness progress until a real grade exists.
+- Explain what would improve a readiness segment without turning Memory into another task list.
+- Keep detailed due dates and exact-title schedules available in Library rather than making a
+  backlog count the motivational center of the product.
+
+### 5. Reliability And Operations
+
+- Keep the mutation, save-queue, stale-tab, and targeted-undo regression suite growing.
+- Add hosted error visibility for state conflicts, failed saves, and recommendation exceptions.
+- Continue single-replica SQLite operation until a deliberate database migration is justified.
+- Require a verified SQLite snapshot before high-risk schema or recommendation releases.
 
-- Add lightweight session modes:
-  - `10 min reset`: one honest review or recovery rep.
-  - `25 min session`: review plus optional new problem.
-  - `60 min deep work`: review, new problem, and repair notes.
-- Make reminders deep-link to the smallest useful action.
-- Keep the default path as one click into practice.
+## Experiments Behind Flags
 
-### Phase 5: Memory Page
-
-Continue redesigning Memory into a calmer learning view.
+These features may remain in the codebase, but they should not compete with adaptive practice
+unless usage proves their value:
 
-- Keep backlog, stages, attention topics, and recent grades.
-- Add learning-signal breakdowns after Phase 3.
-- Make each chart answer an action question, not just report a number.
-- Keep dense details expandable.
+- Recovery Lane
+- Friend Pulse and daily pacts
+- Phone reminders
+- Leaderboard navigation
+- Chrome history import after onboarding
 
-### Phase 6: Library
+Their saved data should remain backward compatible even when the UI is hidden.
 
-Move browsing and editing into a dedicated place.
+## Deliberately Deferred
 
-- Add a `Library` route for the full problem table, filters, sorting, and editing.
-- Keep quick filters:
-  - due
-  - recovery lane
-  - weak signals
-  - unattempted
-  - mastered
-  - Blind 75
-  - NeetCode 150
-- Keep edit, backfill, notes, solution reference, and list memberships here.
+- An in-app code runner or LeetCode submitter
+- Public self-service signup
+- A large AI-chat coaching surface
+- Heavy analytics on the Practice screen
+- Social shame, punitive streaks, or public problem-level activity
+- Gamification that rewards volume without independent evidence
 
-### Phase 7: Accountability
+## Decision Checklist
 
-Add social pressure only where it helps.
+Before shipping a product change, answer:
 
-- Add an optional `15-Minute Pact` with a friend.
-- Share intent and completion status, not raw private history.
-- Completion options should be humane:
-  - done
-  - got stuck
-  - reschedule
-- Missed pacts should shrink the next ask instead of shaming the user.
+1. Does it improve the next practice decision, the quality of reflection, or the likelihood of
+   returning?
+2. Does it preserve all existing history and remain safe across local, QA, and hosted modes?
+3. Could it accidentally reveal the problem category or approach before the attempt?
+4. Could it reward memorization, volume, or backfill instead of current independent ability?
+5. Is its behavior deterministic and covered by a regression test?
+6. Can it be rolled back without migrating or deleting user data?
 
-### Phase 8: Flash Gym
-
-Add short non-LeetCode drills for weak concepts.
-
-- Pattern recognition drills.
-- Complexity drills.
-- Edge-case spotting.
-- Invariant recall.
-- Bug diagnosis.
-- These should support practice, not replace real problem attempts.
-
-## Phase 1 Detailed Spec
-
-Phase 1 should make the app feel like it opens straight into practice while preserving all
-existing data and power-user surfaces.
-
-### Navigation
-
-Target top-level tabs:
-
-```text
-Practice
-Library
-Memory
-Leaderboard
-Settings
-```
-
-Current mapping:
-
-- `Practice` stays `/index.html`.
-- `Library` should be a new route, likely `/library`.
-- `Memory` uses `/memory`, while `/diagnostics` remains compatible.
-- `Settings` uses `/settings`, while `/data-management` remains compatible.
-
-### Practice Order
-
-Practice should render in this order:
-
-1. Daily practice surface.
-2. Minimum Practice habit panel.
-3. Recovery Lane only when `FEATURE_RECOVERY_LANE=true` and there are active recovery problems.
-
-Practice should not show the full problem table or stats grid by default.
-
-### Daily Practice Surface
-
-Rename the current `Today` panel to `Daily Rep` or `Today's Rep`.
-
-Keep the existing behavior:
-
-- exactly one review recommendation
-- exactly one new recommendation
-- grading buttons
-- Open on LeetCode
-- skip review
-- skip new
-- new-problem source selector
-
-Adjust the hierarchy:
-
-- The review/recovery card should feel like the primary action.
-- The new problem card should feel like an optional second rep.
-- The summary should be short:
-  `Review: Add Two Numbers. New: Minimum Window Substring.`
-- Avoid backlog warning copy inside the practice surface.
-
-### Change Pick Controls
-
-Move the new-problem source selector and skip buttons into a compact control area, such as
-an expandable `Change pick` control.
-
-The default view should not imply the user needs to tune the system before practicing.
-
-### Stats
-
-Stats move to Memory. They should answer:
-
-- What have I built?
-- What needs attention?
-
-They should not dominate the first viewport.
-
-The due count can remain hidden by default or become a click-to-reveal stat so the user is
-not greeted by a scary backlog.
-
-### Library Route
-
-Move the current workspace/table section to `Library`.
-
-The Library should contain:
-
-- search
-- status filter
-- difficulty filter
-- topic filter
-- list filter
-- sort dropdown
-- problem table
-- Open/Edit actions
-
-This keeps the tracker powerful without making Practice feel like a spreadsheet.
-
-### Recovery Lane Experiment
-
-Recovery Lane should stay behind `FEATURE_RECOVERY_LANE`. If enabled, it should only
-appear when it is useful:
-
-- Show it if there are manually pinned recovery problems.
-- Hide it if empty.
-- Keep a maximum of three problems.
-- A problem leaves recovery when it reaches `Transfer (Stage 3)`.
-
-### Acceptance Checks
-
-- Opening `/index.html` shows the daily practice surface first.
-- The problem table and stats grid are not on Practice.
-- Opening `/library` shows the table and all existing filters/sorts.
-- Existing table actions still work from Library.
-- Daily grading still saves state and updates habit/stats.
-- Skip controls and new source still work.
-- Recovery Lane is hidden when the flag is off or when it is empty.
-- `/memory` and `/diagnostics` open Memory.
-- `/settings` and `/data-management` open Settings.
-- `npm run check` passes.
-
-## Not Now
-
-These ideas are intentionally deferred:
-
-- Full in-app code runner.
-- LeetCode submitter.
-- Public leaderboard as the central product loop.
-- A giant AI coach surface.
-- Heavy analytics on the first screen.
-
-They may become useful later, but Phase 1 is about reducing the distance between opening
-the app and starting one honest rep.
+The detailed workflow and algorithm contracts live in
+[`practice-v2-spec.md`](practice-v2-spec.md) and
+[`review-algorithm.md`](review-algorithm.md).

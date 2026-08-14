@@ -4,11 +4,20 @@ This project is deliberately small so the moving pieces are easy to understand.
 
 ## Architecture
 
-The browser loads a static single-page app:
+The browser loads a static single-page app and three shared logic modules:
 
 ```text
-index.html -> app.js + styles.css
+index.html
+  -> app.js + styles.css
+  -> state-v4.js
+  -> recommendation-engine.js
+  -> practice-v2-workflow.js
 ```
+
+`state-v4.js` owns backward-compatible migration, `recommendation-engine.js` owns pure
+evidence derivation and candidate selection, and `practice-v2-workflow.js` owns the visible
+Ready -> Attempt -> Reflect -> Complete state machine. All three also export CommonJS APIs so
+the Node test suite can exercise them without a build system.
 
 The Node server does two jobs in local mode:
 
@@ -105,28 +114,38 @@ FEATURE_LEETCODE_IMPORT=true
 FEATURE_RECOVERY_LANE=true
 FEATURE_PRACTICE_V2=true
 FEATURE_PRACTICE_V2_SHADOW=true
+FEATURE_LIST_PROGRESS=true
 ```
 
 All experiment flags default to off. The default product should stay focused on Practice, Library,
 Memory, Leaderboard, and Settings. Turn these flags on only when actively testing or
 shipping the experiment.
 
-`FEATURE_PRACTICE_V2_SHADOW` runs the deterministic `readiness-v1.1` recommender without changing
+`FEATURE_PRACTICE_V2_SHADOW` runs the deterministic `readiness-v1.9` recommender without changing
 the visible recommendation, grades, scheduling, or saved state. QA enables shadow mode
 automatically. Its latest comparison is available to developers at
 `window.__practiceV2Shadow` and in the browser console.
 
 QA also enables the visible `FEATURE_PRACTICE_V2` workflow automatically. The QA Practice page
-therefore shows one adaptive rep instead of the V0 review/new grid. Local production and hosted
-production keep V0 unless `FEATURE_PRACTICE_V2=true` is explicitly configured. Do not enable the
-hosted flag until the acceptance scenarios in `docs/practice-v2-spec.md` have been reviewed.
+therefore shows one adaptive rep instead of the V0 review/new grid. Local and hosted production
+enable Practice V2 only when `FEATURE_PRACTICE_V2=true`; the current private-beta deployment sets
+that flag explicitly. `FEATURE_LIST_PROGRESS` similarly enables current-evidence Blind 75 and
+NeetCode 150 progress bars and is automatic in QA.
 
 The visible workflow keeps the recommendation non-spoiling before completion. It may show the
 title, difficulty, time box, and neutral evidence language, but it must not expose topic, task
 type, stage, due date, list membership, saved notes, solution details, or private ranking reasons.
 Choosing a grade is provisional. Tracker state is written only after the reflection is valid and
-the user chooses Save. Back navigation retains drafts, interrupted workflows resume after reload,
-and Undo restores the exact pre-attempt tracker snapshot.
+the user chooses Save. Back navigation retains drafts, interrupted workflows resume after a
+same-tab reload, and Undo removes only the history/activity pair created by the saved rep. It never
+restores a whole pre-attempt snapshot, because doing so could erase unrelated edits or another
+tab's work.
+
+Practice V2 runtime is stored per user in the current tab's `sessionStorage`. It is not part of
+the tracker JSON or hosted SQLite blob. A different tab has an independent draft but shares the
+same persisted tracker revision. Idle recommendations are invalidated after a newer revision is
+loaded; active stale attempts remain visible but Save is blocked until the user returns to Ready
+and receives a fresh recommendation.
 
 `VAPID_SUBJECT` must be a real contact value, such as `mailto:you@example.com` or the
 hosted `https://...` origin. Avoid fake `.local` values because push services may reject
@@ -177,9 +196,12 @@ Returns the current tracker state:
 
 ```json
 {
-  "version": 3,
+  "version": 4,
+  "algorithmVersion": "readiness-v1.9",
   "savedAt": "2026-05-12T00:00:00.000Z",
   "importMeta": null,
+  "trainingProfile": {},
+  "practicePlan": {},
   "problems": [],
   "sessions": []
 }
@@ -226,6 +248,13 @@ truth once the local server is running.
 Hosted mode stores the same tracker state shape as a SQLite blob in `tracker_state`.
 The server adds `revision` to prevent stale overwrites from another tab or device.
 
+Frontend writes are serialized through one save queue. A successful message is shown only
+after the server acknowledges the write, and failed or conflicting writes restore the affected
+in-memory change instead of pretending it was saved. When an idle hosted tab regains focus it
+may load a newer cloud revision, but it will not refresh over a queued save or an active Practice
+V2 attempt. A stale active attempt remains recoverable in the tab, but cannot be committed as
+fresh evidence until the user returns to Ready and receives a current recommendation.
+
 Manual backfill uses the same JSON state file. A backfilled attempt is stored in the
 problem's `reviewHistory` with a real grade, then the frontend rebuilds that problem's
 stage and next review from chronological graded history. Manual graded backfills also add
@@ -243,10 +272,11 @@ rendered progress pages if needed. Captured rows add or merge problem records an
 `grade: "imported"` history entries, but they do not create `sessions`, real
 red/yellow/green grades, habit completion, Friend Pulse completion, or leaderboard weekly
 activity. Imported-only records are derived as `Seen, unverified`, ignored by due-review
-selection and backlog calculations, and have no trusted schedule until the user launches
-`Practice now` from Library. The resulting cold check maps red/yellow/green to Stage 0/1/2
-and atomically stores its required benchmark metadata with the real history entry only
-when `Finish cold check` is chosen. Individual rows can also
+selection and backlog calculations, and have no trusted schedule until a real graded attempt is
+saved. Practice V2 labels them `Assessment pending` and decides when an assessment is the best
+next rep. In the legacy V0 fallback, `Practice now` launches the older cold-check flow, which maps
+red/yellow/green to Stage 0/1/2 and atomically stores its benchmark metadata only when
+`Finish cold check` is chosen. Individual rows can also
 be removed from the pending import; removed rows are skipped and do not change app state.
 
 The replay uses the same spaced-repetition transition as Today grading. Clean attempts

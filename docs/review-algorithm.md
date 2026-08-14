@@ -35,7 +35,11 @@ or active review evidence.
 
 The app should display this table somewhere visible or easy to open.
 
-## Review Flowchart
+## Exact-Title Scheduler And Legacy V0 Flowchart
+
+The stage transitions in this flow remain the exact-title scheduler contract. The `Pick today's
+work` and imported cold-check branches describe the legacy V0 surface only. Practice V2 chooses
+the next task with the adaptive engine and records its richer evidence through the V2 workflow.
 
 ```mermaid
 flowchart TD
@@ -107,15 +111,18 @@ continue up to the full attempt ceiling. Repair and retention reps may use a sho
 in that case the checkpoint is capped at the assigned ceiling. Neither landmark prevents the
 user from opening a solution or saving an honest result.
 
-The app may remind the user to use LeetCode's built-in stopwatch while solving. Normal
-reviews do not require elapsed time. A cold check may store the stopwatch duration as
-diagnostic benchmark evidence, but duration does not directly alter scheduling.
+The app may remind the user to use LeetCode's built-in stopwatch while solving. Practice V2
+asks for elapsed minutes or an explicit `I did not track it` choice during reflection. Time is
+speed evidence, not a solve grade: exceeding the target does not automatically turn an
+independent solve into a slow/hints result and never directly alters exact-title scheduling.
+The legacy V0 flow does not require elapsed time.
 
 ### Practice V2 workflow
 
 Practice V2 replaces the visible review/new choice with one adaptive rep. QA enables this
-surface automatically; hosted production remains on the legacy Practice surface until its
-feature flag is deliberately enabled. The deterministic recommender may choose retention,
+surface automatically; local and hosted production enable it only when
+`FEATURE_PRACTICE_V2=true`. The current private-beta deployment enables that flag while V0
+remains the rollback path. The deterministic recommender may choose retention,
 transfer, acquisition, or assessment work, but the pre-attempt UI does not reveal that internal
 task type.
 
@@ -180,12 +187,16 @@ history row's saved review date and otherwise treats the derived date as untrust
 evidence, the problem's current `nextReview` remains authoritative; an older history row cannot
 silently override a legitimate schedule edit or recalculation.
 
-Use `Could not solve` when the user needed the solution or could not reach working code.
-Use `Solved with hints / slow` when the user needed meaningful help or got there with heavy
-debugging or substantial struggle. Use `Solved cleanly` when the user solved without meaningful
-help, coded a working answer, and tested important edge cases. An elapsed time above the target is
-stored honestly as a speed gap and does not automatically change the grade. Complexity readiness
-remains a separate mastery signal.
+Practice V2 displays `Could not solve`, `Solved with help or heavy friction`, and
+`Solved independently`. They map to the stored red, yellow, and green grades used by the
+exact-title scheduler. Legacy V0 and manual backfill may still display the older
+`Solved with hints / slow` and `Solved cleanly` labels for the same stored values.
+
+Use red when the user needed the solution or could not reach working code. Use yellow when the
+user needed meaningful help or got there with major debugging or substantial struggle. Use green
+when the user produced working code and tested important cases without meaningful help. An
+elapsed time above the target is stored honestly as a speed gap and does not automatically change
+the grade. Approach efficiency and complexity readiness remain separate signals.
 
 The grade answers how independently the user completed the attempt. Learning-signal tags
 answer why the attempt was difficult. For example, wrong syntax, a language mistake, or a
@@ -261,7 +272,12 @@ excluded from due-review recommendations, backlog pressure, and stage distributi
 Provisional import stages are not real grades and do not create green streak, mastery,
 session, pact, or leaderboard credit.
 
-### Cold checks for imported history
+### Legacy V0 cold checks for imported history
+
+This subsection applies when Practice V2 is disabled. With Practice V2 enabled, imported-only
+problems are labeled `Assessment pending`; the adaptive engine decides when one is the strongest
+next rep, and the standard V2 reflection captures the resulting evidence. Imported history is
+untrusted exposure in both modes.
 
 The Library exposes `Practice now` for a `Seen, unverified` problem. This starts a cold
 check in Practice. The user attempts the problem without consulting saved notes or a
@@ -378,7 +394,8 @@ This keeps the system adaptive without creating a guilt mechanic.
 
 The app has several product surfaces:
 
-- **Practice**: the daily action surface for one due review and one new problem.
+- **Practice**: one adaptive rep when Practice V2 is enabled; the legacy V0 fallback shows one
+  due review plus one new problem.
 - **Library**: browsing, filtering, sorting, editing, and manual backfill.
 - **Memory**: explanatory memory-health signals for understanding backlog pressure,
   topic risk, current stages, and recent recall quality.
@@ -553,7 +570,11 @@ movement, or exact-title review scheduling.
 
 This is intentionally lightweight. A fuller interview-readiness checklist can come later.
 
-## Daily Recommendation Priority
+## Legacy V0 Daily Recommendation Priority
+
+This section applies only when Practice V2 is disabled. Practice V2 uses the adaptive
+recommendation rules in [practice-v2-spec.md](practice-v2-spec.md) and does not expose a fixed
+review-plus-new queue.
 
 The daily dashboard should prioritize:
 

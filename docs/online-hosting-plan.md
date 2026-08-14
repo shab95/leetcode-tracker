@@ -1,4 +1,7 @@
-# Private Beta Hosting Guide
+# Private Beta Hosting And Operations Guide
+
+**Status:** Implemented. This document describes the current hosted private-beta architecture
+and its operating constraints, not a future proposal.
 
 This app can run in two intentionally separate modes:
 
@@ -21,12 +24,19 @@ The app still saves one full tracker document:
 
 ```text
 version
+algorithmVersion
 savedAt
 revision
 importMeta
+trainingProfile
+practicePlan
 problems
 sessions
 ```
+
+The current document schema is v4 and the recommendation engine identifies itself separately
+(currently `readiness-v1.9`). `sessions` is a legacy internal name for saved graded activity
+events; the Practice UI no longer asks the user to start or end a study session.
 
 The difference is that the blob is scoped to a signed-in Google user instead of a local JSON
 file. Local and hosted state are not automatically synced.
@@ -51,11 +61,20 @@ Optional:
 ```text
 MAX_STATE_BYTES=5000000
 BACKUP_RETENTION=20
+FEATURE_PRACTICE_V2=true
+FEATURE_PRACTICE_V2_SHADOW=true
+FEATURE_LIST_PROGRESS=true
+SQLITE_STARTUP_SNAPSHOT=pre-release-snapshot-name
 VAPID_PUBLIC_KEY
 VAPID_PRIVATE_KEY
 VAPID_SUBJECT=https://your-hosted-app.example.com
 NOTIFICATION_CHECK_INTERVAL_MS=60000
 ```
+
+Practice V2 and list-progress surfaces are independently flaggable so the hosted release can
+fall back without rewriting tracker data. QA enables them automatically. Reminder, pact,
+Recovery Lane, and leaderboard navigation features have their own flags/preferences and are not
+required for the core adaptive practice flow.
 
 `ALLOWED_EMAILS` is comma-separated:
 
@@ -114,6 +133,9 @@ GOOGLE_CALLBACK_URL=https://YOUR-APP.up.railway.app/auth/google/callback
 SESSION_SECRET=use-a-long-random-secret
 ALLOWED_EMAILS=you@example.com
 SQLITE_PATH=/path/to/railway/volume/tracker.sqlite
+FEATURE_PRACTICE_V2=true
+FEATURE_PRACTICE_V2_SHADOW=true
+FEATURE_LIST_PROGRESS=true
 VAPID_PUBLIC_KEY=...
 VAPID_PRIVATE_KEY=...
 VAPID_SUBJECT=https://your-hosted-app.example.com
@@ -188,6 +210,11 @@ Every hosted state has a `revision`.
 3. If another tab or device saved first, the server returns `409`.
 4. The app shows a conflict warning and does not silently overwrite cloud state.
 
+The frontend also serializes state-changing requests so rapid actions cannot reuse the same
+revision. It reports success only after acknowledgement. Idle tabs may refresh newer state when
+they regain focus, but never while a save is queued or an active Practice V2 attempt is open.
+Active stale attempts stay visible for recovery and are blocked from saving until recalculated.
+
 This is not real-time collaboration. It is a guardrail for one person using multiple tabs or
 devices.
 
@@ -198,7 +225,13 @@ Hosted mode only serves app assets:
 ```text
 index.html
 app.js
+state-v4.js
+recommendation-engine.js
+practice-v2-workflow.js
 styles.css
+manifest.webmanifest
+pwa-icon.svg
+service-worker.js
 data/blind-75.js
 data/neetcode-150.js
 ```
@@ -221,9 +254,15 @@ POST /api/state
 
 `/api/reset-qa` is local/QA only and is unavailable in hosted production.
 
+Additional leaderboard, social, and Web Push endpoints are exposed only when their hosted
+mode and feature requirements are satisfied. They do not bypass the authenticated allowlist or
+gain access to another user's private tracker document.
+
 ## What This Does Not Solve Yet
 
 - Multi-replica SQLite writes. Keep Railway replicas at one.
 - Public self-service signup. Access is allowlist-only.
 - Relational analytics queries. Tracker state is still stored as a blob.
 - Automatic local-to-cloud sync. Use JSON export/import intentionally.
+- Server-side synchronization of an in-progress Practice V2 draft. Drafts are deliberately
+  scoped to one browser tab; only completed evidence is shared across tabs and devices.

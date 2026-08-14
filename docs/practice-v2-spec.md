@@ -1,10 +1,11 @@
 # Practice V2 Product and Implementation Specification
 
-Status: visible QA implementation; hosted rollout remains feature-flagged off
+Status: implemented and running in the private beta behind `FEATURE_PRACTICE_V2`
 Prototype: `/practice-v2-preview.html` in local or QA mode
 QA product: Practice V2
-Hosted production product: V0 unless `FEATURE_PRACTICE_V2=true`
+Hosted production product: Practice V2 when `FEATURE_PRACTICE_V2=true`; V0 remains the fallback
 Target state schema: v4
+Current recommendation algorithm: `readiness-v1.9`
 
 ## 1. Product Decision
 
@@ -321,16 +322,23 @@ matching history and session entries, restores the reflection draft, and recompu
 schedule, coverage sets, session totals, activity day, and weekly rhythm from remaining events.
 It must never restore a whole tracker snapshot because that could erase unrelated changes.
 
-The server returns an undo token with the save receipt. That receipt remains available after
-navigation and reload until another rep is saved. If a new
-unsaved attempt is active, Undo first asks the user to discard that draft.
+The client records a targeted undo receipt after the state save is acknowledged. That receipt
+remains available in the current tab after navigation and reload until another rep is saved.
+It identifies the exact history and activity events created by the rep; it is not a full-state
+snapshot. If a new unsaved attempt is active, Undo first asks the user to discard that draft.
 
 ## 8. Reload, Navigation, and Accidental Actions
 
-The active workflow is a durable user-scoped runtime record, separate from the evidence ledger.
-Hosted mode stores it server-side; local mode uses a local durable runtime store with cross-tab
-coordination. Tab-scoped `sessionStorage` is insufficient because closing a tab or opening a
-second tab must not lose or duplicate an active rep.
+The active workflow is a per-user, per-tab runtime record, separate from the shared evidence
+ledger. The current implementation stores it in `sessionStorage`. Reloading or navigating in the
+same tab resumes the draft; another tab loads the latest persisted tracker state and maintains its
+own draft. Active workflow state is not stored in SQLite or the local JSON tracker document.
+
+This split is deliberate for the current private beta: a draft cannot leak between tabs, while
+completed evidence remains shared. When another tab or device saves a newer revision, an idle
+Ready recommendation is invalidated and recalculated. An active attempt stays visible for
+recovery, is marked stale, and cannot be saved until the user returns to Ready and receives a
+fresh recommendation.
 
 ```js
 {
@@ -365,7 +373,7 @@ Behavior:
 - Starting another problem asks the user to cancel or finish the active rep.
 - Reload during Saving reconciles by `attemptId`: show Completed when the save committed, or
   restore Reflecting with Retry when it did not.
-- Completed restores its save receipt and undo token after reload.
+- Completed restores its targeted undo receipt after a same-tab reload.
 - Undo applies the saved inverse event and makes the same problem eligible according to the
   recomputed remaining evidence.
 - Multi-tab stale-save conflicts never overwrite the newer cloud state.
@@ -403,7 +411,7 @@ and does not change evidence.
 | Candidate has no URL | Allow a manual attempt or choose another; do not show a broken Open action |
 | All alternatives were skipped | Restore the strongest candidate and explain that it is the best available rep |
 | Training target date has passed | Pause the old forecast and require a new date or rolling plan |
-| User chooses green after exceeding the time box | Explain the mismatch; require corrected time or yellow |
+| User chooses green after exceeding the time box | Allow the honest independent grade; store the timing gap separately and use it in future coaching |
 | User gets another rep, then requests Undo | Require discarding any new unsaved attempt before applying the prior inverse event |
 
 Browser Back must not mutate evidence. Within Practice it moves to the previous provisional
@@ -703,7 +711,7 @@ Top-level additions:
 ```js
 {
   version: 4,
-  algorithmVersion: "readiness-v1.3",
+  algorithmVersion: "readiness-v1.9",
   trainingProfile: { /* section 11 */ },
   practicePlan: {
     onboardingComplete: true,
@@ -722,7 +730,7 @@ New optional fields on future real review-history entries:
   recordedAt: "2026-07-18T00:04:12-04:00",
   taskType: "assessment",
   recommendationId: "uuid",
-  algorithmVersion: "readiness-v1.3",
+  algorithmVersion: "readiness-v1.9",
   reasonCodes: ["missing-independent-evidence", "goal-scope"],
   lockedTimeBoxMinutes: 30,
   elapsedMinutes: 24, // null when the user did not track time
@@ -768,9 +776,13 @@ Atomic save response:
 }
 ```
 
-The request is idempotent by `attemptId`. Undo submits the `undoToken` and expected current
-revision, removes only that attempt's event pair, recomputes derived aggregates, and returns a
-new revision. `Saving` and `Undoing` disable duplicate commands while the operation is in flight.
+The current static frontend realizes this contract inside one serialized full-state save rather
+than a dedicated attempt endpoint. `attemptId` and `recommendationId` are persisted on the event,
+the expected tracker revision is checked immediately before mutation, and duplicate Save commands
+are disabled while persistence is in flight. Undo uses the targeted client receipt to remove only
+that attempt's history/activity pair, recomputes derived problem state, and performs another
+revision-checked save. A future dedicated attempt API may expose the request/response shape above
+without changing the product semantics.
 
 ## 13. Migration and Rollback
 

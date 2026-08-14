@@ -14,11 +14,13 @@ hosted mode with Google OAuth and per-user SQLite storage.
 - Recommends one adaptive next rep based on time, coverage, recent evidence, transfer gaps,
   and same-title recall pressure when Practice V2 is enabled.
 - Lets you backfill real graded attempts from the edit modal's History tab.
-- Supports Blind 75 and NeetCode 150 as selectable study lists.
-- Uses grading buttons after an attempt:
+- Supports Blind 75 and NeetCode 150 as shared built-in coverage lists.
+- Uses evidence-oriented outcomes after an attempt:
   - `Could not solve`
-  - `Solved with hints / slow`
-  - `Solved cleanly`
+  - `Solved with help or heavy friction`
+  - `Solved independently`
+- Records elapsed time, implementation friction, approach efficiency, and complexity confidence
+  separately so a correct independent solve is not mislabeled solely for being slow or suboptimal.
 - Hides notes and solution references before grading so they do not become hints.
 - Shows Memory for checked, independent, and transfer-supported skill evidence plus recent
   outcomes and evidence gaps.
@@ -32,6 +34,8 @@ The next adaptive practice flow is specified in
 [docs/practice-v2-spec.md](docs/practice-v2-spec.md).
 Product direction and upcoming UX work live in
 [docs/product-roadmap.md](docs/product-roadmap.md).
+The concise implementation handoff and current invariants live in
+[docs/current-context.md](docs/current-context.md).
 
 ## Requirements
 
@@ -102,8 +106,10 @@ You do not need to seed both lists. Seed only the study lists you want to track.
 both Blind 75 and NeetCode 150, overlapping problems are merged into one row with both
 badges and one shared review history.
 
-The Practice tab's `New problem source` selector controls whether the daily new-problem pick
-comes from Blind 75 or NeetCode 150.
+When Practice V2 is enabled, every seeded list contributes candidates to the adaptive plan.
+The plan uses current evidence, available time, exact-title recall pressure, transfer need,
+and recent work to choose one rep. List progress remains visible in Memory; seeding a list
+does not make imported exposure count as trusted evidence.
 
 ## Run QA Mode
 
@@ -160,14 +166,10 @@ row counts toward Minimum Practice, Friend Pulse, leaderboard weekly stats, or m
 green streaks.
 
 During import review, LeetCode rows can carry a provisional confidence level and you can
-remove rows you do not want to track. After import, use `Library -> Practice now` on a
-`Seen, unverified` problem to run a cold check. That honest attempt creates the trusted
-baseline: red starts at Stage 0, yellow at Stage 1, and green at Stage 2. The cold check
-also records stopwatch minutes, code result, assistance, the main blocker, and a 0-4
-recall score for later analysis. The selected grade stays provisional until you choose
-`Finish cold check`; only then are the grade, evidence, stage, and review date saved
-together. Selected and unfinished cold checks resume after navigation or reload, while
-undo returns a completed check to the unverified state.
+remove rows you do not want to track. Under Practice V2, imported-only titles appear as
+`Assessment pending`; the adaptive plan decides when an honest assessment is the best next
+rep. In the legacy V0 fallback, `Library -> Practice now` launches the older cold-check
+workflow. Imported history remains exposure-only in either mode.
 The Practice card shows two timing landmarks before you begin:
 
 | Difficulty | Independent checkpoint | Full attempt ceiling |
@@ -272,6 +274,7 @@ FEATURE_LEETCODE_IMPORT=false
 FEATURE_RECOVERY_LANE=false
 FEATURE_PRACTICE_V2=false
 FEATURE_PRACTICE_V2_SHADOW=false
+FEATURE_LIST_PROGRESS=false
 ```
 
 ### Experimental Feature Flags
@@ -279,8 +282,8 @@ FEATURE_PRACTICE_V2_SHADOW=false
 The default hosted app keeps the main practice loop clean. These experiments are hidden
 unless explicitly enabled:
 
-- `FEATURE_PHONE_REMINDERS=true`: hosted push reminders when today's honest rep is still open
-  days. Requires valid `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`.
+- `FEATURE_PHONE_REMINDERS=true`: hosted push reminders when today's honest rep is still open.
+  Requires valid `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`.
 - `FEATURE_FRIEND_PULSE=true`: the `Pacts` tab, exact-handle search, pact requests, and
   Friend Pulse panel.
 - `FEATURE_LEETCODE_IMPORT=true`: the Settings card and review flow for importing LeetCode
@@ -289,9 +292,10 @@ unless explicitly enabled:
 - `FEATURE_PRACTICE_V2_SHADOW=true`: computes a developer comparison recommendation without
   changing the visible pick or persisted state. QA enables this automatically.
 - `FEATURE_PRACTICE_V2=true`: enables the visible single-rep Practice V2 workflow. QA enables
-  it automatically; local production and hosted production keep V0 unless this flag is set.
-  Leave the hosted flag off until the QA acceptance flow in
-  `docs/practice-v2-spec.md` is approved for rollout.
+  it automatically. Local and hosted production use V0 only when this flag is absent or false;
+  the current private-beta deployment enables it explicitly.
+- `FEATURE_LIST_PROGRESS=true`: shows current-evidence progress for Blind 75 and NeetCode 150.
+  QA enables it automatically. Imported-only and stale evidence do not color these bars.
 
 Phone reminders require VAPID keys. Generate keys with:
 
@@ -344,14 +348,20 @@ See [docs/online-hosting-plan.md](docs/online-hosting-plan.md) for the full setu
 ```text
 index.html                  App shell and views
 styles.css                  App styling
-app.js                      Frontend state, rendering, grading, import/export
+app.js                      Frontend orchestration, rendering, persistence, import/export
 server.js                   Express server for local JSON persistence and hosted SQLite mode
+state-v4.js                 Backward-compatible state migration and normalization
+recommendation-engine.js    Pure Practice V2 evidence and recommendation rules
+practice-v2-workflow.js     Practice V2 state machine and runtime normalization
 data/blind-75.js            Built-in Blind 75 list
 data/neetcode-150.js        Built-in NeetCode 150 list
 data/fixtures/qa-state.json Safe QA fixture state
 docs/review-algorithm.md    Scheduling and mastery source of truth
+docs/practice-v2-spec.md    Adaptive practice product and implementation contract
+docs/current-context.md     Current architecture, invariants, and handoff context
 docs/local-development.md   Local architecture notes
-docs/online-hosting-plan.md Future hosted-app plan
+docs/online-hosting-plan.md Implemented private-beta hosting and operations guide
+tests/                      Node regression tests for state, scheduling, and workflows
 ```
 
 ## Useful Commands
@@ -363,7 +373,8 @@ npm run start:hosted
 npm run check
 ```
 
-`npm run check` runs JavaScript syntax checks for the app and server.
+`npm run check` runs JavaScript syntax checks for the app, server, state migration,
+recommendation engine, and workflow, then runs the Node regression suite.
 
 ## Online Version
 
