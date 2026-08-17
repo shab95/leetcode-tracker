@@ -2349,11 +2349,11 @@ function renderStats() {
     });
   const blindAttempted = BLIND_75.filter((planProblem) => {
     const row = findProblemByPlan(planProblem);
-    return row && isAttempted(row);
+    return row && hasProperGradeHistory(row);
   }).length;
   const neetcodeAttempted = NEETCODE_150.filter((planProblem) => {
     const row = findProblemByPlan(planProblem);
-    return row && isAttempted(row);
+    return row && hasProperGradeHistory(row);
   }).length;
   const evidence = buildMemoryEvidenceModel();
 
