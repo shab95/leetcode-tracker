@@ -1,6 +1,6 @@
 # Current Product Context
 
-**As of:** August 14, 2026
+**As of:** August 28, 2026
 
 This is the short handoff for the product as it exists now. It describes current behavior and
 the invariants future work must preserve. It is not a replacement for the detailed algorithm or
@@ -133,6 +133,11 @@ multi-dimensional reflection.
 
 ## Current Limitations
 
+- Manual backfill now opens a dedicated `Log past attempt` dialog from a problem's History tab.
+  It requires a date and real grade, allows unknown historical reflection details, replays proper
+  history chronologically, and projects the saved attempt into app activity. Imported rows remain
+  context only. See [`manual-backfill-v2-plan.md`](manual-backfill-v2-plan.md) for the behavior
+  contract and acceptance matrix.
 - The frontend still persists the full tracker blob; there is no dedicated atomic attempt API.
 - Active drafts do not follow the user across tabs or devices.
 - SQLite hosting is intentionally single-replica.

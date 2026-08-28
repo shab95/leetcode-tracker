@@ -210,6 +210,68 @@ test("a failed attempt does not require or save solution quality", () => {
   assert.equal(result.metadata.solutionQuality, "not-applicable");
 });
 
+test("historical backfill accepts unknown reflection details without a target", () => {
+  const result = workflow.validateReflection({
+    grade: "red",
+    draft: draft({
+      shared: { elapsedMinutes: "", timeTracked: false, solutionQuality: "unknown" },
+      nonIndependent: { assistance: "unknown", blocker: "unknown" },
+    }),
+    lockedTimeBoxMinutes: null,
+    historical: true,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.metadata.elapsedMinutes, null);
+  assert.equal(result.metadata.timingStatus, "untracked");
+  assert.equal(result.metadata.timeBoxRatio, null);
+  assert.equal(result.metadata.assistance, "unknown");
+  assert.equal(result.metadata.blocker, "unknown");
+  assert.equal(result.metadata.solutionQuality, "not-applicable");
+});
+
+test("historical backfill still requires a real grade", () => {
+  const result = workflow.validateReflection({
+    grade: "",
+    draft: {
+      shared: { timeTracked: false, solutionQuality: "unknown" },
+      nonIndependent: { assistance: "unknown", blocker: "unknown" },
+    },
+    lockedTimeBoxMinutes: null,
+    historical: true,
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(result.errors.grade, /grade/i);
+});
+
+test("historical clean backfill can preserve unknown solution quality", () => {
+  const result = workflow.validateReflection({
+    grade: "green",
+    draft: draft({
+      shared: { elapsedMinutes: "", timeTracked: false, solutionQuality: "unknown" },
+    }),
+    lockedTimeBoxMinutes: null,
+    historical: true,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.metadata.solutionQuality, "unknown");
+  assert.equal(result.metadata.assistance, "none");
+  assert.equal(result.metadata.blocker, null);
+});
+
+test("normal clean grading still requires known solution quality", () => {
+  const result = workflow.validateReflection({
+    grade: "green",
+    draft: draft({ shared: { solutionQuality: workflow.HISTORICAL_UNKNOWN } }),
+    lockedTimeBoxMinutes: 20,
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(result.errors.solutionQuality, /expected optimization/i);
+});
+
 test("legacy complexity readiness normalizes to the tri-state value", () => {
   const runtime = workflow.normalizeRuntime({
     reflectionDrafts: {

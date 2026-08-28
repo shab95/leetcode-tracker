@@ -9,6 +9,7 @@
   const GRADES = Object.freeze(["red", "yellow", "green"]);
   const COMPLEXITY_STATUSES = Object.freeze(["not-checked", "partial", "explained"]);
   const SOLUTION_QUALITY = Object.freeze(["expected", "suboptimal", "unknown"]);
+  const HISTORICAL_UNKNOWN = "unknown";
   const ASSISTANCE = Object.freeze(["none", "hint", "solution", "editorial", "ai", "person"]);
   const BLOCKERS = Object.freeze([
     "getting-started",
@@ -102,11 +103,11 @@
     return { ok: true, runtime: { ...current, phase: next }, error: "" };
   }
 
-  function validateReflection({ grade, draft, lockedTimeBoxMinutes }) {
+  function validateReflection({ grade, draft, lockedTimeBoxMinutes, historical = false }) {
     const normalizedGrade = GRADES.includes(grade) ? grade : "";
     const drafts = normalizeDrafts(draft);
     const errors = {};
-    if (!normalizedGrade) errors.grade = "Choose the result that describes the full attempt.";
+    if (!normalizedGrade) errors.grade = "Choose a grade that describes the full attempt.";
 
     const timeTracked = Boolean(drafts.shared.timeTracked);
     const elapsed = timeTracked ? Number(drafts.shared.elapsedMinutes) : null;
@@ -118,13 +119,16 @@
     if (normalizedGrade === "red" || normalizedGrade === "yellow") {
       const assistance = drafts.nonIndependent.assistance;
       const blocker = drafts.nonIndependent.blocker;
-      if (!ASSISTANCE.includes(assistance)) errors.assistance = "Choose whether you used help.";
-      if (!BLOCKERS.includes(blocker)) errors.blocker = "Choose the main blocker for this result.";
+      if (!ASSISTANCE.includes(assistance) && !(historical && assistance === HISTORICAL_UNKNOWN)) {
+        errors.assistance = "Choose whether you used help.";
+      }
+      if (!BLOCKERS.includes(blocker) && !(historical && blocker === HISTORICAL_UNKNOWN)) {
+        errors.blocker = "Choose the main blocker for this result.";
+      }
     }
-    if (
-      ["yellow", "green"].includes(normalizedGrade) &&
-      !SOLUTION_QUALITY.includes(drafts.shared.solutionQuality)
-    ) {
+    const solutionQualityKnown = SOLUTION_QUALITY.includes(drafts.shared.solutionQuality)
+      && (historical || drafts.shared.solutionQuality !== HISTORICAL_UNKNOWN);
+    if (["yellow", "green"].includes(normalizedGrade) && !solutionQualityKnown) {
       errors.solutionQuality = "Choose whether the working solution used the expected optimization.";
     }
 
@@ -173,7 +177,9 @@
         complexityKnown: normalizeComplexityStatus(value.shared) === "explained",
         solutionQuality: SOLUTION_QUALITY.includes(value.shared?.solutionQuality)
           ? value.shared.solutionQuality
-          : "",
+          : value.shared?.solutionQuality === HISTORICAL_UNKNOWN
+            ? HISTORICAL_UNKNOWN
+            : "",
       },
       independent: { friction: String(value.independent?.friction || "none") },
       nonIndependent: {
@@ -226,6 +232,7 @@
     BLOCKERS,
     COMPLEXITY_STATUSES,
     GRADES,
+    HISTORICAL_UNKNOWN,
     PHASES,
     SOLUTION_QUALITY,
     completionPlanUpdate,

@@ -187,9 +187,11 @@ The available-time control is not a session timer. Changing it recalculates the 
 rep and may select a different problem. After saving one honest rep, you can stop or choose
 `Do another rep`; there is no separate session to end.
 
-You can also backfill individual attempts from a problem's `Edit -> History` tab. Manual
-backfill is for attempts completed outside the app and uses real grades only, so the review
-schedule is rebuilt from the most recent graded attempt date.
+You can also backfill individual attempts from a problem's `Edit -> History` tab. Choose
+`Log past attempt`, provide the date and a real grade, and leave historical details as unknown
+when you do not remember them. The schedule is rebuilt from the most recent graded attempt date;
+one proper grade per problem per calendar date keeps date-only history deterministic. Imported
+rows remain context only.
 
 Early clean solves are recorded, but they do not advance the review stage until the
 scheduled review date arrives. This keeps the app honest about spaced recall: practicing

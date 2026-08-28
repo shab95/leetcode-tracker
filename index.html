@@ -1233,31 +1233,10 @@
               <span>Backfill Attempt</span>
               <small>Outside this app</small>
             </div>
-            <p class="modal-copy" id="backfillHelp">Add a real graded attempt you completed elsewhere. Imported rows stay visible above, but only real grades build current evidence and schedule same-title recall.</p>
-
-            <div class="form-grid">
-              <label class="field">
-                <span>Attempt date</span>
-                <input id="backfillDateInput" type="date" />
-              </label>
-
-              <label class="field">
-                <span>Grade</span>
-                <select id="backfillGradeInput">
-                  <option value="green">Solved cleanly</option>
-                  <option value="yellow">Solved with hints / slow</option>
-                  <option value="red">Could not solve</option>
-                </select>
-              </label>
-            </div>
-
-            <label class="field">
-              <span>Optional note</span>
-              <textarea id="backfillNoteInput" rows="2" placeholder="What happened on that attempt?"></textarea>
-            </label>
-
-            <div class="post-grade-actions">
-              <button class="ghost-btn" id="addBackfillBtn" type="button">Add backfill</button>
+            <p class="modal-copy" id="backfillHelp">Add one real graded attempt you completed elsewhere. We will use its date as the source of truth and leave unknown details unknown.</p>
+            <div class="history-toolbar">
+              <span>Imported rows remain context only. A backfill adds real scheduling evidence.</span>
+              <button class="ghost-btn" id="openBackfillBtn" type="button">Log past attempt</button>
             </div>
           </div>
         </section>
@@ -1268,6 +1247,123 @@
             <button class="ghost-btn" id="cancelBtn" type="button">Cancel</button>
             <button class="primary-btn" id="saveProblemBtn" type="submit">Save</button>
           </div>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="backfillDialog" class="backfill-dialog">
+      <form id="backfillForm">
+        <div class="modal-head">
+          <div>
+            <p class="eyebrow">Past attempt</p>
+            <h2>Log past attempt</h2>
+          </div>
+          <button class="icon-btn" id="closeBackfillDialogBtn" type="button" aria-label="Close">x</button>
+        </div>
+
+        <p class="modal-copy" id="backfillProblemContext"></p>
+        <p class="form-error" id="backfillError" aria-live="polite"></p>
+
+        <div class="form-grid">
+          <label class="field">
+            <span>Attempt date</span>
+            <input id="backfillDate" type="date" required />
+          </label>
+          <label class="field backfill-grade-field">
+            <span>How did it go?</span>
+            <select id="backfillGrade" class="grade-select" required>
+              <option value="">Choose a grade</option>
+              <option value="red">Could not solve</option>
+              <option value="yellow">Solved with hints / slow</option>
+              <option value="green">Solved cleanly</option>
+            </select>
+          </label>
+        </div>
+
+        <section class="backfill-reflection" id="backfillReflection" hidden>
+          <div class="solution-section-head">
+            <span>Reflection</span>
+            <small>Unknown is okay for old attempts</small>
+          </div>
+
+          <div class="form-grid backfill-time-row">
+            <label class="field">
+              <span>Stopwatch minutes</span>
+              <input id="backfillElapsed" type="number" min="1" max="180" inputmode="numeric" placeholder="I don't remember" />
+            </label>
+            <label class="readiness-check backfill-time-check">
+              <input id="backfillTimeUntracked" type="checkbox" />
+              <span><strong>I did not track it</strong><small>Leave time unknown</small></span>
+            </label>
+          </div>
+
+          <label class="field" id="backfillAssistanceField">
+            <span>Did you use help?</span>
+            <select id="backfillAssistance">
+              <option value="unknown">I don't remember</option>
+              <option value="none">No help</option>
+              <option value="hint">Hint</option>
+              <option value="solution">Solution</option>
+              <option value="editorial">Editorial</option>
+              <option value="ai">AI</option>
+              <option value="person">Another person</option>
+            </select>
+          </label>
+
+          <label class="field" id="backfillBlockerField">
+            <span>Main blocker</span>
+            <select id="backfillBlocker">
+              <option value="unknown">I don't remember</option>
+              <option value="getting-started">Getting started</option>
+              <option value="strategy">Strategy</option>
+              <option value="optimization">Optimization</option>
+              <option value="implementation">Implementation</option>
+              <option value="syntax-api">Syntax / API</option>
+              <option value="edge-cases">Edge cases</option>
+              <option value="explanation">Explanation</option>
+              <option value="time-management">Time management</option>
+            </select>
+          </label>
+
+          <label class="field" id="backfillFrictionField" hidden>
+            <span>What took extra effort?</span>
+            <select id="backfillFriction">
+              <option value="none">Nothing significant</option>
+              <option value="syntax-api">Syntax / API</option>
+              <option value="implementation">Implementation</option>
+              <option value="edge-cases">Edge cases</option>
+              <option value="explanation">Explaining the idea</option>
+              <option value="optimization">Optimization</option>
+            </select>
+          </label>
+
+          <label class="field" id="backfillSolutionQualityField">
+            <span>Solution quality</span>
+            <select id="backfillSolutionQuality">
+              <option value="unknown">I don't remember</option>
+              <option value="expected">Expected efficient approach</option>
+              <option value="suboptimal">Working, but suboptimal</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Complexity understanding</span>
+            <select id="backfillComplexity">
+              <option value="not-checked">I don't remember</option>
+              <option value="partial">Partially explained</option>
+              <option value="explained">Explained confidently</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Optional note</span>
+            <textarea id="backfillNote" rows="3" placeholder="What do you remember about that attempt?"></textarea>
+          </label>
+        </section>
+
+        <div class="modal-actions">
+          <button class="ghost-btn" id="backfillCancelBtn" type="button">Cancel</button>
+          <button class="primary-btn" id="backfillSaveBtn" type="submit">Add past attempt</button>
         </div>
       </form>
     </dialog>

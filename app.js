@@ -80,7 +80,6 @@ const LEARNING_SIGNAL_KEYS = Object.keys(LEARNING_SIGNAL_LABELS);
 
 const els = {
   addProblemBtn: document.querySelector("#addProblemBtn"),
-  addBackfillBtn: document.querySelector("#addBackfillBtn"),
   applyLeetcodeImportBtn: document.querySelector("#applyLeetcodeImportBtn"),
   accountLabel: document.querySelector("#accountLabel"),
   accountMenu: document.querySelector("#accountMenu"),
@@ -88,10 +87,30 @@ const els = {
   appStatusStrip: document.querySelector("#appStatusStrip"),
   authView: document.querySelector("#authView"),
   attentionDialog: document.querySelector("#attentionDialog"),
-  backfillDateInput: document.querySelector("#backfillDateInput"),
-  backfillGradeInput: document.querySelector("#backfillGradeInput"),
+  backfillDialog: document.querySelector("#backfillDialog"),
+  openBackfillBtn: document.querySelector("#openBackfillBtn"),
+  backfillForm: document.querySelector("#backfillForm"),
+  backfillProblemContext: document.querySelector("#backfillProblemContext"),
+  backfillError: document.querySelector("#backfillError"),
+  backfillDate: document.querySelector("#backfillDate"),
+  backfillGrade: document.querySelector("#backfillGrade"),
+  backfillReflection: document.querySelector("#backfillReflection"),
+  backfillElapsed: document.querySelector("#backfillElapsed"),
+  backfillTimeUntracked: document.querySelector("#backfillTimeUntracked"),
+  backfillAssistanceField: document.querySelector("#backfillAssistanceField"),
+  backfillAssistance: document.querySelector("#backfillAssistance"),
+  backfillBlockerField: document.querySelector("#backfillBlockerField"),
+  backfillBlocker: document.querySelector("#backfillBlocker"),
+  backfillFrictionField: document.querySelector("#backfillFrictionField"),
+  backfillFriction: document.querySelector("#backfillFriction"),
+  backfillSolutionQualityField: document.querySelector("#backfillSolutionQualityField"),
+  backfillSolutionQuality: document.querySelector("#backfillSolutionQuality"),
+  backfillComplexity: document.querySelector("#backfillComplexity"),
+  backfillNote: document.querySelector("#backfillNote"),
+  backfillSaveBtn: document.querySelector("#backfillSaveBtn"),
+  backfillCancelBtn: document.querySelector("#backfillCancelBtn"),
+  closeBackfillDialogBtn: document.querySelector("#closeBackfillDialogBtn"),
   backfillHelp: document.querySelector("#backfillHelp"),
-  backfillNoteInput: document.querySelector("#backfillNoteInput"),
   blindAttempted: document.querySelector("#blindAttempted"),
   listProgressPanel: document.querySelector("#listProgressPanel"),
   listProgressCards: document.querySelector("#listProgressCards"),
@@ -377,6 +396,9 @@ let problemMutationInFlight = false;
 let recoveryMutationInFlight = false;
 let settingsDataMutationInFlight = false;
 let postGradeMutationInFlight = false;
+let problemDialogInitialValues = null;
+let backfillProblemId = "";
+let backfillDraft = null;
 let practiceV2Runtime = PRACTICE_V2_WORKFLOW?.createRuntime() || null;
 let currentNewSourceId = els.newSourceSelect.value || "blind75";
 let tableSort = { column: "nextReview", direction: "asc" };
@@ -415,7 +437,36 @@ const themeMedia = window.matchMedia?.("(prefers-color-scheme: dark)");
 applyThemePreference(loadThemePreference());
 
 els.addProblemBtn.addEventListener("click", () => openDialog());
-els.addBackfillBtn.addEventListener("click", addBackfillAttempt);
+els.openBackfillBtn?.addEventListener("click", openBackfillDialog);
+els.backfillForm?.addEventListener("submit", saveBackfillAttempt);
+els.backfillGrade?.addEventListener("change", () => {
+  updateBackfillReflectionFields();
+  syncBackfillDraft();
+});
+els.backfillTimeUntracked?.addEventListener("change", () => {
+  updateBackfillReflectionFields();
+  syncBackfillDraft();
+});
+[
+  els.backfillDate,
+  els.backfillElapsed,
+  els.backfillTimeUntracked,
+  els.backfillAssistance,
+  els.backfillBlocker,
+  els.backfillFriction,
+  els.backfillSolutionQuality,
+  els.backfillComplexity,
+  els.backfillNote,
+].filter(Boolean).forEach((element) => {
+  element.addEventListener("input", syncBackfillDraft);
+  element.addEventListener("change", syncBackfillDraft);
+});
+els.backfillCancelBtn?.addEventListener("click", closeBackfillDialogAndReturn);
+els.closeBackfillDialogBtn?.addEventListener("click", closeBackfillDialogAndReturn);
+els.backfillDialog?.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeBackfillDialogAndReturn();
+});
 els.applyLeetcodeImportBtn?.addEventListener("click", applyLeetcodeProgressImport);
 els.cancelBtn.addEventListener("click", () => els.problemDialog.close());
 els.cancelLeetcodeImportBtn?.addEventListener("click", () => els.leetcodeImportDialog?.close());
@@ -1022,7 +1073,8 @@ function setProblemMutationBusy(busy, label = "Saving...") {
     els.saveProblemBtn.textContent = busy ? label : "Save";
   }
   if (els.deleteBtn) els.deleteBtn.disabled = busy;
-  if (els.addBackfillBtn) els.addBackfillBtn.disabled = busy;
+  if (els.openBackfillBtn) els.openBackfillBtn.disabled = busy;
+  if (els.backfillSaveBtn) els.backfillSaveBtn.disabled = busy;
   if (els.cancelBtn) els.cancelBtn.disabled = busy;
   if (els.closeDialogBtn) els.closeDialogBtn.disabled = busy;
 }
@@ -4295,33 +4347,52 @@ function getRecentTopics(days) {
 }
 
 function getActivitySessions() {
-  const sessionKeys = new Set(sessions.map(sessionActivityKey));
-  const backfillSessions = [];
+  const projected = problems.flatMap((problem) => getBackfillSessionsForProblem(problem));
+  const projectedKeys = new Set(projected.map(sessionActivityKey));
+  const persisted = sessions.filter((session) => !projectedKeys.has(sessionActivityKey(session)));
+  return [...persisted, ...projected].sort((a, b) => dateValue(b.date) - dateValue(a.date));
+}
 
-  problems.forEach((problem) => {
-    (problem.reviewHistory || []).forEach((entry) => {
-      if (!entry.backfilled || !isProperGrade(entry.grade)) return;
+function getBackfillSessionsForProblem(problem) {
+  return (problem?.reviewHistory || [])
+    .filter((entry) => entry.backfilled && isProperGrade(entry.grade))
+    .map((entry) => ({
+      date: normalizeDate(entry.date),
+      problemId: problem.id,
+      title: problem.title,
+      topic: problem.topic,
+      grade: entry.grade,
+      attemptType: entry.attemptType || inferBackfillAttemptType(problem, entry),
+      attemptContext: entry.attemptContext || "backfill",
+      taskType: entry.taskType || "",
+      stage: entry.newStage ?? problem.stage,
+      status: problem.status,
+      backfilled: true,
+      historyEntryId: entry.id || "",
+      durationMinutes: entry.durationMinutes ?? entry.elapsedMinutes ?? null,
+      elapsedMinutes: entry.elapsedMinutes ?? entry.durationMinutes ?? null,
+      timeTracked: entry.timeTracked !== false,
+      timingStatus: entry.timingStatus || "untracked",
+      minutesOverTarget: entry.minutesOverTarget ?? null,
+      assistance: entry.assistance || "unknown",
+      blocker: entry.blocker || "unknown",
+      friction: entry.friction || "none",
+      solutionQuality: entry.solutionQuality || "unknown",
+      complexityStatus: entry.complexityStatus || "not-checked",
+      complexityKnown: Boolean(entry.complexityKnown),
+      note: entry.note || "",
+    }))
+    .filter((session) => session.date);
+}
 
-      const session = {
-        date: normalizeDate(entry.date),
-        problemId: problem.id,
-        title: problem.title,
-        topic: problem.topic,
-        grade: entry.grade,
-        attemptType: inferBackfillAttemptType(problem, entry),
-        stage: entry.newStage ?? problem.stage,
-        status: problem.status,
-        backfilled: true,
-        historyEntryId: entry.id || "",
-      };
-      const key = sessionActivityKey(session);
-      if (!session.date || sessionKeys.has(key)) return;
-      sessionKeys.add(key);
-      backfillSessions.push(session);
-    });
+function refreshBackfillSessionsForProblem(problem) {
+  const generated = getBackfillSessionsForProblem(problem);
+  const generatedKeys = new Set(generated.map(sessionActivityKey));
+  const otherSessions = sessions.filter((session) => {
+    if (generatedKeys.has(sessionActivityKey(session))) return false;
+    return !(session.backfilled && session.problemId === problem?.id);
   });
-
-  return [...sessions, ...backfillSessions];
+  return [...otherSessions, ...generated].sort((a, b) => dateValue(b.date) - dateValue(a.date));
 }
 
 function sessionActivityKey(session) {
@@ -5082,8 +5153,9 @@ function historyStageSummary(entry) {
       : entry.grade === "green" && isIndependentHistoryEntry(entry)
         ? "Independent evidence"
         : "Assisted evidence";
+    const source = entry.backfilled ? "Manual backfill · " : "";
     const nextReview = entry.nextReview ? ` · exact-title recall ${formatDate(entry.nextReview)}` : "";
-    return `${evidence}${nextReview}${heldReasonLabel(entry)}`;
+    return `${source}${evidence}${nextReview}${heldReasonLabel(entry)}`;
   }
   const nextReview = entry.nextReview ? ` · next ${formatDate(entry.nextReview)}` : "";
   if (entry.attemptContext === "backfill-calibration") {
@@ -5135,15 +5207,40 @@ function openDialog(id = "") {
   els.completionInput.value = problem?.completionCount ?? 0;
   els.complexityInput.checked = Boolean(problem?.complexityKnown);
   els.notesInput.value = problem?.notes || "";
-  els.backfillDateInput.value = toIsoDate(new Date());
-  els.backfillGradeInput.value = "green";
-  els.backfillNoteInput.value = "";
-  renderHistoryTab(problem);
   els.solutionApproachInput.value = problem?.solution?.approach || "";
   els.timeComplexityInput.value = problem?.solution?.timeComplexity || "";
   els.spaceComplexityInput.value = problem?.solution?.spaceComplexity || "";
   els.solutionExplanationInput.value = problem?.solution?.explanation || "";
+  renderHistoryTab(problem);
+  problemDialogInitialValues = captureProblemEditorValues();
   els.problemDialog.showModal();
+}
+
+function captureProblemEditorValues() {
+  return {
+    title: els.titleInput.value.trim(),
+    url: els.urlInput.value.trim(),
+    status: els.statusInput.value,
+    difficulty: els.difficultyInput.value,
+    topic: els.topicInput.value.trim(),
+    nextReview: els.reviewInput.value,
+    completionCount: Number(els.completionInput.value || 0),
+    complexityKnown: els.complexityInput.checked,
+    notes: els.notesInput.value.trim(),
+    solution: {
+      approach: els.solutionApproachInput.value.trim(),
+      timeComplexity: els.timeComplexityInput.value.trim(),
+      spaceComplexity: els.spaceComplexityInput.value.trim(),
+      explanation: els.solutionExplanationInput.value.trim(),
+    },
+  };
+}
+
+function hasUnsavedProblemEditorChanges() {
+  return Boolean(
+    problemDialogInitialValues &&
+    JSON.stringify(captureProblemEditorValues()) !== JSON.stringify(problemDialogInitialValues),
+  );
 }
 
 function setProblemDialogTab(tabName) {
@@ -5168,15 +5265,15 @@ function renderHistoryTab(problem) {
         <span>Backfill is available after the problem exists in the tracker.</span>
       </div>
     `;
-    els.addBackfillBtn.disabled = true;
+    els.openBackfillBtn.disabled = true;
     els.backfillHelp.textContent = "Save this problem before adding backfilled attempts.";
     return;
   }
 
   const history = [...(problem.reviewHistory || [])].sort(compareHistoryEntriesNewestFirst);
-  els.addBackfillBtn.disabled = false;
+  els.openBackfillBtn.disabled = false;
   els.backfillHelp.textContent =
-    "Add a real graded attempt you completed elsewhere. Imported rows stay visible above, but only real grades build current evidence and schedule same-title recall.";
+    "Add a real graded attempt you completed elsewhere. Imported rows stay visible above, but only real grades build current evidence and schedule recall.";
 
   if (history.length === 0) {
     els.historyList.innerHTML = `
@@ -5211,6 +5308,72 @@ function renderHistoryTab(problem) {
     .join("");
 }
 
+function defaultBackfillDraft() {
+  return {
+    date: toIsoDate(new Date()),
+    grade: "",
+    elapsedMinutes: "",
+    timeTracked: false,
+    assistance: "unknown",
+    blocker: "unknown",
+    friction: "none",
+    solutionQuality: "unknown",
+    complexityStatus: "not-checked",
+    note: "",
+  };
+}
+
+function captureBackfillDraft() {
+  return {
+    date: normalizeDate(els.backfillDate?.value),
+    grade: els.backfillGrade?.value || "",
+    elapsedMinutes: els.backfillElapsed?.value || "",
+    timeTracked: !els.backfillTimeUntracked?.checked,
+    assistance: els.backfillAssistance?.value || "unknown",
+    blocker: els.backfillBlocker?.value || "unknown",
+    friction: els.backfillFriction?.value || "none",
+    solutionQuality: els.backfillSolutionQuality?.value || "unknown",
+    complexityStatus: els.backfillComplexity?.value || "not-checked",
+    note: els.backfillNote?.value.trim() || "",
+  };
+}
+
+function syncBackfillDraft() {
+  if (backfillDraft && els.backfillForm) backfillDraft = captureBackfillDraft();
+}
+
+function renderBackfillDialog(problem) {
+  backfillDraft = { ...defaultBackfillDraft(), ...(backfillDraft || {}) };
+  els.backfillProblemContext.textContent = `${problem.title} · add one dated, honest result. Unknown details are okay.`;
+  els.backfillDate.value = backfillDraft.date;
+  els.backfillGrade.value = backfillDraft.grade;
+  els.backfillElapsed.value = backfillDraft.elapsedMinutes;
+  els.backfillTimeUntracked.checked = !backfillDraft.timeTracked;
+  els.backfillAssistance.value = backfillDraft.assistance;
+  els.backfillBlocker.value = backfillDraft.blocker;
+  els.backfillFriction.value = backfillDraft.friction;
+  els.backfillSolutionQuality.value = backfillDraft.solutionQuality;
+  els.backfillComplexity.value = backfillDraft.complexityStatus;
+  els.backfillNote.value = backfillDraft.note;
+  setBackfillError("");
+  updateBackfillReflectionFields();
+}
+
+function updateBackfillReflectionFields() {
+  const grade = els.backfillGrade?.value || "";
+  const hasGrade = isProperGrade(grade);
+  if (els.backfillReflection) els.backfillReflection.hidden = !hasGrade;
+  if (els.backfillElapsed) els.backfillElapsed.disabled = Boolean(els.backfillTimeUntracked?.checked);
+  if (els.backfillAssistanceField) els.backfillAssistanceField.hidden = !["red", "yellow"].includes(grade);
+  if (els.backfillBlockerField) els.backfillBlockerField.hidden = !["red", "yellow"].includes(grade);
+  if (els.backfillFrictionField) els.backfillFrictionField.hidden = grade !== "green";
+  if (els.backfillSolutionQualityField) els.backfillSolutionQualityField.hidden = grade === "red" || !hasGrade;
+}
+
+function setBackfillError(message) {
+  if (els.backfillError) els.backfillError.textContent = message || "";
+}
+
 function renderAttemptMetadata(entry) {
   if (isFeatureEnabled("practiceV2") && isProperGrade(entry.grade)) {
     const context = entry.backfilled
@@ -5242,6 +5405,9 @@ function renderAttemptMetadata(entry) {
 }
 
 function timingEvidenceLabel(entry) {
+  if (entry?.backfilled && (entry.timeTracked === false || entry.durationMinutes === null || entry.elapsedMinutes === null)) {
+    return "Time not tracked";
+  }
   if (entry?.timingStatus === "within-target") return "Within target";
   if (entry?.timingStatus !== "over-target") return "";
   const overage = Number(entry.minutesOverTarget);
@@ -5256,6 +5422,7 @@ function attemptResultLabel(value) {
 
 function assistanceLabel(value) {
   return ({
+    unknown: "Help not recorded",
     none: "No assistance",
     hint: "Used a hint",
     solution: "Viewed solution",
@@ -5267,6 +5434,7 @@ function assistanceLabel(value) {
 
 function blockerLabel(value) {
   return ({
+    unknown: "Blocker not recorded",
     "getting-started": "Getting-started blocker",
     recognition: "Pattern recognition blocker",
     strategy: "Strategy blocker",
@@ -5283,6 +5451,7 @@ function blockerLabel(value) {
 
 function frictionLabel(value) {
   return ({
+    unknown: "Friction not recorded",
     none: "No meaningful friction",
     optimization: "Optimization / efficiency friction",
     implementation: "Implementation friction",
@@ -5314,75 +5483,135 @@ function practiceTaskTypeLabel(value) {
   })[value] || "";
 }
 
-async function addBackfillAttempt() {
+async function openBackfillDialog() {
   if (problemMutationInFlight || blockTrackerMutationWhileSaving()) return;
   const id = els.problemId.value;
   const problem = problems.find((item) => item.id === id);
   if (!problem) return;
 
-  const date = normalizeDate(els.backfillDateInput.value);
-  const grade = els.backfillGradeInput.value;
-  const note = els.backfillNoteInput.value.trim();
-
-  if (!date) {
-    alert("Choose a valid attempt date.");
-    return;
+  if (hasUnsavedProblemEditorChanges()) {
+    const saveChanges = window.confirm("Save the problem edits before logging a past attempt?");
+    if (saveChanges) {
+      const saved = await saveProblem({ preventDefault() {} });
+      if (!saved) return;
+    } else if (window.confirm("Discard the unsaved problem edits and continue?")) {
+      els.problemDialog.close();
+      problemDialogInitialValues = null;
+    } else {
+      return;
+    }
   }
 
-  if (parseIsoDate(date) > dateOnly(new Date())) {
-    alert("Backfilled attempts cannot be in the future.");
-    return;
-  }
+  const currentProblem = problems.find((item) => item.id === id);
+  if (!currentProblem) return;
+  backfillProblemId = currentProblem.id;
+  backfillDraft = defaultBackfillDraft();
+  renderBackfillDialog(currentProblem);
+  els.problemDialog.close();
+  els.backfillDialog.showModal();
+}
 
-  if (!isProperGrade(grade)) {
-    alert("Choose a real grade for the backfilled attempt.");
-    return;
+function closeBackfillDialogAndReturn() {
+  if (els.backfillDialog?.open) els.backfillDialog.close();
+  const id = backfillProblemId;
+  backfillProblemId = "";
+  backfillDraft = null;
+  if (id) {
+    openDialog(id);
+    setProblemDialogTab("history");
   }
+}
+
+async function saveBackfillAttempt(event) {
+  event?.preventDefault();
+  if (problemMutationInFlight || blockTrackerMutationWhileSaving()) return false;
+  const id = backfillProblemId;
+  const problem = problems.find((item) => item.id === id);
+  if (!problem) return false;
+
+  syncBackfillDraft();
+  const draft = { ...defaultBackfillDraft(), ...(backfillDraft || {}) };
+  const date = normalizeDate(draft.date);
+  const grade = draft.grade;
+  if (!date) return setBackfillError("Choose a valid attempt date.") || false;
+  if (parseIsoDate(date) > dateOnly(new Date())) return setBackfillError("Past attempts cannot be in the future.") || false;
+  if (!isProperGrade(grade)) return setBackfillError("Choose a real grade before saving.") || false;
 
   const sameDayGrade = (problem.reviewHistory || []).find((entry) => (
     isProperGrade(entry.grade) && normalizeDate(entry.date || entry.occurredAt || entry.completedAt) === date
   ));
   if (sameDayGrade) {
-    alert("A graded attempt already exists on that date. Delete that history entry first if you need to replace it.");
-    return;
+    return setBackfillError("A graded attempt already exists on that date. Delete it first if you need to replace it.") || false;
+  }
+
+  const reflectionDraft = {
+    shared: {
+      elapsedMinutes: draft.timeTracked ? draft.elapsedMinutes : "",
+      timeTracked: draft.timeTracked,
+      note: draft.note,
+      complexityStatus: draft.complexityStatus,
+      complexityKnown: draft.complexityStatus === "explained",
+      solutionQuality: draft.solutionQuality,
+    },
+    independent: { friction: draft.friction },
+    nonIndependent: { assistance: draft.assistance, blocker: draft.blocker },
+  };
+  const validation = PRACTICE_V2_WORKFLOW?.validateReflection({
+    grade,
+    draft: reflectionDraft,
+    lockedTimeBoxMinutes: null,
+    historical: true,
+  });
+  if (validation && !validation.ok) {
+    const errorMessage = Object.values(validation.errors || {}).join(" ") || "Check the past attempt details.";
+    return setBackfillError(errorMessage) || false;
   }
 
   const stateBeforeMutation = captureTrackerMutationState();
-  setProblemMutationBusy(true, "Adding...");
-
   const now = new Date().toISOString();
+  const scheduledReview = shouldUseCurrentScheduleForBackfill(problem, date) ? problem.nextReview || "" : "";
+  const metadata = validation?.metadata || {};
   const entry = {
+    ...metadata,
     date,
+    occurredAt: now,
     createdAt: now,
     grade,
     backfilled: true,
+    backfillSource: "manual",
     id: crypto.randomUUID(),
-    scheduledReview: shouldUseCurrentScheduleForBackfill(problem, date) ? problem.nextReview || "" : "",
-    note,
+    scheduledReview,
+    attemptType: inferBackfillAttemptType(problem, { date, scheduledReview }),
+    attemptContext: "backfill",
+    note: draft.note,
+    elapsedMinutes: draft.timeTracked ? Number(draft.elapsedMinutes) : null,
+    durationMinutes: draft.timeTracked ? Number(draft.elapsedMinutes) : null,
+    timeTracked: draft.timeTracked,
+    assistance: draft.assistance,
+    blocker: draft.blocker,
+    friction: draft.friction,
+    solutionQuality: draft.solutionQuality,
+    complexityStatus: draft.complexityStatus,
+    complexityKnown: draft.complexityStatus === "explained",
   };
 
-  const nextProblem = rebuildProblemFromHistory({
+  setProblemMutationBusy(true, "Adding...");
+  let nextProblem = rebuildProblemFromHistory({
     ...problem,
     reviewHistory: [...(problem.reviewHistory || []), entry],
     updatedAt: now,
   });
+  const latestProperEntry = [...(nextProblem.reviewHistory || [])].reverse().find((item) => isProperGrade(item.grade));
+  if (latestProperEntry?.id === entry.id) {
+    nextProblem = applyMasteryStatus({
+      ...nextProblem,
+      complexityKnown: entry.complexityKnown,
+    });
+  }
 
   problems = problems.map((item) => (item.id === id ? nextProblem : item));
-  const replayedEntry = (nextProblem.reviewHistory || []).find((item) => item.id === entry.id);
   const graduationMessage = maybeGraduateRecoveryProblem(nextProblem);
-  sessions = upsertSession({
-    date,
-    problemId: id,
-    title: nextProblem.title,
-    topic: nextProblem.topic,
-    grade,
-    attemptType: replayedEntry?.attemptContext === "cold" ? "cold" : inferBackfillAttemptType(problem, date),
-    attemptContext: replayedEntry?.attemptContext || "",
-    stage: nextProblem.stage,
-    status: nextProblem.status,
-    backfilled: true,
-    historyEntryId: entry.id,
-  });
+  sessions = refreshBackfillSessionsForProblem(nextProblem);
   lastGradeUndo = null;
   clearPostGradeNote();
 
@@ -5390,26 +5619,25 @@ async function addBackfillAttempt() {
   if (!saveResult.ok) {
     restoreTrackerMutationState(stateBeforeMutation);
     setProblemMutationBusy(false);
-    renderReviewSummary(problem);
-    renderHistoryTab(problem);
+    renderBackfillDialog(problem);
     alert(saveResult.conflict
       ? "Another tab or device saved newer data. Reload before adding this backfill."
       : "The backfill could not be saved. Your entry is still in the form so you can try again.");
-    return;
+    return false;
   }
 
   setProblemMutationBusy(false);
+  els.backfillDialog.close();
+  backfillProblemId = "";
+  backfillDraft = null;
   render();
-  renderReviewSummary(nextProblem);
-  els.statusInput.value = nextProblem.status;
-  els.reviewInput.value = nextProblem.nextReview;
-  els.completionInput.value = nextProblem.completionCount;
-  renderHistoryTab(nextProblem);
-  els.backfillNoteInput.value = "";
+  openDialog(nextProblem.id);
+  setProblemDialogTab("history");
   els.gradeResult.textContent = [
     `Backfilled ${historyGradeLabel(grade).toLowerCase()} for ${nextProblem.title}.`,
     graduationMessage,
   ].filter(Boolean).join(" ");
+  return true;
 }
 
 async function deleteHistoryEntry(entryKey) {
@@ -5436,10 +5664,7 @@ async function deleteHistoryEntry(entryKey) {
 
   problems = problems.map((item) => (item.id === id ? nextProblem : item));
   recoveryProblemIds = normalizeRecoveryProblemIds(recoveryProblemIds);
-  sessions = sessions.filter((session) => {
-    if (entry.id && session.historyEntryId) return session.historyEntryId !== entry.id;
-    return !(session.backfilled && session.problemId === id && session.date === entry.date && session.grade === entry.grade);
-  });
+  sessions = refreshBackfillSessionsForProblem(nextProblem);
   if ((entry.attemptContext === "cold" || entry.coldStart) && isSeenUnverified(nextProblem)) {
     coldPracticeProblemId = nextProblem.id;
     activeAttempt = { type: "cold", problemId: nextProblem.id, title: nextProblem.title };
@@ -5833,8 +6058,8 @@ function getMasteryBlockers(problem) {
 }
 
 async function saveProblem(event) {
-  event.preventDefault();
-  if (problemMutationInFlight || blockTrackerMutationWhileSaving()) return;
+  event?.preventDefault();
+  if (problemMutationInFlight || blockTrackerMutationWhileSaving()) return false;
   const stateBeforeMutation = captureTrackerMutationState();
   setProblemMutationBusy(true);
   const id = els.problemId.value || crypto.randomUUID();
@@ -5878,6 +6103,7 @@ async function saveProblem(event) {
     ? problems.map((problem) => (problem.id === id ? masteredNext : problem))
     : [masteredNext, ...problems];
   recoveryProblemIds = normalizeRecoveryProblemIds(recoveryProblemIds);
+  sessions = refreshBackfillSessionsForProblem(masteredNext);
 
   const saveResult = await persist();
   if (!saveResult.ok) {
@@ -5886,12 +6112,14 @@ async function saveProblem(event) {
     alert(saveResult.conflict
       ? "Another tab or device saved newer data. Reload before saving this problem."
       : "This problem could not be saved. The editor is still open so you can try again.");
-    return;
+    return false;
   }
 
   setProblemMutationBusy(false);
   render();
   els.problemDialog.close();
+  problemDialogInitialValues = null;
+  return true;
 }
 
 async function deleteCurrentProblem() {

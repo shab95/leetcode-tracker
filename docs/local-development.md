@@ -255,12 +255,12 @@ may load a newer cloud revision, but it will not refresh over a queued save or a
 V2 attempt. A stale active attempt remains recoverable in the tab, but cannot be committed as
 fresh evidence until the user returns to Ready and receives a current recommendation.
 
-Manual backfill uses the same JSON state file. A backfilled attempt is stored in the
-problem's `reviewHistory` with a real grade, then the frontend rebuilds that problem's
-stage and next review from chronological graded history. Manual graded backfills also add
-rows to `sessions` using the backfilled attempt date, because they are app-entered graded
-activity. Imported CSV history remains historical context only and does not create session
-activity.
+Manual backfill uses the same JSON state file. From a problem's `Edit -> History` tab, choose
+`Log past attempt`; the date and real grade are required, while forgotten historical details can
+remain unknown. The frontend stores the entry in `reviewHistory`, replays proper graded history
+chronologically, and derives the current schedule from the latest graded attempt date. Manual
+graded backfills also add projected rows to `sessions` for activity views. Imported CSV history
+remains historical context only and does not create session activity.
 
 `sessions` is a legacy internal storage name for one saved graded activity event. The current
 Practice UI does not ask users to start or end a study session; available time is simply an
