@@ -1,6 +1,6 @@
 # Product Roadmap
 
-**Updated:** August 14, 2026
+**Updated:** August 28, 2026
 
 ## North Star
 
@@ -49,6 +49,10 @@ and complexity, and retain that ability over time.
   complexity confidence, and an optional note as separate evidence dimensions.
 - Same-title cooldowns, future-evidence exclusion, authoritative due dates, and safeguards
   against repeatedly recommending a recently completed problem.
+- A feature-flagged `readiness-v2.0` policy layer that prioritizes recent repair, unseen
+  transfer, and unverified imported work before ordinary exact-title retention. It gates unseen
+  Hard work behind same-pattern independent Medium evidence and reports capacity no-ops rather
+  than silently recommending a task that cannot fit.
 - A concise completion explanation and targeted Undo that removes only the saved rep.
 
 ### Supporting Surfaces
@@ -134,6 +138,64 @@ unless usage proves their value:
 - Chrome history import after onboarding
 
 Their saved data should remain backward compatible even when the UI is hidden.
+
+## August 28 Audit Follow-Up: Proposed, Not Shipped
+
+The latest read-only progress audit supports keeping the single-rep practice flow. The next
+changes should address recommendation policy and measurement before adding more controls.
+Personal exports and analysis remain outside this repository; only general product findings
+belong here.
+
+1. **Protect useful follow-ups without monopolizing practice.** Specify short repair after a
+   failure and a later retention check after the first successful reconstruction. Priority should
+   rise across feasible active opportunities so a fragile title cannot wait indefinitely while
+   other work is served. Bound consecutive repair work and handle capacity conflicts explicitly;
+   due eligibility is not a promise to clear every due title. Choose the bounds through testing,
+   not a claim of scientifically optimal intervals or ratios.
+2. **Review the repeated overdue-green hold policy.** Successful, delayed returns can repeatedly
+   hold an early stage and recreate a one- or three-day schedule. Test this together with the
+   recommender's recent-title penalties. A low stage must not be mistaken for missing independent
+   evidence. Agree on the replacement rule before changing dates or replaying existing history.
+3. **Measure familiarity separately from outcome.** No imported history does not prove that a
+   problem is unfamiliar, and a self-reported independent repeat does not prove category-wide
+   transfer. Preserve honest independent grades; never infer rote execution from speed alone.
+   Use explicit notes first. A focused reconstruction or adaptation can replace ordinary work,
+   rather than adding a mandatory questionnaire after every rep.
+4. **Audit learning/transfer cadence.** The current cadence guard looks for `transfer`, while
+   eligible unfamiliar work can also be classified `learn`. A failed transfer should count as
+   practice without being interpreted as successful transfer evidence. Test both rules without
+   forcing difficult new work into every short visit or displacing genuine repair needs.
+5. **Record served decisions automatically.** Capture identity, reason, eligibility/deferral
+   context, policy version, and subsequent outcome. Missing historical decision traces limit
+   exact rule attribution; explicit first-choice-only usage must not be reframed as cherry-picking.
+   This instrumentation should not require extra user reporting.
+6. **Separately audit time fit and breadth.** The current three-minute reflection allowance means
+   a 30-minute budget cannot fit a new Medium with a 30-minute attempt box. Test 15/30/45/60-minute
+   budgets for abrupt exclusions, appropriate difficulty, and useful alternatives. This is not
+   an explanation for fixed-60-minute practice. Do not silently overrun available time.
+
+Suggested validation: first-choice-only sequence fixtures at 60 minutes; repeated-green/overdue
+holds; first repair green followed by regular activity; competing repairs; missed practice days;
+follow-up latency in active opportunities; candidate availability by budget/difficulty; delayed
+relapses; and explicitly unfamiliar outcomes. Snapshot replays test policy behavior, not causal
+learning gains or exact historical rankings. Compare similar difficulty/exposure groups rather
+than optimizing an aggregate green rate. No optimal review/new ratio has been established.
+
+The proposed policy must prevent both redundant familiar repeats and neglected fragile learning.
+A stage-only change cannot distinguish recall from reasoning; novelty alone cannot repair a
+conceptual gap. Preserve delayed retention and automatically selected manageable challenges.
+
+### Deferred Tuner Ideas
+
+- **Review versus new-work preference:** allow a bounded preference for more familiar review or
+  more new work, while respecting cooldowns, available time, and unresolved weaknesses. It should
+  not require the user to repair an unbalanced default algorithm or erase existing due dates.
+- **Subject order:** explore NeetCode's subject sequence versus mixed-topic practice, potentially
+  distinguishing initial learning from later uncued checks. Topic-order learning provides a cue;
+  do not present its success as equivalent to choosing an approach without that cue.
+
+These are ideas to revisit after the policy audit, not approved implementation work. Preserve
+all grades, notes, dates, and imports, and retain a reversible rollout for any eventual change.
 
 ## Deliberately Deferred
 

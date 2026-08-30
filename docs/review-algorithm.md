@@ -644,6 +644,36 @@ Use honest progress labels:
 
 ## Data Notes
 
+## Recommendation V2 Policy Layer
+
+The tracker can run a reversible `readiness-v2.0` recommendation policy over the existing v4
+state. It does not rewrite stages, review dates, history, imports, or grades. The legacy
+`readiness-v1.9` policy remains available as the rollback path.
+
+The V2 decision order is:
+
+1. Repair a recent red, yellow, or explicitly recorded optimization-friction result.
+2. Prefer an unseen title in a skill with independent evidence so the user tests transfer
+   rather than retyping a familiar answer.
+3. Treat imported-only history as unverified current work and recommend it as learnable work.
+4. Use exact-title retention only when the scheduled review is due after a meaningful gap, or
+   as a delayed retention check after a longer gap.
+
+Recent ordinary green titles are therefore not routine daily repeats. Exact-title repairs remain
+available when a recent weakness needs attention. A Hard transfer candidate requires independent
+green Medium evidence from at least two distinct titles sharing its pattern metadata. If the
+catalog does not have a usable pattern identifier, it is treated as unknown rather than claiming
+that a broad topic proves a specific pattern.
+
+The policy fits the selected time budget, including reflection overhead. A short budget can
+legitimately produce no eligible new candidate; the UI reports that clearly instead of silently
+overrunning the user's stated capacity. Future-dated attempts are excluded from evidence,
+cooldowns, and due-date decisions.
+
+Recommendation V2 is explanatory and selection-only. The scheduler transition rules still own
+stage movement and `nextReview`, and all recommendation reasons remain private until after the
+independent attempt when revealing them could leak the approach.
+
 State-changing actions are persistence-acknowledged. Grading, Undo, problem edits,
 history edits, notes, list seeding, and imports should show success only after the
 server or local state file confirms the save. Saves are serialized so rapid actions

@@ -31,6 +31,7 @@ const DEFAULT_FEATURES = {
   phoneReminders: false,
   practiceV2: false,
   practiceV2Shadow: false,
+  recommendationV2: false,
   listProgress: false,
   recoveryLane: false,
 };
@@ -827,7 +828,7 @@ function applyRemoteState(state) {
   importMeta = cloneState(migrated.importMeta);
   sessions = cloneState(migrated.sessions);
   recoveryProblemIds = normalizeRecoveryProblemIds(migrated.recoveryProblemIds);
-  algorithmVersion = PRACTICE_V2_ENGINE?.ALGORITHM_VERSION || migrated.algorithmVersion;
+  algorithmVersion = migrated.algorithmVersion || activePracticeAlgorithmVersion();
   trainingProfile = cloneState(migrated.trainingProfile);
   practicePlan = cloneState(migrated.practicePlan);
   trackerStateExtras = extractTrackerStateExtras(migrated);
@@ -879,7 +880,7 @@ function buildTrackerStatePayload(overrides = {}) {
     problems,
     sessions,
     recoveryProblemIds,
-    algorithmVersion: PRACTICE_V2_ENGINE?.ALGORITHM_VERSION || algorithmVersion,
+    algorithmVersion: activePracticeAlgorithmVersion(),
     trainingProfile,
     practicePlan,
     ...overrides,
@@ -2986,15 +2987,73 @@ function practiceV2StorageKey() {
   return `leetcode-tracker.practice-v2-runtime.v1.${coldWorkflowOwner()}`;
 }
 
+function publicPracticeV2Recommendation(value) {
+  const source = value?.public && typeof value.public === "object" ? value.public : value;
+  if (!source || typeof source !== "object" || !source.problemId || !source.title) return null;
+  return {
+    recommendationId: String(source.recommendationId || ""),
+    algorithmVersion: String(source.algorithmVersion || value?.algorithmVersion || ""),
+    problemId: String(source.problemId),
+    title: String(source.title),
+    url: String(source.url || ""),
+    difficulty: String(source.difficulty || ""),
+    independentCheckpointMinutes: Number(source.independentCheckpointMinutes || 0),
+    timeBoxMinutes: Number(source.timeBoxMinutes || 0),
+    evidenceStatus: String(source.evidenceStatus || ""),
+    publicReason: String(source.publicReason || ""),
+  };
+}
+
+function sanitizePracticeV2Completion(value) {
+  if (!value || typeof value !== "object") return null;
+  const completion = { ...value };
+  delete completion.recommendationRationale;
+  delete completion.taskType;
+  return completion;
+}
+
+function sanitizePersistedPracticeV2Runtime(value) {
+  if (!value || typeof value !== "object") return null;
+  const sanitized = { ...value };
+  delete sanitized.private;
+  return {
+    ...sanitized,
+    recommendation: publicPracticeV2Recommendation(value.recommendation),
+    completion: sanitizePracticeV2Completion(value.completion),
+  };
+}
+
+function restorePrivatePracticeV2Recommendation(publicRecommendation) {
+  if (!publicRecommendation?.problemId || !PRACTICE_V2_ENGINE) return null;
+  const recommender = activePracticeV2Recommender();
+  if (!recommender) return null;
+  const generated = recommender({
+    state: buildTrackerStatePayload(),
+    catalog: practiceV2Catalog(),
+    today: toIsoDate(new Date()),
+    now: new Date().toISOString(),
+    capacityMinutes: Number(practiceV2Runtime.capacityMinutes || trainingProfile.defaultSessionMinutes || 45),
+    pinnedProblemId: publicRecommendation.problemId,
+    pinnedRecommendationId: publicRecommendation.recommendationId,
+    activeProblemId: "",
+    skippedProblemIds: practiceV2Runtime.skippedProblemIds,
+  });
+  if (
+    generated?.public?.problemId !== publicRecommendation.problemId ||
+    generated.algorithmVersion !== publicRecommendation.algorithmVersion
+  ) return null;
+  return generated;
+}
+
 function restorePracticeV2Runtime() {
   if (!PRACTICE_V2_WORKFLOW || !isFeatureEnabled("practiceV2")) return;
   let saved = null;
   try {
     const sessionValue = sessionStorage.getItem(practiceV2StorageKey());
     const legacyValue = localStorage.getItem(practiceV2StorageKey());
-    saved = JSON.parse(sessionValue || legacyValue || "null");
+    saved = sanitizePersistedPracticeV2Runtime(JSON.parse(sessionValue || legacyValue || "null"));
     if (!sessionValue && legacyValue) {
-      sessionStorage.setItem(practiceV2StorageKey(), legacyValue);
+      sessionStorage.setItem(practiceV2StorageKey(), JSON.stringify(saved));
       localStorage.removeItem(practiceV2StorageKey());
     }
   } catch {
@@ -3005,9 +3064,29 @@ function restorePracticeV2Runtime() {
     expectedRevision: currentRevision,
   });
   reconcilePracticeV2RuntimeRevision();
+  const activePhase = ["attempting", "grading", "reflecting", "saving"].includes(practiceV2Runtime.phase);
+  if (activePhase && practiceV2Runtime.recommendation) {
+    const restoredRecommendation = restorePrivatePracticeV2Recommendation(practiceV2Runtime.recommendation);
+    if (restoredRecommendation) {
+      practiceV2Runtime.recommendation = restoredRecommendation;
+    } else {
+      practiceV2Runtime = {
+        ...practiceV2Runtime,
+        phase: "ready",
+        recommendation: null,
+        recommendationDate: "",
+        attemptId: "",
+        startedAt: "",
+        lockedTimeBoxMinutes: null,
+        provisionalGrade: "",
+        staleRevision: true,
+      };
+    }
+  }
   if (practiceV2Runtime.undoReceipt && practiceV2Runtime.phase === "completed") {
     lastGradeUndo = cloneState(practiceV2Runtime.undoReceipt);
   }
+  persistPracticeV2Runtime();
 }
 
 function reconcilePracticeV2RuntimeRevision() {
@@ -3026,7 +3105,25 @@ function reconcilePracticeV2RuntimeRevision() {
 function persistPracticeV2Runtime() {
   if (!practiceV2Runtime || !isFeatureEnabled("practiceV2")) return;
   try {
-    sessionStorage.setItem(practiceV2StorageKey(), JSON.stringify(practiceV2Runtime));
+    // Persist the workflow so a reload can resume, but keep lane, pattern, and
+    // rationale private. Those fields are regenerated from the current state.
+    const persistable = {
+      capacityMinutes: Number(practiceV2Runtime.capacityMinutes || trainingProfile.defaultSessionMinutes || 45),
+      expectedRevision: Number(practiceV2Runtime.expectedRevision || currentRevision),
+      skippedProblemIds: Array.isArray(practiceV2Runtime.skippedProblemIds) ? practiceV2Runtime.skippedProblemIds : [],
+      staleRevision: Boolean(practiceV2Runtime.staleRevision),
+      phase: practiceV2Runtime.phase,
+      attemptId: String(practiceV2Runtime.attemptId || ""),
+      startedAt: String(practiceV2Runtime.startedAt || ""),
+      lockedTimeBoxMinutes: practiceV2Runtime.lockedTimeBoxMinutes,
+      provisionalGrade: String(practiceV2Runtime.provisionalGrade || ""),
+      reflectionDrafts: cloneState(practiceV2Runtime.reflectionDrafts),
+      recommendation: publicPracticeV2Recommendation(practiceV2Runtime.recommendation),
+      recommendationDate: String(practiceV2Runtime.recommendationDate || ""),
+      completion: sanitizePracticeV2Completion(practiceV2Runtime.completion),
+      undoReceipt: practiceV2Runtime.undoReceipt ? cloneState(practiceV2Runtime.undoReceipt) : null,
+    };
+    sessionStorage.setItem(practiceV2StorageKey(), JSON.stringify(persistable));
   } catch {
     // Runtime persistence is best effort; evidence remains in tracker state.
   }
@@ -3052,6 +3149,24 @@ function practiceV2Catalog() {
   ];
 }
 
+function activePracticeV2AlgorithmVersion() {
+  return isFeatureEnabled("recommendationV2")
+    ? PRACTICE_V2_ENGINE?.V2_ALGORITHM_VERSION || "readiness-v2.0"
+    : PRACTICE_V2_ENGINE?.ALGORITHM_VERSION || algorithmVersion;
+}
+
+function activePracticeAlgorithmVersion() {
+  return isFeatureEnabled("practiceV2") && isFeatureEnabled("recommendationV2")
+    ? activePracticeV2AlgorithmVersion()
+    : PRACTICE_V2_ENGINE?.ALGORITHM_VERSION || algorithmVersion;
+}
+
+function activePracticeV2Recommender() {
+  return isFeatureEnabled("recommendationV2") && PRACTICE_V2_ENGINE?.recommendNextRepV2
+    ? PRACTICE_V2_ENGINE.recommendNextRepV2
+    : PRACTICE_V2_ENGINE?.recommendNextRep;
+}
+
 function getPracticeV2Recommendation({ resetExclusions = false } = {}) {
   if (!PRACTICE_V2_ENGINE || !practiceV2Runtime) return null;
   if (resetExclusions) practiceV2Runtime.skippedProblemIds = [];
@@ -3066,10 +3181,12 @@ function getPracticeV2Recommendation({ resetExclusions = false } = {}) {
       : "",
     skippedProblemIds: practiceV2Runtime.skippedProblemIds,
   };
-  let recommendation = PRACTICE_V2_ENGINE.recommendNextRep(input);
+  const recommender = activePracticeV2Recommender();
+  if (!recommender) return null;
+  let recommendation = recommender(input);
   if (!recommendation.public && practiceV2Runtime.skippedProblemIds.length > 0) {
     practiceV2Runtime.skippedProblemIds = [];
-    recommendation = PRACTICE_V2_ENGINE.recommendNextRep({ ...input, skippedProblemIds: [] });
+    recommendation = recommender({ ...input, skippedProblemIds: [] });
   }
   return recommendation.public ? recommendation : null;
 }
@@ -3080,7 +3197,7 @@ function ensurePracticeV2Recommendation() {
   if (
     practiceV2Runtime.phase === "ready" &&
     practiceV2Runtime.recommendation?.public &&
-    practiceV2Runtime.recommendation.algorithmVersion === PRACTICE_V2_ENGINE.ALGORITHM_VERSION &&
+    practiceV2Runtime.recommendation.algorithmVersion === activePracticeV2AlgorithmVersion() &&
     Number(practiceV2Runtime.expectedRevision || 0) === currentRevision &&
     practiceV2Runtime.recommendationDate === today
   ) return;
@@ -3509,17 +3626,14 @@ async function undoPracticeV2Rep() {
 }
 
 function runPracticeV2Shadow() {
-  if (!appEnv.isQa || !isFeatureEnabled("practiceV2Shadow") || !PRACTICE_V2_ENGINE) return;
+  if (!isFeatureEnabled("practiceV2Shadow") || !PRACTICE_V2_ENGINE) return;
 
-  const catalog = [
-    ...BLIND_75.map((problem) => ({ ...problem, listMemberships: ["blind75"] })),
-    ...NEETCODE_150.map((problem) => ({ ...problem, listMemberships: ["neetcode150"] })),
-  ];
+  const catalog = practiceV2Catalog();
   const skippedProblemIds = [
     ...skippedDailyPicks.review,
     ...skippedDailyPicks.new,
   ];
-  const result = PRACTICE_V2_ENGINE.recommendNextRep({
+  const input = {
     state: buildTrackerStatePayload(),
     catalog,
     today: toIsoDate(new Date()),
@@ -3527,15 +3641,20 @@ function runPracticeV2Shadow() {
     capacityMinutes: Number(trainingProfile.defaultSessionMinutes || 45),
     activeProblemId: activeAttempt?.problemId || "",
     skippedProblemIds,
-  });
+  };
+  const readinessV1 = PRACTICE_V2_ENGINE.recommendNextRep(input);
+  const readinessV2 = PRACTICE_V2_ENGINE.recommendNextRepV2
+    ? PRACTICE_V2_ENGINE.recommendNextRepV2(input)
+    : null;
   const trace = {
     generatedAt: new Date().toISOString(),
     liveV0: {
       reviewProblemId: dailyPicks.review?.id || null,
       newProblemId: dailyPicks.newProblem?.id || null,
     },
-    readinessV1: result,
+    readinessV1,
   };
+  if (readinessV2) trace.readinessV2 = readinessV2;
 
   window.__practiceV2Shadow = trace;
   console.info("[practice-v2 shadow]", trace);
@@ -5574,7 +5693,8 @@ async function saveBackfillAttempt(event) {
   const entry = {
     ...metadata,
     date,
-    occurredAt: now,
+    occurredAt: `${date}T12:00:00.000Z`,
+    recordedAt: now,
     createdAt: now,
     grade,
     backfilled: true,

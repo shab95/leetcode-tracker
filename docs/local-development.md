@@ -114,6 +114,7 @@ FEATURE_LEETCODE_IMPORT=true
 FEATURE_RECOVERY_LANE=true
 FEATURE_PRACTICE_V2=true
 FEATURE_PRACTICE_V2_SHADOW=true
+FEATURE_RECOMMENDATION_V2=true
 FEATURE_LIST_PROGRESS=true
 ```
 
@@ -121,10 +122,14 @@ All experiment flags default to off. The default product should stay focused on 
 Memory, Leaderboard, and Settings. Turn these flags on only when actively testing or
 shipping the experiment.
 
-`FEATURE_PRACTICE_V2_SHADOW` runs the deterministic `readiness-v1.9` recommender without changing
+`FEATURE_PRACTICE_V2_SHADOW` runs a developer comparison recommender without changing
 the visible recommendation, grades, scheduling, or saved state. QA enables shadow mode
 automatically. Its latest comparison is available to developers at
 `window.__practiceV2Shadow` and in the browser console.
+
+`FEATURE_RECOMMENDATION_V2` changes only the recommendation policy. `FEATURE_PRACTICE_V2`
+changes the visible Practice workflow. Keep them separate while testing so a recommendation
+experiment cannot unexpectedly change the user's active screen.
 
 QA also enables the visible `FEATURE_PRACTICE_V2` workflow automatically. The QA Practice page
 therefore shows one adaptive rep instead of the V0 review/new grid. Local and hosted production

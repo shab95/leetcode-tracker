@@ -276,6 +276,7 @@ FEATURE_LEETCODE_IMPORT=false
 FEATURE_RECOVERY_LANE=false
 FEATURE_PRACTICE_V2=false
 FEATURE_PRACTICE_V2_SHADOW=false
+FEATURE_RECOMMENDATION_V2=false
 FEATURE_LIST_PROGRESS=false
 ```
 
@@ -296,6 +297,8 @@ unless explicitly enabled:
 - `FEATURE_PRACTICE_V2=true`: enables the visible single-rep Practice V2 workflow. QA enables
   it automatically. Local and hosted production use V0 only when this flag is absent or false;
   the current private-beta deployment enables it explicitly.
+- `FEATURE_RECOMMENDATION_V2=true`: enables the v2 recommendation policy while leaving the
+  current Practice UI unchanged. This can be rolled out independently from the visible workflow.
 - `FEATURE_LIST_PROGRESS=true`: shows current-evidence progress for Blind 75 and NeetCode 150.
   QA enables it automatically. Imported-only and stale evidence do not color these bars.
 

@@ -45,6 +45,7 @@ const FEATURES = Object.freeze({
   phoneReminders: readFeatureFlag("FEATURE_PHONE_REMINDERS"),
   practiceV2: IS_QA || readFeatureFlag("FEATURE_PRACTICE_V2"),
   practiceV2Shadow: IS_QA || readFeatureFlag("FEATURE_PRACTICE_V2_SHADOW"),
+  recommendationV2: IS_QA || readFeatureFlag("FEATURE_RECOMMENDATION_V2"),
   listProgress: IS_QA || readFeatureFlag("FEATURE_LIST_PROGRESS"),
   recoveryLane: readFeatureFlag("FEATURE_RECOVERY_LANE"),
 });

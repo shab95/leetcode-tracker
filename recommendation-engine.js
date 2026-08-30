@@ -6,6 +6,7 @@
   "use strict";
 
   const ALGORITHM_VERSION = "readiness-v1.9";
+  const V2_ALGORITHM_VERSION = "readiness-v2.0";
   const EVIDENCE_WINDOW_DAYS = 30;
   const WEAKNESS_WINDOW_DAYS = 21;
   const EXACT_TITLE_COOLDOWN_HOURS = 24;
@@ -32,11 +33,137 @@
     capacityFit: 5,
   });
 
+  const V2_REPAIR_WINDOW_DAYS = 3;
+  const V2_MEANINGFUL_GAP_DAYS = 14;
+  const V2_DELAYED_RETENTION_DAYS = 45;
+  const V2_HARD_MEDIUM_GATE = 2;
+
+  // The built-in catalogs predate V2 pattern metadata. Keep this mapping
+  // local to the policy layer so existing state and list files stay portable.
+  const CANONICAL_PATTERNS = Object.freeze({
+    "two-sum": "two-pointers",
+    "valid-palindrome": "two-pointers",
+    "two-sum-ii-input-array-is-sorted": "two-pointers",
+    "3sum": "two-pointers",
+    "container-with-most-water": "two-pointers",
+    "trapping-rain-water": "two-pointers",
+    "remove-duplicates-from-sorted-array": "two-pointers",
+    "move-zeroes": "two-pointers",
+    "sort-colors": "two-pointers",
+    "longest-substring-without-repeating-characters": "sliding-window",
+    "longest-repeating-character-replacement": "sliding-window",
+    "permutation-in-string": "sliding-window",
+    "minimum-window-substring": "sliding-window",
+    "sliding-window-maximum": "sliding-window",
+    "daily-temperatures": "monotonic-stack",
+    "car-fleet": "monotonic-stack",
+    "largest-rectangle-in-histogram": "monotonic-stack",
+    "next-greater-element-i": "monotonic-stack",
+    "next-greater-element-ii": "monotonic-stack",
+    "online-stock-span": "monotonic-stack",
+    "maximal-rectangle": "monotonic-stack",
+    "merge-intervals": "interval-sweep",
+    "insert-interval": "interval-sweep",
+    "non-overlapping-intervals": "interval-sweep",
+    "meeting-rooms": "interval-sweep",
+    "meeting-rooms-ii": "interval-sweep",
+    "course-schedule": "topological-sort",
+    "course-schedule-ii": "topological-sort",
+    "alien-dictionary": "topological-sort",
+    "number-of-islands": "graph-search",
+    "clone-graph": "graph-search",
+    "pacific-atlantic-water-flow": "graph-search",
+    "rotting-oranges": "graph-search",
+    "graph-valid-tree": "graph-search",
+    "number-of-connected-components-in-an-undirected-graph": "graph-search",
+    "word-ladder": "graph-search",
+    "surrounded-regions": "graph-search",
+    "subsets": "backtracking",
+    "combination-sum": "backtracking",
+    "permutations": "backtracking",
+    "word-search": "backtracking",
+    "word-search-ii": "backtracking",
+    "letter-combinations-of-a-phone-number": "backtracking",
+    "palindrome-partitioning": "backtracking",
+    "n-queens": "backtracking",
+    "generate-parentheses": "backtracking",
+    "binary-search": "binary-search",
+    "search-in-rotated-sorted-array": "binary-search",
+    "find-minimum-in-rotated-sorted-array": "binary-search",
+    "koko-eating-bananas": "binary-search",
+    "median-of-two-sorted-arrays": "binary-search",
+    "time-based-key-value-store": "binary-search",
+    "capacity-to-ship-packages-within-d-days": "binary-search",
+    "maximum-depth-of-binary-tree": "tree-traversal",
+    "same-tree": "tree-traversal",
+    "invert-binary-tree": "tree-traversal",
+    "binary-tree-level-order-traversal": "tree-traversal",
+    "serialize-and-deserialize-binary-tree": "tree-traversal",
+    "subtree-of-another-tree": "tree-traversal",
+    "lowest-common-ancestor-of-a-binary-search-tree": "tree-traversal",
+    "binary-tree-right-side-view": "tree-traversal",
+    "validate-binary-search-tree": "tree-traversal",
+    "kth-smallest-element-in-a-bst": "tree-traversal",
+    "climbing-stairs": "dynamic-programming",
+    "house-robber": "dynamic-programming",
+    "house-robber-ii": "dynamic-programming",
+    "coin-change": "dynamic-programming",
+    "longest-increasing-subsequence": "dynamic-programming",
+    "word-break": "dynamic-programming",
+    "decode-ways": "dynamic-programming",
+    "unique-paths": "dynamic-programming",
+    "longest-common-subsequence": "dynamic-programming",
+    "maximum-subarray": "dynamic-programming",
+    "maximum-product-subarray": "dynamic-programming",
+    "partition-equal-subset-sum": "dynamic-programming",
+    "target-sum": "dynamic-programming",
+    "regular-expression-matching": "dynamic-programming",
+    "kth-largest-element-in-an-array": "heap",
+    "top-k-frequent-elements": "heap",
+    "merge-k-sorted-lists": "heap",
+    "find-median-from-data-stream": "heap",
+    "task-scheduler": "heap",
+    "last-stone-weight": "heap",
+    "reverse-linked-list": "linked-list",
+    "merge-two-sorted-lists": "linked-list",
+    "reorder-list": "linked-list",
+    "remove-nth-node-from-end-of-list": "linked-list",
+    "copy-list-with-random-pointer": "linked-list",
+    "linked-list-cycle": "linked-list",
+    "lru-cache": "linked-list",
+    "implement-trie-prefix-tree": "trie",
+    "design-add-and-search-words-data-structure": "trie",
+    "single-number": "bit-manipulation",
+    "number-of-1-bits": "bit-manipulation",
+    "counting-bits": "bit-manipulation",
+    "reverse-bits": "bit-manipulation",
+    "missing-number": "bit-manipulation",
+    "sum-of-two-integers": "bit-manipulation",
+    "redundant-connection": "union-find",
+    "accounts-merge": "union-find",
+    "best-time-to-buy-and-sell-stock": "greedy",
+    "jump-game": "greedy",
+    "jump-game-ii": "greedy",
+    "gas-station": "greedy",
+    "partition-labels": "greedy",
+    "hand-of-straights": "greedy",
+    "subarray-sum-equals-k": "prefix-sum",
+    "range-sum-query-2d-immutable": "prefix-sum",
+  });
+
+  function resolveClock(input = {}) {
+    const suppliedToday = normalizeDate(input.today);
+    const today = suppliedToday || normalizeDate(new Date());
+    const now = normalizeTimestamp(input.now) || (
+      suppliedToday ? `${today}T23:59:59.999Z` : new Date().toISOString()
+    );
+    return { today, now };
+  }
+
   function recommendNextRep(input = {}) {
     const state = normalizeState(input.state);
     const profile = { ...(state.trainingProfile || {}), ...(input.trainingProfile || {}) };
-    const today = normalizeDate(input.today) || normalizeDate(new Date());
-    const now = normalizeTimestamp(input.now) || `${today}T12:00:00.000Z`;
+    const { today, now } = resolveClock(input);
     const capacityMinutes = positiveNumber(input.capacityMinutes, positiveNumber(profile.defaultSessionMinutes, 45));
     const catalog = Array.isArray(input.catalog) ? input.catalog : [];
     const evidence = deriveEvidence(state, { today, now, catalog });
@@ -91,6 +218,343 @@
         rankedCandidates: candidates.slice(0, 10).map(toPrivateTrace),
       },
     };
+  }
+
+  // V2 is a policy layer over the same normalized state. It deliberately does
+  // not mutate scheduler fields, so the rollout can be compared and reversed.
+  function recommendNextRepV2(input = {}) {
+    const state = normalizeState(input.state);
+    const profile = { ...(state.trainingProfile || {}), ...(input.trainingProfile || {}) };
+    const { today, now } = resolveClock(input);
+    const capacityMinutes = positiveNumber(input.capacityMinutes, positiveNumber(profile.defaultSessionMinutes, 45));
+    const catalog = Array.isArray(input.catalog) ? input.catalog : [];
+    const evidence = deriveV2Evidence(state, { today, now, catalog });
+    const excluded = buildExcludedSet(input);
+    const considered = buildCandidates(state.problems, catalog)
+      .filter((candidate) => !excluded.has(String(candidate.id)) && !excluded.has(String(candidate.slug)))
+      .map((candidate) => classifyV2Candidate(candidate, { evidence, today, now, capacityMinutes }));
+    const candidates = considered
+      .filter((candidate) => candidate.eligible)
+      .sort(compareV2Candidates);
+
+    const laneOrder = ["repair", "transfer", "learn", "retention"];
+    const pinnedProblemId = String(input.pinnedProblemId || input.pinnedRecommendationId || "");
+    const pinnedWinner = pinnedProblemId
+      ? candidates.find((candidate) => (
+        String(candidate.id) === pinnedProblemId ||
+        String(candidate.slug) === pinnedProblemId ||
+        buildRecommendationIdFor(V2_ALGORITHM_VERSION, today, candidate) === pinnedProblemId
+      ))
+      : null;
+    const winner = pinnedWinner || laneOrder
+      .map((lane) => candidates.find((candidate) => candidate.lane === lane))
+      .find(Boolean) || null;
+
+    if (!winner) {
+      const reasonCodes = ["no-eligible-candidate"];
+      if (considered.length === 0) reasonCodes.push("no-candidates-after-exclusions");
+      if (considered.length > 0 && considered.every((candidate) => candidate.capacityBlocked)) {
+        reasonCodes.push("capacity-too-small-for-candidate");
+      }
+      if (considered.some((candidate) => candidate.futureBlocked)) {
+        reasonCodes.push("future-history-only");
+      }
+      if (considered.some((candidate) => candidate.cooldownBlocked)) {
+        reasonCodes.push("exact-title-cooldown");
+      }
+      if (considered.some((candidate) => candidate.hardLockedForAcquisition)) {
+        reasonCodes.push("hard-acquisition-gated");
+      }
+      if (capacityMinutes < NEW_TIME_BOX.Easy) {
+        reasonCodes.push("capacity-too-small-for-new-coverage");
+      }
+      return {
+        algorithmVersion: V2_ALGORITHM_VERSION,
+        public: null,
+        private: {
+          taskType: null,
+          lane: null,
+          reasonCodes,
+          rationale: "No candidate fits the current capacity, cooldown, or exclusion set.",
+          consideredCount: considered.length,
+          evidence: summarizeV2Evidence(evidence),
+        },
+      };
+    }
+
+    const recommendationId = buildRecommendationIdFor(V2_ALGORITHM_VERSION, today, winner);
+    return {
+      algorithmVersion: V2_ALGORITHM_VERSION,
+      public: {
+        recommendationId,
+        problemId: winner.id,
+        title: winner.title,
+        url: winner.url,
+        difficulty: winner.difficulty,
+        independentCheckpointMinutes: winner.independentCheckpointMinutes,
+        timeBoxMinutes: winner.timeBoxMinutes,
+        publicReason: publicReasonFor(winner.taskType),
+        evidenceStatus: publicEvidenceStatusFor(winner.taskType),
+      },
+      private: {
+        recommendationId,
+        taskType: winner.taskType,
+        lane: winner.lane,
+        primarySkillIds: [winner.skillId],
+        patternId: winner.patternId,
+        reasonCodes: winner.reasonCodes,
+        score: winner.score,
+        scoreComponents: winner.scoreComponents,
+        rationale: privateRationaleFor(winner),
+        consideredCount: candidates.length,
+        hardUnlocked: winner.hardUnlocked,
+        hardLockedForAcquisition: winner.hardLockedForAcquisition,
+        requiredMinutes: winner.requiredMinutes,
+        rankedCandidates: candidates.slice(0, 12).map(toV2PrivateTrace),
+        evidence: summarizeV2Evidence(evidence),
+      },
+    };
+  }
+
+  function deriveV2Evidence(stateInput = {}, options = {}) {
+    const state = normalizeState(stateInput);
+    const { today, now } = resolveClock(options);
+    const catalog = Array.isArray(options.catalog) ? options.catalog : [];
+    const skills = new Map();
+    const patterns = new Map();
+    const recentAttempts = [];
+
+    for (const problem of state.problems) {
+      const plan = findCatalogMatch(problem, catalog);
+      const evidenceProblem = plan && !hasPatternMetadata(problem)
+        ? { ...plan, ...problem, patternId: patternIdFor(plan), patternKnown: true }
+        : problem;
+      const skillId = skillIdFor(evidenceProblem.topic);
+      const patternId = patternIdFor(evidenceProblem);
+      const skill = skills.get(skillId) || createV2SkillEvidence(skillId, evidenceProblem.topic);
+      const pattern = patterns.get(patternId) || createV2PatternEvidence(patternId, skillId);
+      if (hasPatternMetadata(evidenceProblem)) pattern.patternKnown = true;
+      const attempts = properAttempts(problem, { throughDate: today, throughTimestamp: now });
+
+      for (const attempt of attempts) {
+        const ageDays = dateDiffDays(attempt.date, today);
+        if (ageDays < 0 || ageDays > EVIDENCE_WINDOW_DAYS) continue;
+        const titleKey = candidateSlug(problem);
+        const enriched = { ...attempt, problemId: problem.id, titleKey, skillId, patternId, difficulty: normalizeDifficulty(evidenceProblem.difficulty) };
+        recentAttempts.push(enriched);
+        skill.checkedTitles.add(titleKey);
+        pattern.checkedTitles.add(titleKey);
+        skill.lastCheckedAt = maxDate(skill.lastCheckedAt, attempt.date);
+        pattern.lastCheckedAt = maxDate(pattern.lastCheckedAt, attempt.date);
+
+        if (qualifiesAsIndependent(attempt)) {
+          skill.independentTitles.add(titleKey);
+          pattern.independentTitles.add(titleKey);
+          skill.lastIndependentAt = maxDate(skill.lastIndependentAt, attempt.date);
+          pattern.lastIndependentAt = maxDate(pattern.lastIndependentAt, attempt.date);
+          if (normalizeDifficulty(evidenceProblem.difficulty) === "Medium") {
+            pattern.independentMediumTitles.add(titleKey);
+          }
+        }
+      }
+      skills.set(skillId, skill);
+      patterns.set(patternId, pattern);
+    }
+
+    for (const planProblem of catalog) {
+      const skillId = skillIdFor(planProblem.topic);
+      const patternId = patternIdFor(planProblem);
+      if (!skills.has(skillId)) skills.set(skillId, createV2SkillEvidence(skillId, planProblem.topic));
+      if (!patterns.has(patternId)) {
+        const pattern = createV2PatternEvidence(patternId, skillId);
+        pattern.patternKnown = hasPatternMetadata(planProblem);
+        patterns.set(patternId, pattern);
+      } else if (hasPatternMetadata(planProblem)) {
+        patterns.get(patternId).patternKnown = true;
+      }
+    }
+
+    for (const skill of skills.values()) {
+      skill.checked = skill.checkedTitles.size > 0;
+      skill.independent = skill.independentTitles.size > 0;
+    }
+    for (const pattern of patterns.values()) {
+      pattern.checked = pattern.checkedTitles.size > 0;
+      pattern.independent = pattern.independentTitles.size > 0;
+      pattern.hardUnlocked = pattern.patternKnown && pattern.independentMediumTitles.size >= V2_HARD_MEDIUM_GATE;
+    }
+
+    recentAttempts.sort(compareAttemptsNewestFirst);
+    return { today, skills, patterns, recentAttempts };
+  }
+
+  function classifyV2Candidate(candidate, context) {
+    const { evidence, today, now, capacityMinutes } = context;
+    const attempts = properAttempts(candidate.problem, { throughDate: today, throughTimestamp: now });
+    const allAttempts = properAttempts(candidate.problem);
+    const importedEntries = importedAttempts(candidate.problem, { throughDate: today });
+    const importedOnly = attempts.length === 0 && importedEntries.length > 0;
+    const lastAttempt = attempts.at(-1) || null;
+    const lastAgeDays = lastAttempt ? dateDiffDays(lastAttempt.date, today) : null;
+    const skill = evidence.skills.get(candidate.skillId) || createV2SkillEvidence(candidate.skillId, candidate.topic);
+    const pattern = evidence.patterns.get(candidate.patternId) || createV2PatternEvidence(candidate.patternId, candidate.skillId);
+    if (candidate.patternKnown) pattern.patternKnown = true;
+    const hasFutureAttempts = attempts.length < allAttempts.length;
+    const futureOnly = attempts.length === 0 && allAttempts.length > 0;
+    const nextReview = eligibleNextReview(candidate, lastAttempt, hasFutureAttempts);
+    const due = Boolean(nextReview && nextReview <= today && attempts.length > 0);
+    const daysOverdue = due ? Math.max(0, dateDiffDays(nextReview, today)) : 0;
+    const recentWeakness = Boolean(
+      lastAttempt &&
+      lastAgeDays >= 0 &&
+      lastAgeDays <= V2_REPAIR_WINDOW_DAYS &&
+      (["red", "yellow"].includes(lastAttempt.grade) || lastAttempt.solutionQuality === "suboptimal")
+    );
+    const recentOptimizationGap = Boolean(lastAttempt?.solutionQuality === "suboptimal" && recentWeakness);
+    const unseen = attempts.length === 0;
+    // A topic fallback is useful for transfer grouping, but it is not strong
+    // enough evidence to unlock a compound Hard problem. Only explicit pattern
+    // metadata can satisfy the Hard gate.
+    const taskType = chooseV2TaskType({ candidate, skill, pattern, attempts, importedOnly, due, lastAttempt, lastAgeDays, recentWeakness, unseen });
+    const lane = laneForV2Candidate({ taskType, due, unseen, lastAgeDays, recentWeakness });
+    // Hard gating applies to new coverage and transfer acquisition only. A
+    // recent failure or a genuinely due Hard still needs a repair path.
+    const hardUnlocked = candidate.difficulty !== "Hard" ||
+      !["learn", "transfer"].includes(lane) ||
+      (candidate.patternKnown && pattern.hardUnlocked);
+    const hardLockedForAcquisition = candidate.difficulty === "Hard" &&
+      ["learn", "transfer"].includes(lane) &&
+      !(candidate.patternKnown && pattern.hardUnlocked);
+    const effectiveTaskType = taskType || "retention";
+    const timeBoxMinutes = timeBoxFor(candidate.difficulty, effectiveTaskType);
+    const independentCheckpointMinutes = Math.min(timeBoxMinutes, independentCheckpointFor(candidate.difficulty));
+    // Capacity is the user's solving budget. Reflection is shown in the UI but
+    // should not make a 45-minute Hard ineligible when its solving box is 45.
+    const requiredMinutes = timeBoxMinutes;
+    const capacityBlocked = requiredMinutes > capacityMinutes;
+    const futureBlocked = futureOnly;
+    const cooldown = exactTitleCooldown({ ...candidate, nextReview }, lastAttempt, { today, now });
+    const cooldownBlocked = cooldown.blocked;
+    const eligible = Boolean(
+      candidate.title && candidate.id && Boolean(taskType) && !capacityBlocked && !hardLockedForAcquisition && !cooldownBlocked && !futureBlocked
+    );
+    const scoreComponents = {
+      lane: (4 - ({ repair: 0, transfer: 1, learn: 2, retention: 3 }[lane] ?? 4)) * 100,
+      due: due ? 12 + Math.min(10, Math.floor(daysOverdue / 7)) : 0,
+      underTested: Math.max(0, 10 - pattern.checkedTitles.size),
+      catalogPriority: targetPriority(candidate.catalogOrder),
+      capacityFit: Math.round(Math.min(5, 5 * (requiredMinutes / Math.max(capacityMinutes, 1)))),
+      recentTitle: lane === "repair" ? 0 : recentTitlePenalty(candidate, evidence.recentAttempts, today),
+    };
+    const reasonCodes = v2ReasonCodes({ lane, taskType, importedOnly, due, daysOverdue, recentWeakness, recentOptimizationGap, hardUnlocked, hardLockedForAcquisition, pattern });
+
+    return {
+      ...candidate,
+      patternId: candidate.patternId,
+      lane,
+      taskType,
+      timeBoxMinutes,
+      independentCheckpointMinutes,
+      requiredMinutes,
+      eligible,
+      due,
+      daysOverdue,
+      lastAttempt,
+      lastAgeDays,
+      importedOnly,
+      futureOnly,
+      unseen,
+      hardUnlocked,
+      hardLockedForAcquisition,
+      capacityBlocked,
+      futureBlocked,
+      cooldownBlocked,
+      cooldownReason: cooldown.reason,
+      scoreComponents,
+      score: Object.values(scoreComponents).reduce((sum, value) => sum + value, 0),
+      reasonCodes,
+      allAttemptsCount: allAttempts.length,
+    };
+  }
+
+  function chooseV2TaskType({ candidate, skill, pattern, attempts, importedOnly, due, lastAttempt, lastAgeDays, recentWeakness, unseen }) {
+    if (recentWeakness) return "repair";
+    // Transfer tests skill generalization. The candidate may use a different
+    // sub-pattern; explicit pattern metadata is required for Hard gating, not
+    // for the broader transfer lane itself.
+    if (unseen && skill.independent) return "transfer";
+    if (unseen) return "learn";
+    if (due && lastAgeDays >= V2_MEANINGFUL_GAP_DAYS) return "retention";
+    if (lastAgeDays != null && lastAgeDays >= V2_DELAYED_RETENTION_DAYS && lastAttempt?.grade === "green") return "retention";
+    return "";
+  }
+
+  function laneForV2Candidate({ taskType, due, unseen, lastAgeDays, recentWeakness }) {
+    if (recentWeakness || taskType === "repair") return "repair";
+    if (taskType === "transfer") return "transfer";
+    if (unseen) return "learn";
+    if (due || (lastAgeDays != null && lastAgeDays >= V2_DELAYED_RETENTION_DAYS)) return "retention";
+    return null;
+  }
+
+  function compareV2Candidates(a, b) {
+    return b.score - a.score ||
+      difficultyRank(a.difficulty) - difficultyRank(b.difficulty) ||
+      a.catalogOrder - b.catalogOrder ||
+      a.slug.localeCompare(b.slug) ||
+      a.id.localeCompare(b.id);
+  }
+
+  function v2ReasonCodes({ lane, taskType, importedOnly, due, daysOverdue, recentWeakness, recentOptimizationGap, hardUnlocked, hardLockedForAcquisition, pattern }) {
+    const codes = [`v2-lane-${lane}`, `task-${taskType}`];
+    if (importedOnly) codes.push("historical-exposure-unverified");
+    if (due) codes.push("exact-review-due");
+    if (daysOverdue > 0) codes.push("review-overdue");
+    if (recentWeakness) codes.push("recent-friction");
+    if (recentOptimizationGap) codes.push("recent-optimization-gap");
+    if (pattern.hardUnlocked && pattern.patternKnown !== false) codes.push("hard-gate-open");
+    if (hardLockedForAcquisition) codes.push("hard-gate-closed");
+    if (pattern.patternKnown === false) codes.push("pattern-metadata-missing");
+    return codes;
+  }
+
+  function toV2PrivateTrace(candidate) {
+    return {
+      problemId: candidate.id,
+      title: candidate.title,
+      lane: candidate.lane,
+      taskType: candidate.taskType,
+      skillId: candidate.skillId,
+      patternId: candidate.patternId,
+      difficulty: candidate.difficulty,
+      hardLockedForAcquisition: candidate.hardLockedForAcquisition,
+      score: candidate.score,
+      reasonCodes: candidate.reasonCodes,
+      timeBoxMinutes: candidate.timeBoxMinutes,
+    };
+  }
+
+  function summarizeV2Evidence(evidence) {
+    return {
+      skills: [...evidence.skills.values()].map((skill) => ({
+        id: skill.id,
+        checkedTitles: skill.checkedTitles.size,
+        independentTitles: skill.independentTitles.size,
+      })),
+      patterns: [...evidence.patterns.values()].map((pattern) => ({
+        id: pattern.id,
+        independentMediumTitles: pattern.independentMediumTitles.size,
+        hardUnlocked: pattern.hardUnlocked,
+      })),
+    };
+  }
+
+  function createV2SkillEvidence(id, label) {
+    return { id, label: String(label || id), checkedTitles: new Set(), independentTitles: new Set(), checked: false, independent: false, lastCheckedAt: "", lastIndependentAt: "" };
+  }
+
+  function createV2PatternEvidence(id, skillId) {
+    return { id, skillId, checkedTitles: new Set(), independentTitles: new Set(), independentMediumTitles: new Set(), checked: false, independent: false, hardUnlocked: false, patternKnown: false, lastCheckedAt: "", lastIndependentAt: "" };
   }
 
   function deriveEvidence(stateInput = {}, options = {}) {
@@ -230,6 +694,10 @@
         existing.listMemberships = unique([...(existing.listMemberships || []), ...(plan.listMemberships || [])]);
         if (!existing.topic && plan.topic) existing.topic = plan.topic;
         if (!existing.url && plan.url) existing.url = plan.url;
+        if (!existing.patternKnown && hasPatternMetadata(plan)) {
+          existing.patternId = patternIdFor(plan);
+          existing.patternKnown = true;
+        }
         catalogCandidates.push(existing);
         continue;
       }
@@ -376,12 +844,23 @@
       difficulty: normalizeDifficulty(problem.difficulty),
       topic,
       skillId: skillIdFor(topic),
+      patternId: patternIdFor(problem),
+      patternKnown: hasPatternMetadata(problem),
       nextReview: normalizeDate(problem.nextReview),
       stage: clamp(Number(problem.stage || 0), 0, 5),
       catalogOrder: positiveNumber(problem.order, 9999),
       listMemberships: Array.isArray(problem.listMemberships) ? [...problem.listMemberships] : [],
       problem,
     };
+  }
+
+  function findCatalogMatch(problem, catalog = []) {
+    const slug = candidateSlug(problem);
+    const title = normalizeTitle(problem.title);
+    return catalog.find((plan) => (
+      (slug && candidateSlug(plan) === slug) ||
+      (title && normalizeTitle(plan.title) === title)
+    )) || null;
   }
 
   function properAttempts(problem = {}, options = {}) {
@@ -603,7 +1082,11 @@
   }
 
   function buildRecommendationId(today, candidate) {
-    return `rec-${ALGORITHM_VERSION}-${stableHash([today, candidate.id, candidate.taskType, candidate.timeBoxMinutes].join("|"))}`;
+    return buildRecommendationIdFor(ALGORITHM_VERSION, today, candidate);
+  }
+
+  function buildRecommendationIdFor(version, today, candidate) {
+    return `rec-${version}-${stableHash([today, candidate.id, candidate.taskType, candidate.timeBoxMinutes].join("|"))}`;
   }
 
   function stableHash(value) {
@@ -652,6 +1135,23 @@
     return ({
       "math-and-geometry": "math-geometry",
     })[id] || id;
+  }
+
+  function patternIdFor(problem = {}) {
+    const rawPattern = problem.patternId || problem.primaryPattern || problem.pattern ||
+      (Array.isArray(problem.patternIds) ? problem.patternIds[0] : "");
+    // Unknown patterns must not collapse into one topic-wide bucket. They are
+    // intentionally ineligible for Hard acquisition until explicit metadata
+    // exists, but their per-problem evidence can still guide ranking.
+    return slugify(rawPattern) || CANONICAL_PATTERNS[candidateSlug(problem)] || `unknown:${candidateSlug(problem)}`;
+  }
+
+  function hasPatternMetadata(problem = {}) {
+    return Boolean(
+      String(problem.patternId || problem.primaryPattern || problem.pattern || "").trim() ||
+      (Array.isArray(problem.patternIds) && problem.patternIds.some((pattern) => String(pattern || "").trim())) ||
+      Boolean(CANONICAL_PATTERNS[candidateSlug(problem)])
+    );
   }
 
   function slugify(value) {
@@ -744,17 +1244,21 @@
 
   return Object.freeze({
     ALGORITHM_VERSION,
+    V2_ALGORITHM_VERSION,
     EVIDENCE_WINDOW_DAYS,
     EXACT_TITLE_COOLDOWN_HOURS,
     TRANSFER_DEBT_WINDOW,
     INDEPENDENT_CHECKPOINT,
     WEIGHTS,
     recommendNextRep,
+    recommendNextRepV2,
     deriveEvidence,
+    deriveV2Evidence,
     summarizeStudyListEvidence,
     buildCandidates,
     localDateKey,
     properAttempts,
     skillIdFor,
+    patternIdFor,
   });
 });

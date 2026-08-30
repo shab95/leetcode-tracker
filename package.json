@@ -7,6 +7,7 @@
     "start": "node server.js",
     "start:qa": "TRACKER_ENV=qa PORT=5174 node server.js",
     "start:hosted": "AUTH_REQUIRED=true NODE_ENV=production node server.js",
+    "simulate:recommendations": "node tools/recommendation-replay.js",
     "check": "node --check app.js && node --check server.js && node --check state-v4.js && node --check recommendation-engine.js && node --check practice-v2-workflow.js && node --test tests/*.test.js"
   },
   "engines": {

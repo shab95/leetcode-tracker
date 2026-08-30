@@ -65,7 +65,7 @@ multi-dimensional reflection.
 ## Data And Algorithm Versions
 
 - Tracker document schema: **v4**.
-- Current recommendation engine: **`readiness-v1.9`**.
+- Current recommendation engine: **`readiness-v2.0` when `recommendationV2` is enabled; otherwise `readiness-v1.9`**.
 - Core document fields include `trainingProfile`, `practicePlan`, `problems`, and `sessions`.
 - `sessions` is a legacy internal name for saved graded activity events, not a user-managed study
   session.
@@ -93,6 +93,10 @@ multi-dimensional reflection.
 - Due reviews remain eligible after their due date; missing a date does not remove them.
 - Repeated exact-title recall must not crowd out breadth and transfer once sufficient evidence
   exists.
+- Recommendation V2 is a reversible policy layer: imported-only exposure is unverified current
+  work, recent red/yellow or optimization friction gets repair priority, unseen work in a
+  familiar skill gets transfer priority, and ordinary recent green repeats are deferred until a
+  meaningful gap. Future-dated attempts never make a title appear due in a replay or live queue.
 - Imported acceptance is context, not independent proof, a real grade, habit completion, or
   mastery evidence.
 - Recommendation explanations may name the tested skill after completion, but should not give
@@ -144,6 +148,13 @@ multi-dimensional reflection.
 - Imported historical rows cannot establish current independent readiness by themselves.
 - Recommendation quality still needs ongoing audits against real usage; algorithm versioning and
   deterministic tests exist so discovered failures become regression fixtures.
+- The August 28 read-only audit prioritizes distinguishing remembered-code execution from
+  reconstruction, preventing repeated overdue-green holds, and protecting both short repair and
+  later checks after initial success without letting reviews dominate. Time-fit boundaries are a
+  separate general issue, not an explanation for fixed-60-minute usage. These are proposals,
+  not shipped fixes; the one-recommendation flow and original grades remain intact. Review/new-work
+  and subject-order tuners remain deferred. See the dated section in
+  [`product-roadmap.md`](product-roadmap.md); personal audit data is not stored in this repository.
 
 ## Verification Before Release
 
