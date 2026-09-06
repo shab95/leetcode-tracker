@@ -13,6 +13,8 @@ hosted mode with Google OAuth and per-user SQLite storage.
 - Tracks LeetCode/DSA problems, notes, honest attempt evidence, and exact-title review history.
 - Recommends one adaptive next rep based on time, coverage, recent evidence, transfer gaps,
   and same-title recall pressure when Practice V2 is enabled.
+- Records durable “already know this” familiarity events that defer exact-title repeats without
+  creating Green solves or mastery evidence.
 - Lets you backfill real graded attempts from the edit modal's History tab.
 - Supports Blind 75 and NeetCode 150 as shared built-in coverage lists.
 - Uses evidence-oriented outcomes after an attempt:
@@ -106,10 +108,11 @@ You do not need to seed both lists. Seed only the study lists you want to track.
 both Blind 75 and NeetCode 150, overlapping problems are merged into one row with both
 badges and one shared review history.
 
-When Practice V2 is enabled, every seeded list contributes candidates to the adaptive plan.
-The plan uses current evidence, available time, exact-title recall pressure, transfer need,
-and recent work to choose one rep. List progress remains visible in Memory; seeding a list
-does not make imported exposure count as trusted evidence.
+When Practice V2 is enabled, the adaptive plan follows the selected Practice scope: Blind 75
+only, NeetCode 150 only, or all study lists. The plan uses current evidence, available time,
+exact-title recall pressure, transfer need, and recent work to choose one rep. List progress
+remains visible in Memory; changing scope does not delete problems or history, and seeding a
+list does not make imported exposure count as trusted evidence.
 
 ## Run QA Mode
 

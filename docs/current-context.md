@@ -65,7 +65,7 @@ multi-dimensional reflection.
 ## Data And Algorithm Versions
 
 - Tracker document schema: **v4**.
-- Current recommendation engine: **`readiness-v2.0` when `recommendationV2` is enabled; otherwise `readiness-v1.9`**.
+- Current recommendation engine: **`readiness-v2.1` when `recommendationV2` is enabled; otherwise `readiness-v1.9`**.
 - Core document fields include `trainingProfile`, `practicePlan`, `problems`, and `sessions`.
 - `sessions` is a legacy internal name for saved graded activity events, not a user-managed study
   session.

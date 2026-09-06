@@ -163,6 +163,6 @@ const catalog = [
 ];
 
 const legacy = simulate("readiness-v1.9", engine.recommendNextRep, baseline, catalog);
-const v2 = simulate("readiness-v2.0", engine.recommendNextRepV2, baseline, catalog);
+const v2 = simulate(engine.V2_ALGORITHM_VERSION, engine.recommendNextRepV2, baseline, catalog);
 
 console.log(JSON.stringify({ stateFile, startDate: today, repCount, budgets, comparisons: [legacy, v2] }, null, 2));

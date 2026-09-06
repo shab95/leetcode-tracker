@@ -238,10 +238,15 @@ const els = {
   practiceV2TimeBox: document.querySelector("#practiceV2TimeBox"),
   practiceV2Evidence: document.querySelector("#practiceV2Evidence"),
   practiceV2Reason: document.querySelector("#practiceV2Reason"),
+  practiceV2Scope: document.querySelector("#practiceV2Scope"),
   practiceV2Capacity: document.querySelector("#practiceV2Capacity"),
   practiceV2CapacityHint: document.querySelector("#practiceV2CapacityHint"),
+  practiceV2ActionStatus: document.querySelector("#practiceV2ActionStatus"),
   practiceV2BeginBtn: document.querySelector("#practiceV2BeginBtn"),
+  practiceV2FamiliarBtn: document.querySelector("#practiceV2FamiliarBtn"),
   practiceV2ChangeBtn: document.querySelector("#practiceV2ChangeBtn"),
+  practiceV2RestoreBtn: document.querySelector("#practiceV2RestoreBtn"),
+  practiceV2ReviewDeferredBtn: document.querySelector("#practiceV2ReviewDeferredBtn"),
   practiceV2AttemptTitle: document.querySelector("#practiceV2AttemptTitle"),
   practiceV2LockedIndependentTime: document.querySelector("#practiceV2LockedIndependentTime"),
   practiceV2LockedTime: document.querySelector("#practiceV2LockedTime"),
@@ -401,6 +406,7 @@ let problemDialogInitialValues = null;
 let backfillProblemId = "";
 let backfillDraft = null;
 let practiceV2Runtime = PRACTICE_V2_WORKFLOW?.createRuntime() || null;
+let practiceV2FamiliarMutationInFlight = false;
 let currentNewSourceId = els.newSourceSelect.value || "blind75";
 let tableSort = { column: "nextReview", direction: "asc" };
 let leaderboardProfile = {
@@ -581,7 +587,11 @@ els.skipReviewBtn.addEventListener("click", () => skipDailyPick("review"));
 els.newStartAttemptBtn?.addEventListener("click", () => startAttempt("new"));
 els.undoGradeBtn.addEventListener("click", handlePostGradeUndo);
 els.practiceV2BeginBtn?.addEventListener("click", beginPracticeV2Rep);
+els.practiceV2FamiliarBtn?.addEventListener("click", markPracticeV2Familiar);
 els.practiceV2ChangeBtn?.addEventListener("click", chooseAnotherPracticeV2Rep);
+els.practiceV2RestoreBtn?.addEventListener("click", restorePreviousPracticeV2Pick);
+els.practiceV2ReviewDeferredBtn?.addEventListener("click", reviewDeferredPracticeV2Problem);
+els.practiceV2Scope?.addEventListener("input", changePracticeV2Scope);
 els.practiceV2FinishBtn?.addEventListener("click", () => movePracticeV2("finish"));
 els.practiceV2CancelBtn?.addEventListener("click", () => movePracticeV2("cancel"));
 els.practiceV2BackAttemptBtn?.addEventListener("click", () => movePracticeV2("back"));
@@ -2422,10 +2432,11 @@ function buildMemoryEvidenceModel() {
   const now = new Date();
   const evidence = PRACTICE_V2_ENGINE?.deriveEvidence
     ? PRACTICE_V2_ENGINE.deriveEvidence(buildTrackerStatePayload(), {
-        today: toIsoDate(now),
-        now: now.toISOString(),
-        catalog: practiceV2Catalog(),
-      })
+      today: toIsoDate(now),
+      now: now.toISOString(),
+      catalog: practiceV2Catalog(),
+      studyListScope: practiceScopeValue(),
+    })
     : { skills: new Map(), checkedSkillIds: [], independentSkillIds: [], transferSupportedSkillIds: [], recentAttempts: [] };
   const skills = [...evidence.skills.values()];
   const skillCount = skills.length;
@@ -3035,6 +3046,7 @@ function restorePrivatePracticeV2Recommendation(publicRecommendation) {
     capacityMinutes: Number(practiceV2Runtime.capacityMinutes || trainingProfile.defaultSessionMinutes || 45),
     pinnedProblemId: publicRecommendation.problemId,
     pinnedRecommendationId: publicRecommendation.recommendationId,
+    includeFamiliarDeferred: Boolean(practiceV2Runtime.familiarOverrideProblemId),
     activeProblemId: "",
     skippedProblemIds: practiceV2Runtime.skippedProblemIds,
   });
@@ -3065,11 +3077,11 @@ function restorePracticeV2Runtime() {
   });
   reconcilePracticeV2RuntimeRevision();
   const activePhase = ["attempting", "grading", "reflecting", "saving"].includes(practiceV2Runtime.phase);
-  if (activePhase && practiceV2Runtime.recommendation) {
+  if (practiceV2Runtime.recommendation) {
     const restoredRecommendation = restorePrivatePracticeV2Recommendation(practiceV2Runtime.recommendation);
     if (restoredRecommendation) {
       practiceV2Runtime.recommendation = restoredRecommendation;
-    } else {
+    } else if (activePhase) {
       practiceV2Runtime = {
         ...practiceV2Runtime,
         phase: "ready",
@@ -3081,6 +3093,9 @@ function restorePracticeV2Runtime() {
         provisionalGrade: "",
         staleRevision: true,
       };
+    } else {
+      practiceV2Runtime.recommendation = null;
+      practiceV2Runtime.recommendationDate = "";
     }
   }
   if (practiceV2Runtime.undoReceipt && practiceV2Runtime.phase === "completed") {
@@ -3091,6 +3106,12 @@ function restorePracticeV2Runtime() {
 
 function reconcilePracticeV2RuntimeRevision() {
   if (!practiceV2Runtime || !PRACTICE_V2_WORKFLOW?.reconcileRuntimeRevision) return;
+  if (practiceV2FamiliarMutationInFlight) {
+    practiceV2Runtime.expectedRevision = currentRevision;
+    practiceV2Runtime.staleRevision = false;
+    persistPracticeV2Runtime();
+    return;
+  }
   const previousRevision = Number(practiceV2Runtime.expectedRevision || 0);
   const wasStale = Boolean(practiceV2Runtime.staleRevision);
   practiceV2Runtime = PRACTICE_V2_WORKFLOW.reconcileRuntimeRevision(practiceV2Runtime, currentRevision);
@@ -3111,6 +3132,9 @@ function persistPracticeV2Runtime() {
       capacityMinutes: Number(practiceV2Runtime.capacityMinutes || trainingProfile.defaultSessionMinutes || 45),
       expectedRevision: Number(practiceV2Runtime.expectedRevision || currentRevision),
       skippedProblemIds: Array.isArray(practiceV2Runtime.skippedProblemIds) ? practiceV2Runtime.skippedProblemIds : [],
+      rotationHistory: Array.isArray(practiceV2Runtime.rotationHistory) ? cloneState(practiceV2Runtime.rotationHistory) : [],
+      familiarOverrideProblemId: String(practiceV2Runtime.familiarOverrideProblemId || ""),
+      actionNotice: String(practiceV2Runtime.actionNotice || ""),
       staleRevision: Boolean(practiceV2Runtime.staleRevision),
       phase: practiceV2Runtime.phase,
       attemptId: String(practiceV2Runtime.attemptId || ""),
@@ -3151,7 +3175,7 @@ function practiceV2Catalog() {
 
 function activePracticeV2AlgorithmVersion() {
   return isFeatureEnabled("recommendationV2")
-    ? PRACTICE_V2_ENGINE?.V2_ALGORITHM_VERSION || "readiness-v2.0"
+    ? PRACTICE_V2_ENGINE?.V2_ALGORITHM_VERSION || "readiness-v2.1"
     : PRACTICE_V2_ENGINE?.ALGORITHM_VERSION || algorithmVersion;
 }
 
@@ -3167,9 +3191,20 @@ function activePracticeV2Recommender() {
     : PRACTICE_V2_ENGINE?.recommendNextRep;
 }
 
-function getPracticeV2Recommendation({ resetExclusions = false } = {}) {
+function getPracticeV2Recommendation({
+  resetExclusions = false,
+  pinnedProblemId = "",
+  includeFamiliarDeferred = null,
+} = {}) {
   if (!PRACTICE_V2_ENGINE || !practiceV2Runtime) return null;
-  if (resetExclusions) practiceV2Runtime.skippedProblemIds = [];
+  if (resetExclusions) {
+    practiceV2Runtime.skippedProblemIds = [];
+    practiceV2Runtime.rotationHistory = (practiceV2Runtime.rotationHistory || [])
+      .filter((action) => action.type === "familiarity");
+  }
+  const shouldIncludeFamiliarDeferred = includeFamiliarDeferred == null
+    ? Boolean(practiceV2Runtime.familiarOverrideProblemId)
+    : Boolean(includeFamiliarDeferred);
   const input = {
     state: buildTrackerStatePayload(),
     catalog: practiceV2Catalog(),
@@ -3180,15 +3215,19 @@ function getPracticeV2Recommendation({ resetExclusions = false } = {}) {
       ? practiceV2Runtime.recommendation?.public?.problemId || ""
       : "",
     skippedProblemIds: practiceV2Runtime.skippedProblemIds,
+    includeFamiliarDeferred: shouldIncludeFamiliarDeferred,
+    pinnedProblemId: pinnedProblemId || practiceV2Runtime.familiarOverrideProblemId || "",
   };
   const recommender = activePracticeV2Recommender();
   if (!recommender) return null;
   let recommendation = recommender(input);
   if (!recommendation.public && practiceV2Runtime.skippedProblemIds.length > 0) {
     practiceV2Runtime.skippedProblemIds = [];
+    practiceV2Runtime.rotationHistory = (practiceV2Runtime.rotationHistory || [])
+      .filter((action) => action.type === "familiarity");
     recommendation = recommender({ ...input, skippedProblemIds: [] });
   }
-  return recommendation.public ? recommendation : null;
+  return recommendation;
 }
 
 function ensurePracticeV2Recommendation() {
@@ -3196,7 +3235,7 @@ function ensurePracticeV2Recommendation() {
   const today = toIsoDate(new Date());
   if (
     practiceV2Runtime.phase === "ready" &&
-    practiceV2Runtime.recommendation?.public &&
+    practiceV2Runtime.recommendation &&
     practiceV2Runtime.recommendation.algorithmVersion === activePracticeV2AlgorithmVersion() &&
     Number(practiceV2Runtime.expectedRevision || 0) === currentRevision &&
     practiceV2Runtime.recommendationDate === today
@@ -3214,6 +3253,9 @@ function invalidateReadyPracticeV2Recommendation() {
   practiceV2Runtime.recommendation = null;
   practiceV2Runtime.recommendationDate = "";
   practiceV2Runtime.skippedProblemIds = [];
+  practiceV2Runtime.rotationHistory = [];
+  practiceV2Runtime.familiarOverrideProblemId = "";
+  practiceV2Runtime.actionNotice = "";
   persistPracticeV2Runtime();
 }
 
@@ -3223,6 +3265,8 @@ function renderPracticeV2() {
   const phase = practiceV2Runtime.phase === "saving" ? "reflecting" : practiceV2Runtime.phase;
   const recommendation = practiceV2Runtime.recommendation;
   const publicPick = recommendation?.public;
+  const noRecommendationReasons = recommendation?.private?.reasonCodes || [];
+  const allFamiliarDeferred = noRecommendationReasons.includes("all-candidates-familiar-deferred");
 
   els.practiceV2Experience.querySelectorAll("[data-v2-state]").forEach((state) => {
     state.hidden = state.dataset.v2State !== phase;
@@ -3235,7 +3279,11 @@ function renderPracticeV2() {
 
   if (els.practiceV2Capacity) {
     els.practiceV2Capacity.value = String(practiceV2Runtime.capacityMinutes || 45);
-    els.practiceV2Capacity.disabled = phase !== "ready";
+    els.practiceV2Capacity.disabled = phase !== "ready" || practiceV2FamiliarMutationInFlight;
+  }
+  if (els.practiceV2Scope) {
+    els.practiceV2Scope.value = practiceScopeValue();
+    els.practiceV2Scope.disabled = phase !== "ready" || practiceV2FamiliarMutationInFlight;
   }
   if (publicPick) {
     els.practiceV2ReadyTitle.textContent = publicPick.title;
@@ -3250,20 +3298,69 @@ function renderPracticeV2() {
     els.practiceV2OpenLink.href = publicPick.url || "#";
     els.practiceV2OpenLink.hidden = !publicPick.url;
   } else if (phase === "ready") {
-    els.practiceV2ReadyTitle.textContent = "No rep fits the time available.";
+    els.practiceV2ReadyTitle.textContent = allFamiliarDeferred
+      ? "No useful rep is due."
+      : "No rep fits the time available.";
     els.practiceV2Difficulty.textContent = "-";
     els.practiceV2IndependentTime.textContent = "-";
     els.practiceV2TimeBox.textContent = "-";
-    els.practiceV2Evidence.textContent = "Choose more available time or return when you have room for a focused attempt.";
-    els.practiceV2Reason.textContent = "Stopping without penalty is always valid.";
+    const earliestFamiliarDate = recommendation?.private?.earliestFamiliarEligibleAt;
+    els.practiceV2Evidence.textContent = allFamiliarDeferred
+      ? earliestFamiliarDate
+        ? `Your familiar problems are deferred. The next exact-title check is after ${formatDate(earliestFamiliarDate)}.`
+        : "Your familiar problems are deferred until a later check."
+      : "Choose more available time or return when you have room for a focused attempt.";
+    els.practiceV2Reason.textContent = allFamiliarDeferred
+      ? "You can stop here or deliberately review a deferred problem."
+      : "Stopping without penalty is always valid.";
   }
-  els.practiceV2BeginBtn.disabled = !publicPick;
-  els.practiceV2ChangeBtn.disabled = !publicPick;
+  els.practiceV2BeginBtn.disabled = !publicPick || practiceV2FamiliarMutationInFlight;
+  if (els.practiceV2FamiliarBtn) {
+    els.practiceV2FamiliarBtn.disabled = !publicPick || practiceV2FamiliarMutationInFlight;
+    els.practiceV2FamiliarBtn.textContent = practiceV2FamiliarMutationInFlight
+      ? "Saving familiarity..."
+      : "I already know how to do this";
+  }
+  els.practiceV2ChangeBtn.disabled = !publicPick || practiceV2FamiliarMutationInFlight;
+  const canRestorePreviousPick = phase === "ready"
+    && Array.isArray(practiceV2Runtime.rotationHistory)
+    && practiceV2Runtime.rotationHistory.length > 0
+    && !practiceV2FamiliarMutationInFlight;
+  els.practiceV2RestoreBtn.hidden = !canRestorePreviousPick;
+  els.practiceV2RestoreBtn.disabled = !canRestorePreviousPick;
+  if (els.practiceV2ReviewDeferredBtn) {
+    els.practiceV2ReviewDeferredBtn.hidden = phase !== "ready" || !allFamiliarDeferred;
+    els.practiceV2ReviewDeferredBtn.disabled = practiceV2FamiliarMutationInFlight;
+  }
+  if (els.practiceV2ActionStatus) {
+    els.practiceV2ActionStatus.textContent = String(practiceV2Runtime.actionNotice || "");
+  }
 
   renderPracticeV2Grade();
   renderPracticeV2Reflection();
   renderPracticeV2Completion();
   clearPracticeV2Spoilers(phase);
+}
+
+function practiceScopeValue() {
+  const scope = practicePlan?.studyListScope;
+  return STATE_V4?.STUDY_LIST_SCOPES?.includes(scope) ? scope : "blind75";
+}
+
+function changePracticeV2Scope() {
+  if (!practiceV2Runtime || practiceV2Runtime.phase !== "ready" || !els.practiceV2Scope || practiceV2FamiliarMutationInFlight) return;
+  const nextScope = els.practiceV2Scope.value;
+  if (!STATE_V4?.STUDY_LIST_SCOPES?.includes(nextScope) || nextScope === practiceScopeValue()) return;
+  practicePlan = { ...practicePlan, studyListScope: nextScope };
+  practiceV2Runtime.recommendation = null;
+  practiceV2Runtime.recommendationDate = "";
+  practiceV2Runtime.skippedProblemIds = [];
+  practiceV2Runtime.rotationHistory = [];
+  practiceV2Runtime.familiarOverrideProblemId = "";
+  practiceV2Runtime.actionNotice = "";
+  persistPracticeV2Runtime();
+  renderPracticeV2();
+  void persist();
 }
 
 function clearPracticeV2Spoilers(phase) {
@@ -3289,7 +3386,7 @@ function movePracticeV2(event) {
 }
 
 function beginPracticeV2Rep() {
-  if (!practiceV2Runtime?.recommendation?.public) return;
+  if (!practiceV2Runtime?.recommendation?.public || practiceV2FamiliarMutationInFlight) return;
   if (
     practiceV2Runtime.recommendationDate !== toIsoDate(new Date()) ||
     Number(practiceV2Runtime.expectedRevision || 0) !== currentRevision
@@ -3305,22 +3402,184 @@ function beginPracticeV2Rep() {
   movePracticeV2("begin");
 }
 
+async function markPracticeV2Familiar() {
+  const currentId = practiceV2Runtime?.recommendation?.public?.problemId;
+  if (
+    !currentId ||
+    practiceV2Runtime?.phase !== "ready" ||
+    practiceV2FamiliarMutationInFlight ||
+    blockTrackerMutationWhileSaving()
+  ) return;
+  const today = toIsoDate(new Date());
+  if (
+    practiceV2Runtime.recommendationDate !== today ||
+    Number(practiceV2Runtime.expectedRevision || 0) !== currentRevision
+  ) {
+    invalidateReadyPracticeV2Recommendation();
+    renderPracticeV2();
+    return;
+  }
+
+  const stateBeforeMutation = captureTrackerMutationState();
+  const recommendation = cloneState(practiceV2Runtime.recommendation);
+  const eventId = crypto.randomUUID();
+  const { problem } = materializeFamiliarPracticeV2Problem();
+  if (!problem || !PRACTICE_V2_ENGINE?.calculateFamiliarityTransition) {
+    restoreTrackerMutationState(stateBeforeMutation);
+    practiceV2Runtime.actionNotice = "This recommendation changed. Choose a fresh rep and try again.";
+    persistPracticeV2Runtime();
+    renderPracticeV2();
+    return;
+  }
+  const result = PRACTICE_V2_WORKFLOW.markFamiliar(practiceV2Runtime, currentId, eventId, problem.id);
+  if (!result.ok) {
+    restoreTrackerMutationState(stateBeforeMutation);
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const transition = PRACTICE_V2_ENGINE.calculateFamiliarityTransition(problem, { today, now });
+  const familiarityEntry = {
+    id: eventId,
+    kind: "familiarity",
+    date: today,
+    occurredAt: now,
+    createdAt: now,
+    recommendationId: recommendation.public.recommendationId,
+    algorithmVersion: recommendation.algorithmVersion,
+    source: "practice-v2",
+    priorGrade: transition.priorGrade,
+    priorNextReview: transition.priorNextReview,
+    intervalDays: transition.intervalDays,
+    eligibleAgainAt: transition.eligibleAgainAt,
+    familiaritySequence: transition.familiaritySequence,
+    revokedAt: "",
+  };
+  problems = problems.map((item) => item.id === problem.id
+    ? normalizeProblem({
+        ...item,
+        status: isAttempted(item) ? item.status : "todo",
+        reviewHistory: [...(item.reviewHistory || []), familiarityEntry],
+        updatedAt: now,
+      })
+    : item);
+
+  practiceV2FamiliarMutationInFlight = true;
+  practiceV2Runtime.actionNotice = "";
+  renderPracticeV2();
+  writeBrowserFallbackState();
+  const saveResult = await saveRemoteState();
+  practiceV2FamiliarMutationInFlight = false;
+  if (!saveResult.ok) {
+    restoreTrackerMutationState(stateBeforeMutation);
+    practiceV2Runtime.actionNotice = saveResult.conflict
+      ? "Another tab or device changed your tracker. Reload before marking this problem familiar."
+      : "Familiarity could not be saved. This recommendation is still here so you can try again.";
+    persistPracticeV2Runtime();
+    renderPracticeV2();
+    return;
+  }
+
+  practiceV2Runtime = result.runtime;
+  practiceV2Runtime.expectedRevision = currentRevision;
+  practiceV2Runtime.recommendation = getPracticeV2Recommendation();
+  practiceV2Runtime.recommendationDate = today;
+  practiceV2Runtime.staleRevision = false;
+  practiceV2Runtime.actionNotice = `Marked familiar. We’ll revisit ${recommendation.public.title} after ${formatDate(transition.eligibleAgainAt)}.`;
+  persistPracticeV2Runtime();
+  render();
+}
+
 function chooseAnotherPracticeV2Rep() {
   const currentId = practiceV2Runtime?.recommendation?.public?.problemId;
-  if (!currentId) return;
-  practiceV2Runtime.skippedProblemIds = [...new Set([...practiceV2Runtime.skippedProblemIds, currentId])];
+  if (!currentId || practiceV2FamiliarMutationInFlight) return;
+  const result = PRACTICE_V2_WORKFLOW.chooseAnother(practiceV2Runtime, currentId);
+  if (!result.ok) return;
+  practiceV2Runtime = result.runtime;
   practiceV2Runtime.recommendation = getPracticeV2Recommendation();
   practiceV2Runtime.recommendationDate = toIsoDate(new Date());
   persistPracticeV2Runtime();
   renderPracticeV2();
 }
 
+async function restorePreviousPracticeV2Pick() {
+  if (
+    !practiceV2Runtime ||
+    practiceV2Runtime.phase !== "ready" ||
+    practiceV2FamiliarMutationInFlight ||
+    blockTrackerMutationWhileSaving()
+  ) return;
+  const result = PRACTICE_V2_WORKFLOW.restorePreviousPick(practiceV2Runtime);
+  if (!result.ok) return;
+  const previousAction = result.previousAction;
+  if (previousAction.type === "familiarity") {
+    const stateBeforeMutation = captureTrackerMutationState();
+    const now = new Date().toISOString();
+    let found = false;
+    problems = problems.map((problem) => {
+      let changed = false;
+      const reviewHistory = (problem.reviewHistory || []).map((entry) => {
+        if (entry.id !== previousAction.familiarityEventId || entry.kind !== "familiarity" || entry.revokedAt) return entry;
+        found = true;
+        changed = true;
+        return { ...entry, revokedAt: now, revocationReason: "restore-previous-pick" };
+      });
+      return changed ? normalizeProblem({ ...problem, reviewHistory, updatedAt: now }) : problem;
+    });
+    if (!found) {
+      restoreTrackerMutationState(stateBeforeMutation);
+      practiceV2Runtime.actionNotice = "That familiarity event could not be restored safely.";
+      persistPracticeV2Runtime();
+      renderPracticeV2();
+      return;
+    }
+    practiceV2FamiliarMutationInFlight = true;
+    renderPracticeV2();
+    writeBrowserFallbackState();
+    const saveResult = await saveRemoteState();
+    practiceV2FamiliarMutationInFlight = false;
+    if (!saveResult.ok) {
+      restoreTrackerMutationState(stateBeforeMutation);
+      practiceV2Runtime.actionNotice = saveResult.conflict
+        ? "Another tab or device changed your tracker. Reload before restoring this pick."
+        : "The familiarity mark could not be undone. Your current recommendation was kept.";
+      persistPracticeV2Runtime();
+      renderPracticeV2();
+      return;
+    }
+  }
+  practiceV2Runtime = result.runtime;
+  practiceV2Runtime.expectedRevision = currentRevision;
+  practiceV2Runtime.recommendation = getPracticeV2Recommendation({ pinnedProblemId: previousAction.problemId });
+  practiceV2Runtime.recommendationDate = toIsoDate(new Date());
+  practiceV2Runtime.actionNotice = previousAction.type === "familiarity"
+    ? "Familiarity mark undone. The previous problem is ready again."
+    : "Previous pick restored.";
+  persistPracticeV2Runtime();
+  renderPracticeV2();
+}
+
+function reviewDeferredPracticeV2Problem() {
+  if (!practiceV2Runtime || practiceV2Runtime.phase !== "ready" || practiceV2FamiliarMutationInFlight) return;
+  const recommendation = getPracticeV2Recommendation({ includeFamiliarDeferred: true });
+  if (!recommendation?.public) return;
+  practiceV2Runtime.familiarOverrideProblemId = recommendation.public.problemId;
+  practiceV2Runtime.recommendation = recommendation;
+  practiceV2Runtime.recommendationDate = toIsoDate(new Date());
+  practiceV2Runtime.actionNotice = "Showing one deferred problem. Its familiarity history remains unchanged unless you save a real result.";
+  persistPracticeV2Runtime();
+  renderPracticeV2();
+}
+
 function changePracticeV2Capacity() {
-  if (!practiceV2Runtime || practiceV2Runtime.phase !== "ready") return;
+  if (!practiceV2Runtime || practiceV2Runtime.phase !== "ready" || practiceV2FamiliarMutationInFlight) return;
   const previousTitle = practiceV2Runtime.recommendation?.public?.title || "";
   practiceV2Runtime.capacityMinutes = Number(els.practiceV2Capacity.value || 45);
   practiceV2Runtime.recommendation = null;
   practiceV2Runtime.skippedProblemIds = [];
+  practiceV2Runtime.rotationHistory = [];
+  practiceV2Runtime.familiarOverrideProblemId = "";
+  practiceV2Runtime.actionNotice = "";
   persistPracticeV2Runtime();
   renderPracticeV2();
   const nextTitle = practiceV2Runtime.recommendation?.public?.title || "";
@@ -3469,6 +3728,15 @@ function materializePracticeV2Problem() {
   return { problem: addProblemFromPlan(plan), created: true };
 }
 
+function materializeFamiliarPracticeV2Problem() {
+  const existing = practiceV2ProblemForRecommendation();
+  if (existing) return { problem: existing, created: false };
+  const pick = practiceV2Runtime?.recommendation?.public;
+  const plan = findBuiltInPlan(slugFromUrl(pick?.url), pick?.title);
+  if (!plan) return { problem: null, created: false };
+  return { problem: addProblemFromPlan(plan, { status: "todo" }), created: true };
+}
+
 async function savePracticeV2Rep(event) {
   event.preventDefault();
   if (!practiceV2Runtime || practiceV2Runtime.phase !== "reflecting") return;
@@ -3597,6 +3865,9 @@ function getNextPracticeV2Rep() {
   practiceV2Runtime.reflectionDrafts = PRACTICE_V2_WORKFLOW.createRuntime().reflectionDrafts;
   practiceV2Runtime.completion = null;
   practiceV2Runtime.undoReceipt = null;
+  practiceV2Runtime.rotationHistory = [];
+  practiceV2Runtime.familiarOverrideProblemId = "";
+  practiceV2Runtime.actionNotice = "";
   practiceV2Runtime.expectedRevision = currentRevision;
   practiceV2Runtime.staleRevision = false;
   if (els.gradeResult) els.gradeResult.textContent = "";
@@ -4133,6 +4404,13 @@ function latestLibraryActivityValue(problem) {
 }
 
 function getExactReviewSummary(problem) {
+  const familiarity = latestActiveFamiliarityEntry(problem);
+  if (familiarity?.eligibleAgainAt && familiarity.eligibleAgainAt > toIsoDate(new Date())) {
+    return {
+      label: "Marked familiar",
+      detail: `${formatDate(familiarity.eligibleAgainAt)} · next exact-title eligibility`,
+    };
+  }
   if (!hasProperGradeHistory(problem)) {
     return {
       label: "Not scheduled",
@@ -4146,6 +4424,14 @@ function getExactReviewSummary(problem) {
     label: isReviewDue(nextReview) ? "Due now" : "Scheduled",
     detail: `${formatDate(nextReview)} · same-title recall`,
   };
+}
+
+function latestActiveFamiliarityEntry(problem) {
+  if (!PRACTICE_V2_ENGINE?.familiarityEvents) return null;
+  return PRACTICE_V2_ENGINE.familiarityEvents(problem, {
+    throughDate: toIsoDate(new Date()),
+    throughTimestamp: new Date().toISOString(),
+  }).at(-1) || null;
 }
 
 function renderMembershipBadges(problem) {
@@ -5264,7 +5550,19 @@ function historyGradeLabel(grade) {
   return labels[grade] || "Prior attempt";
 }
 
+function historyEntryLabel(entry) {
+  if (entry?.kind === "familiarity") return entry.revokedAt ? "Marked familiar — undone" : "Marked familiar";
+  return historyGradeLabel(entry?.grade);
+}
+
 function historyStageSummary(entry) {
+  if (entry?.kind === "familiarity") {
+    return entry.revokedAt
+      ? "Familiarity deferral undone; no grade or schedule evidence was created."
+      : entry.eligibleAgainAt
+        ? `Exact-title check after ${formatDate(entry.eligibleAgainAt)} · not a solve`
+        : "Exact-title check deferred · not a solve";
+  }
   if (!isProperGrade(entry.grade)) return "Historical context";
   if (isFeatureEnabled("practiceV2")) {
     const evidence = entry.grade === "red"
@@ -5409,7 +5707,7 @@ function renderHistoryTab(problem) {
       <div class="history-row">
         <div>
           <strong>${escapeHtml(formatDate(entry.date))}</strong>
-          <span>${escapeHtml(historyGradeLabel(entry.grade))}</span>
+          <span>${escapeHtml(historyEntryLabel(entry))}</span>
           ${entry.note ? `<p>${escapeHtml(entry.note)}</p>` : ""}
           ${renderLearningSignalTags(entry.tags)}
           ${renderAttemptMetadata(entry)}
@@ -5849,7 +6147,7 @@ function compareHistoryEntriesNewestFirst(a, b) {
 }
 
 function historyEntrySortGroup(entry) {
-  return isProperGrade(entry?.grade) ? 1 : 0;
+  return isProperGrade(entry?.grade) || entry?.kind === "familiarity" ? 1 : 0;
 }
 
 function historyEntryOrderTimestamp(entry, normalizedDate = "") {
@@ -6349,18 +6647,23 @@ function problemMatchesStudyList(problem, studyList) {
   );
 }
 
-function addProblemFromPlan(planProblem) {
+function addProblemFromPlan(planProblem, options = {}) {
   const now = new Date().toISOString();
+  const memberships = mergeMemberships(
+    planProblem.listMemberships || [],
+    getBuiltInMemberships(planProblem.slug || planProblem.titleSlug, planProblem.title),
+  );
   const problem = normalizeProblem({
     ...planProblem,
     id: crypto.randomUUID(),
-    status: "solving",
+    status: options.status === "todo" ? "todo" : "solving",
     nextReview: "",
     completionCount: 0,
     stage: 0,
     greenStreak: 0,
     complexityKnown: false,
     reviewHistory: [],
+    listMemberships: memberships,
     createdAt: now,
     updatedAt: now,
     source: planProblem.source || "study-list",
@@ -7252,6 +7555,10 @@ function problemDisplayStage(problem) {
 }
 
 function problemDisplayReview(problem) {
+  const familiarity = latestActiveFamiliarityEntry(problem);
+  if (familiarity?.eligibleAgainAt && familiarity.eligibleAgainAt > toIsoDate(new Date())) {
+    return `After ${formatDate(familiarity.eligibleAgainAt)}`;
+  }
   return isSeenUnverified(problem) ? "Not scheduled" : formatDate(problem.nextReview);
 }
 

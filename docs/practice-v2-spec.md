@@ -21,6 +21,30 @@ version, it must return the same recommendation.
 The purpose of the app is interview readiness, not maximizing stages, streaks, solved count,
 or time spent in the tracker.
 
+### Practice scope and familiar recommendations
+
+Practice V2 exposes a persisted Practice scope with three choices: Blind 75 only, NeetCode 150
+only, and all study lists. The scope is an eligibility boundary for adaptive recommendations;
+an out-of-scope problem may remain in Library and its saved history is never deleted, but it must
+not be recommended while that scope is active. New states default to Blind 75 only. Legacy
+states infer a scope from their existing built-in list memberships, using all when both lists are
+already present.
+
+The Ready card includes a durable familiarity action rather than treating familiarity as a Green
+grade or a second mastery model:
+
+```text
+Know it well enough to start coding without rereading? Mark it familiar. This is not a solve;
+we’ll schedule the exact problem later.
+```
+
+Users can choose the familiar action only from Ready. It writes a non-grade familiarity event to
+the problem history, defers that exact title, and recalculates the next candidate after the state
+save succeeds. It creates no grade or session and does not change completion, mastery, streak, or
+transfer evidence. Familiarity uses a 14-day then 30-day self-report ladder; verified Green
+history can extend the ladder to 60 days, while a latest Red or Yellow limits deferral to 7 days.
+A later real grade supersedes earlier familiarity deferrals and schedules normally.
+
 ## 2. Product Principles
 
 1. Show one useful action when the user arrives.
@@ -199,15 +223,19 @@ Show:
 - Evidence status in neutral language.
 - A neutral `Why now` explanation.
 - Primary `Begin rep` action.
+- Secondary `I already know how to do this` action.
 - Secondary `Choose another` action.
 
 Do not show topic, pattern, list source, notes, solution, expected complexity, previous
 blockers, or a comparison to a known problem.
 
 `Choose another` is a browser-runtime skip. It records no grade and changes no schedule. The
-engine excludes the skipped candidate until the current runtime resets and
-returns the next eligible candidate. When no suitable alternative exists, keep the original
-recommendation and explain that it is the strongest available rep.
+engine excludes the skipped candidate until the current runtime resets and returns the next
+eligible candidate. Familiarity is a separately persisted exact-title deferral. `Restore previous
+pick` removes a temporary skip or revokes the latest familiarity event, then restores that exact
+problem. Temporary exclusions may cycle after exhaustion; durable familiarity deferrals never
+clear silently. When every candidate is deferred, show the earliest return date and an explicit
+option to review one deferred problem anyway.
 
 ### 7.2 Attempting
 
@@ -895,6 +923,9 @@ atomic save receipt.
 - Undo removes both and restores the previous recommendation state.
 - Cancel creates no evidence.
 - Choose another changes only the session skip set.
+- I already know how to do this creates one durable familiarity event, changes only exact-title
+  eligibility, and is unavailable after an attempt starts.
+- Restore previous pick revokes a familiarity event or removes a temporary skip atomically.
 - Recalculation after a rep can select a different task type.
 - Attempting -> Ready preserves the recommendation and creates no evidence.
 - Grading -> Attempting preserves the active rep and creates no evidence.

@@ -124,7 +124,18 @@
               </div>
               <p class="practice-v2-evidence" id="practiceV2Evidence"></p>
               <p class="practice-v2-reason" id="practiceV2Reason"></p>
+              <p class="practice-v2-familiarity-hint">
+                Know it well enough to start coding without rereading? Mark it familiar. This is not a solve; we’ll schedule the exact problem later.
+              </p>
               <div class="practice-v2-ready-actions">
+                <label class="practice-v2-capacity">
+                  <span>Practice scope</span>
+                  <select id="practiceV2Scope">
+                    <option value="blind75">Blind 75 only</option>
+                    <option value="neetcode150">NeetCode 150 only</option>
+                    <option value="all">All study lists</option>
+                  </select>
+                </label>
                 <label class="practice-v2-capacity">
                   <span>How much time do you have?</span>
                   <select id="practiceV2Capacity">
@@ -135,11 +146,15 @@
                   </select>
                 </label>
                 <button class="primary-btn" id="practiceV2BeginBtn" type="button">Begin rep</button>
+                <button class="ghost-btn" id="practiceV2FamiliarBtn" type="button">I already know how to do this</button>
                 <button class="ghost-btn" id="practiceV2ChangeBtn" type="button">Choose another</button>
+                <button class="text-btn" id="practiceV2RestoreBtn" type="button" hidden>Restore previous pick</button>
+                <button class="text-btn" id="practiceV2ReviewDeferredBtn" type="button" hidden>Review a deferred problem anyway</button>
               </div>
               <p class="practice-v2-capacity-hint" id="practiceV2CapacityHint" aria-live="polite">
                 Changing this recalculates your next rep and may select a different problem.
               </p>
+              <p class="practice-v2-capacity-hint" id="practiceV2ActionStatus" aria-live="polite"></p>
             </div>
 
             <div class="practice-v2-state" data-v2-state="attempting" hidden>

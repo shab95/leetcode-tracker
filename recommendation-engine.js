@@ -6,7 +6,7 @@
   "use strict";
 
   const ALGORITHM_VERSION = "readiness-v1.9";
-  const V2_ALGORITHM_VERSION = "readiness-v2.0";
+  const V2_ALGORITHM_VERSION = "readiness-v2.1";
   const EVIDENCE_WINDOW_DAYS = 30;
   const WEAKNESS_WINDOW_DAYS = 21;
   const EXACT_TITLE_COOLDOWN_HOURS = 24;
@@ -37,6 +37,7 @@
   const V2_MEANINGFUL_GAP_DAYS = 14;
   const V2_DELAYED_RETENTION_DAYS = 45;
   const V2_HARD_MEDIUM_GATE = 2;
+  const STUDY_LIST_SCOPES = Object.freeze(["blind75", "neetcode150", "all"]);
 
   // The built-in catalogs predate V2 pattern metadata. Keep this mapping
   // local to the policy layer so existing state and list files stay portable.
@@ -165,10 +166,15 @@
     const profile = { ...(state.trainingProfile || {}), ...(input.trainingProfile || {}) };
     const { today, now } = resolveClock(input);
     const capacityMinutes = positiveNumber(input.capacityMinutes, positiveNumber(profile.defaultSessionMinutes, 45));
-    const catalog = Array.isArray(input.catalog) ? input.catalog : [];
-    const evidence = deriveEvidence(state, { today, now, catalog });
+    const studyListScope = input.studyListScope || state.practicePlan?.studyListScope;
+    const catalog = filterCatalogByStudyScope(
+      input.catalog,
+      studyListScope,
+    );
+    const scopedProblems = filterProblemsByStudyScope(state.problems, studyListScope);
+    const evidence = deriveEvidence({ ...state, problems: scopedProblems }, { today, now, catalog });
     const excluded = buildExcludedSet(input);
-    const candidates = buildCandidates(state.problems, catalog)
+    const candidates = buildCandidates(scopedProblems, catalog)
       .filter((candidate) => !excluded.has(candidate.id) && !excluded.has(candidate.slug))
       .map((candidate) => scoreCandidate(candidate, { evidence, profile, today, now, capacityMinutes }))
       .filter((candidate) => candidate.eligible)
@@ -227,12 +233,24 @@
     const profile = { ...(state.trainingProfile || {}), ...(input.trainingProfile || {}) };
     const { today, now } = resolveClock(input);
     const capacityMinutes = positiveNumber(input.capacityMinutes, positiveNumber(profile.defaultSessionMinutes, 45));
-    const catalog = Array.isArray(input.catalog) ? input.catalog : [];
-    const evidence = deriveV2Evidence(state, { today, now, catalog });
+    const studyListScope = input.studyListScope || state.practicePlan?.studyListScope;
+    const catalog = filterCatalogByStudyScope(
+      input.catalog,
+      studyListScope,
+    );
+    const scopedProblems = filterProblemsByStudyScope(state.problems, studyListScope);
+    const evidence = deriveV2Evidence({ ...state, problems: scopedProblems }, { today, now, catalog });
     const excluded = buildExcludedSet(input);
-    const considered = buildCandidates(state.problems, catalog)
+    const includeFamiliarDeferred = Boolean(input.includeFamiliarDeferred);
+    const considered = buildCandidates(scopedProblems, catalog)
       .filter((candidate) => !excluded.has(String(candidate.id)) && !excluded.has(String(candidate.slug)))
-      .map((candidate) => classifyV2Candidate(candidate, { evidence, today, now, capacityMinutes }));
+      .map((candidate) => classifyV2Candidate(candidate, {
+        evidence,
+        today,
+        now,
+        capacityMinutes,
+        includeFamiliarDeferred,
+      }));
     const candidates = considered
       .filter((candidate) => candidate.eligible)
       .sort(compareV2Candidates);
@@ -265,6 +283,12 @@
       if (considered.some((candidate) => candidate.hardLockedForAcquisition)) {
         reasonCodes.push("hard-acquisition-gated");
       }
+      const familiarDeferred = considered.filter((candidate) => candidate.familiarityBlocked);
+      if (familiarDeferred.length > 0 && familiarDeferred.length === considered.length) {
+        reasonCodes.push("all-candidates-familiar-deferred");
+      } else if (familiarDeferred.length > 0) {
+        reasonCodes.push("familiarity-deferred");
+      }
       if (capacityMinutes < NEW_TIME_BOX.Easy) {
         reasonCodes.push("capacity-too-small-for-new-coverage");
       }
@@ -277,6 +301,10 @@
           reasonCodes,
           rationale: "No candidate fits the current capacity, cooldown, or exclusion set.",
           consideredCount: considered.length,
+          earliestFamiliarEligibleAt: familiarDeferred
+            .map((candidate) => candidate.familiarEligibleAgainAt)
+            .filter(Boolean)
+            .sort()[0] || "",
           evidence: summarizeV2Evidence(evidence),
         },
       };
@@ -319,12 +347,19 @@
   function deriveV2Evidence(stateInput = {}, options = {}) {
     const state = normalizeState(stateInput);
     const { today, now } = resolveClock(options);
-    const catalog = Array.isArray(options.catalog) ? options.catalog : [];
+    const catalog = filterCatalogByStudyScope(
+      options.catalog,
+      options.studyListScope || state.practicePlan?.studyListScope,
+    );
+    const scopedProblems = filterProblemsByStudyScope(
+      state.problems,
+      options.studyListScope || state.practicePlan?.studyListScope,
+    );
     const skills = new Map();
     const patterns = new Map();
     const recentAttempts = [];
 
-    for (const problem of state.problems) {
+    for (const problem of scopedProblems) {
       const plan = findCatalogMatch(problem, catalog);
       const evidenceProblem = plan && !hasPatternMetadata(problem)
         ? { ...plan, ...problem, patternId: patternIdFor(plan), patternKnown: true }
@@ -389,7 +424,7 @@
   }
 
   function classifyV2Candidate(candidate, context) {
-    const { evidence, today, now, capacityMinutes } = context;
+    const { evidence, today, now, capacityMinutes, includeFamiliarDeferred = false } = context;
     const attempts = properAttempts(candidate.problem, { throughDate: today, throughTimestamp: now });
     const allAttempts = properAttempts(candidate.problem);
     const importedEntries = importedAttempts(candidate.problem, { throughDate: today });
@@ -401,7 +436,12 @@
     if (candidate.patternKnown) pattern.patternKnown = true;
     const hasFutureAttempts = attempts.length < allAttempts.length;
     const futureOnly = attempts.length === 0 && allAttempts.length > 0;
-    const nextReview = eligibleNextReview(candidate, lastAttempt, hasFutureAttempts);
+    const scheduledNextReview = eligibleNextReview(candidate, lastAttempt, hasFutureAttempts);
+    const activeFamiliarity = latestActiveFamiliarity(candidate.problem, { today, now });
+    const familiarEligibleAgainAt = normalizeDate(activeFamiliarity?.eligibleAgainAt);
+    const nextReview = includeFamiliarDeferred
+      ? scheduledNextReview
+      : maxDate(scheduledNextReview, familiarEligibleAgainAt);
     const due = Boolean(nextReview && nextReview <= today && attempts.length > 0);
     const daysOverdue = due ? Math.max(0, dateDiffDays(nextReview, today)) : 0;
     const recentWeakness = Boolean(
@@ -415,7 +455,19 @@
     // A topic fallback is useful for transfer grouping, but it is not strong
     // enough evidence to unlock a compound Hard problem. Only explicit pattern
     // metadata can satisfy the Hard gate.
-    const taskType = chooseV2TaskType({ candidate, skill, pattern, attempts, importedOnly, due, lastAttempt, lastAgeDays, recentWeakness, unseen });
+    const scheduledTaskType = chooseV2TaskType({
+      candidate,
+      skill,
+      pattern,
+      attempts,
+      importedOnly,
+      due,
+      lastAttempt,
+      lastAgeDays,
+      recentWeakness,
+      unseen,
+    });
+    const taskType = scheduledTaskType || (includeFamiliarDeferred && activeFamiliarity ? "retention" : "");
     const lane = laneForV2Candidate({ taskType, due, unseen, lastAgeDays, recentWeakness });
     // Hard gating applies to new coverage and transfer acquisition only. A
     // recent failure or a genuinely due Hard still needs a repair path.
@@ -433,10 +485,17 @@
     const requiredMinutes = timeBoxMinutes;
     const capacityBlocked = requiredMinutes > capacityMinutes;
     const futureBlocked = futureOnly;
-    const cooldown = exactTitleCooldown({ ...candidate, nextReview }, lastAttempt, { today, now });
+    const cooldown = exactTitleCooldown({
+      ...candidate,
+      nextReview: includeFamiliarDeferred && familiarEligibleAgainAt ? "" : nextReview,
+    }, lastAttempt, { today, now });
     const cooldownBlocked = cooldown.blocked;
+    const familiarityBlocked = Boolean(
+      !includeFamiliarDeferred && familiarEligibleAgainAt && familiarEligibleAgainAt > today
+    );
     const eligible = Boolean(
-      candidate.title && candidate.id && Boolean(taskType) && !capacityBlocked && !hardLockedForAcquisition && !cooldownBlocked && !futureBlocked
+      candidate.title && candidate.id && Boolean(taskType) && !capacityBlocked && !hardLockedForAcquisition &&
+      !cooldownBlocked && !futureBlocked && !familiarityBlocked
     );
     const scoreComponents = {
       lane: (4 - ({ repair: 0, transfer: 1, learn: 2, retention: 3 }[lane] ?? 4)) * 100,
@@ -470,6 +529,8 @@
       futureBlocked,
       cooldownBlocked,
       cooldownReason: cooldown.reason,
+      familiarityBlocked,
+      familiarEligibleAgainAt,
       scoreComponents,
       score: Object.values(scoreComponents).reduce((sum, value) => sum + value, 0),
       reasonCodes,
@@ -493,6 +554,7 @@
     if (recentWeakness || taskType === "repair") return "repair";
     if (taskType === "transfer") return "transfer";
     if (unseen) return "learn";
+    if (taskType === "retention") return "retention";
     if (due || (lastAgeDays != null && lastAgeDays >= V2_DELAYED_RETENTION_DAYS)) return "retention";
     return null;
   }
@@ -889,6 +951,96 @@
       .filter((entry) => !throughDate || !entry.date || entry.date <= throughDate);
   }
 
+  function familiarityEvents(problem = {}, options = {}) {
+    const throughDate = normalizeDate(options.throughDate);
+    const throughTimestamp = timestampValue(options.throughTimestamp);
+    const attempts = properAttempts(problem, options);
+    const lastAttempt = attempts.at(-1) || null;
+    const lastAttemptDate = normalizeDate(lastAttempt?.date);
+    const lastAttemptTimestamp = attemptOccurrenceTimestamp(lastAttempt || {});
+    const history = Array.isArray(problem.reviewHistory) ? problem.reviewHistory : [];
+    const lastAttemptIndex = lastAttempt?.id
+      ? history.findLastIndex((entry) => entry?.id === lastAttempt.id)
+      : -1;
+
+    return history
+      .filter((entry) => entry?.kind === "familiarity" && !entry.revokedAt)
+      .map((entry) => ({
+        ...entry,
+        date: normalizeDate(entry.date || entry.occurredAt || entry.createdAt),
+        _historyIndex: history.indexOf(entry),
+      }))
+      .filter((entry) => entry.date)
+      .filter((entry) => !throughDate || entry.date <= throughDate)
+      .filter((entry) => {
+        if (!Number.isFinite(throughTimestamp)) return true;
+        const occurredAt = timestampValue(entry.occurredAt || entry.createdAt);
+        return !Number.isFinite(occurredAt) || occurredAt <= throughTimestamp;
+      })
+      .filter((entry) => {
+        if (!lastAttemptDate) return true;
+        if (entry.date !== lastAttemptDate) return entry.date > lastAttemptDate;
+        const occurredAt = timestampValue(entry.occurredAt || entry.createdAt);
+        if (!Number.isFinite(lastAttemptTimestamp)) return entry._historyIndex > lastAttemptIndex;
+        return Number.isFinite(occurredAt) && occurredAt > lastAttemptTimestamp;
+      })
+      .sort(compareFamiliarityChronologically)
+      .map(({ _historyIndex, ...entry }) => entry);
+  }
+
+  function latestActiveFamiliarity(problem = {}, options = {}) {
+    return familiarityEvents(problem, {
+      throughDate: options.today,
+      throughTimestamp: options.now,
+    }).at(-1) || null;
+  }
+
+  function calculateFamiliarityTransition(problem = {}, options = {}) {
+    const today = normalizeDate(options.today) || normalizeDate(new Date());
+    const now = normalizeTimestamp(options.now) || new Date().toISOString();
+    const attempts = properAttempts(problem, { throughDate: today, throughTimestamp: now });
+    const lastAttempt = attempts.at(-1) || null;
+    const events = familiarityEvents(problem, { throughDate: today, throughTimestamp: now });
+    const previousEvent = events.at(-1) || null;
+    const hasVerifiedGreen = attempts.some((attempt) => attempt.grade === "green");
+    let intervalDays;
+
+    if (["red", "yellow"].includes(lastAttempt?.grade)) {
+      intervalDays = 7;
+    } else if (!hasVerifiedGreen) {
+      intervalDays = events.length === 0 ? 14 : 30;
+    } else {
+      const stage = clamp(Number(problem.stage || 0), 0, 5);
+      const greenIntervals = [1, 3, 7, 14, 30, 60];
+      const nextGreenInterval = greenIntervals[Math.min(stage + 1, greenIntervals.length - 1)];
+      const previousInterval = positiveNumber(previousEvent?.intervalDays, 0);
+      const nextFamiliarInterval = previousInterval >= 30 ? 60 : previousInterval >= 14 ? 30 : 14;
+      intervalDays = Math.min(60, Math.max(14, nextGreenInterval, nextFamiliarInterval));
+    }
+
+    const calculatedDate = addDaysDate(today, intervalDays);
+    const priorNextReview = normalizeDate(problem.nextReview);
+    return {
+      intervalDays,
+      eligibleAgainAt: maxDate(calculatedDate, priorNextReview),
+      familiaritySequence: events.length + 1,
+      priorGrade: lastAttempt?.grade || "",
+      priorNextReview,
+    };
+  }
+
+  function compareFamiliarityChronologically(a, b) {
+    const dateDifference = dateValue(a.date) - dateValue(b.date);
+    if (dateDifference) return dateDifference;
+    const aTimestamp = timestampValue(a.occurredAt || a.createdAt);
+    const bTimestamp = timestampValue(b.occurredAt || b.createdAt);
+    if (Number.isFinite(aTimestamp) && Number.isFinite(bTimestamp) && aTimestamp !== bTimestamp) {
+      return aTimestamp - bTimestamp;
+    }
+    if (a._historyIndex !== b._historyIndex) return a._historyIndex - b._historyIndex;
+    return String(a.id || "").localeCompare(String(b.id || ""));
+  }
+
   function attemptIsWithinCutoff(attempt, { throughDate, throughTimestamp }) {
     if (throughDate && attempt.date > throughDate) return false;
     if (!Number.isFinite(throughTimestamp)) return true;
@@ -1121,6 +1273,22 @@
     };
   }
 
+  function filterCatalogByStudyScope(catalog, scope) {
+    const values = Array.isArray(catalog) ? catalog : [];
+    if (!STUDY_LIST_SCOPES.includes(scope) || scope === "all") return values;
+    return values.filter((plan) => (
+      Array.isArray(plan?.listMemberships) && plan.listMemberships.includes(scope)
+    ));
+  }
+
+  function filterProblemsByStudyScope(problems, scope) {
+    const values = Array.isArray(problems) ? problems : [];
+    if (!STUDY_LIST_SCOPES.includes(scope) || scope === "all") return values;
+    return values.filter((problem) => (
+      Array.isArray(problem?.listMemberships) && problem.listMemberships.includes(scope)
+    ));
+  }
+
   function candidateSlug(problem) {
     return String(problem.titleSlug || problem.slug || slugFromUrl(problem.url) || slugify(problem.title)).toLowerCase();
   }
@@ -1219,6 +1387,14 @@
     return a > b ? a : b;
   }
 
+  function addDaysDate(value, days) {
+    const normalized = normalizeDate(value);
+    if (!normalized) return "";
+    const date = new Date(`${normalized}T12:00:00Z`);
+    date.setUTCDate(date.getUTCDate() + Number(days || 0));
+    return date.toISOString().slice(0, 10);
+  }
+
   function positiveNumber(value, fallback) {
     const number = Number(value);
     return Number.isFinite(number) && number > 0 ? number : fallback;
@@ -1256,9 +1432,12 @@
     deriveV2Evidence,
     summarizeStudyListEvidence,
     buildCandidates,
+    calculateFamiliarityTransition,
+    familiarityEvents,
     localDateKey,
     properAttempts,
     skillIdFor,
     patternIdFor,
+    filterCatalogByStudyScope,
   });
 });

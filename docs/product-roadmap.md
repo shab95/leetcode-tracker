@@ -49,7 +49,7 @@ and complexity, and retain that ability over time.
   complexity confidence, and an optional note as separate evidence dimensions.
 - Same-title cooldowns, future-evidence exclusion, authoritative due dates, and safeguards
   against repeatedly recommending a recently completed problem.
-- A feature-flagged `readiness-v2.0` policy layer that prioritizes recent repair, unseen
+- A feature-flagged `readiness-v2.1` policy layer that prioritizes recent repair, unseen
   transfer, and unverified imported work before ordinary exact-title retention. It gates unseen
   Hard work behind same-pattern independent Medium evidence and reports capacity no-ops rather
   than silently recommending a task that cannot fit.

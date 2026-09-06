@@ -4202,6 +4202,14 @@ form {
   margin: 0;
 }
 
+.practice-v2-familiarity-hint {
+  max-width: 760px;
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
 .practice-v2-ready-actions,
 .practice-v2-actions {
   display: flex;
@@ -4705,6 +4713,7 @@ form {
   .practice-v2-capacity,
   .practice-v2-ready-actions .primary-btn,
   .practice-v2-ready-actions .ghost-btn,
+  .practice-v2-ready-actions .text-btn,
   .practice-v2-actions .primary-btn,
   .practice-v2-actions .ghost-btn,
   .practice-v2-actions .text-btn {

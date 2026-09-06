@@ -28,6 +28,9 @@
       phase: "ready",
       recommendation: null,
       skippedProblemIds: [],
+      rotationHistory: [],
+      familiarOverrideProblemId: "",
+      actionNotice: "",
       capacityMinutes: 45,
       attemptId: "",
       startedAt: "",
@@ -58,12 +61,16 @@
   function normalizeRuntime(value = {}) {
     const savedPhase = value.phase === "session-complete" ? "completed" : value.phase;
     const phase = PHASES.includes(savedPhase) ? savedPhase : "ready";
+    const skippedProblemIds = uniqueStrings(value.skippedProblemIds);
     return createRuntime({
       ...value,
       phase: phase === "saving" ? "reflecting" : phase,
       capacityMinutes: positiveNumber(value.capacityMinutes, 45),
       lockedTimeBoxMinutes: value.lockedTimeBoxMinutes == null ? null : positiveNumber(value.lockedTimeBoxMinutes, null),
-      skippedProblemIds: uniqueStrings(value.skippedProblemIds),
+      skippedProblemIds,
+      rotationHistory: normalizeRotationHistory(value.rotationHistory, skippedProblemIds),
+      familiarOverrideProblemId: String(value.familiarOverrideProblemId || ""),
+      actionNotice: String(value.actionNotice || ""),
       provisionalGrade: GRADES.includes(value.provisionalGrade) ? value.provisionalGrade : "",
       reflectionDrafts: normalizeDrafts(value.reflectionDrafts),
     });
@@ -79,6 +86,9 @@
         ...runtime,
         recommendation: null,
         skippedProblemIds: [],
+        rotationHistory: [],
+        familiarOverrideProblemId: "",
+        actionNotice: "",
         expectedRevision: revision,
         recommendationDate: "",
         staleRevision: false,
@@ -86,6 +96,89 @@
     }
 
     return { ...runtime, staleRevision: true };
+  }
+
+  function restorePreviousPick(runtime) {
+    const current = normalizeRuntime(runtime);
+    if (current.phase !== "ready" || current.rotationHistory.length === 0) {
+      return { ok: false, runtime: current, previousAction: null, error: "There is no previous pick to restore." };
+    }
+
+    const previousAction = current.rotationHistory.at(-1);
+    const rotationHistory = current.rotationHistory.slice(0, -1);
+    const skippedProblemIds = uniqueStrings(
+      rotationHistory.filter((action) => action.type === "choose-another").map((action) => action.problemId),
+    );
+
+    return {
+      ok: true,
+      runtime: {
+        ...current,
+        recommendation: null,
+        recommendationDate: "",
+        skippedProblemIds,
+        rotationHistory,
+        familiarOverrideProblemId: "",
+        actionNotice: "",
+      },
+      previousAction,
+      error: "",
+    };
+  }
+
+  function markFamiliar(runtime, problemId, eventId, persistedProblemId = problemId) {
+    const current = normalizeRuntime(runtime);
+    const id = String(problemId || "").trim();
+    const familiarityEventId = String(eventId || "").trim();
+    const restoreProblemId = String(persistedProblemId || "").trim();
+    if (
+      !id ||
+      !familiarityEventId ||
+      !restoreProblemId ||
+      current.phase !== "ready" ||
+      String(current.recommendation?.public?.problemId || "") !== id
+    ) {
+      return { ok: false, runtime: current, error: "There is no active recommendation to mark familiar." };
+    }
+
+    return {
+      ok: true,
+      runtime: {
+        ...current,
+        phase: "ready",
+        recommendation: null,
+        recommendationDate: "",
+        rotationHistory: [
+          ...current.rotationHistory,
+          { type: "familiarity", problemId: restoreProblemId, familiarityEventId },
+        ],
+        familiarOverrideProblemId: "",
+        actionNotice: "",
+        completion: null,
+        undoReceipt: null,
+      },
+      error: "",
+    };
+  }
+
+  function chooseAnother(runtime, problemId) {
+    const current = normalizeRuntime(runtime);
+    const id = String(problemId || "").trim();
+    if (!id || current.phase !== "ready" || String(current.recommendation?.public?.problemId || "") !== id) {
+      return { ok: false, runtime: current, error: "There is no active recommendation to skip." };
+    }
+    return {
+      ok: true,
+      runtime: {
+        ...current,
+        recommendation: null,
+        recommendationDate: "",
+        skippedProblemIds: uniqueStrings([...current.skippedProblemIds, id]),
+        rotationHistory: [...current.rotationHistory, { type: "choose-another", problemId: id }],
+        familiarOverrideProblemId: "",
+      },
+      error: "",
+    };
   }
 
   function transition(runtime, event) {
@@ -227,6 +320,21 @@
     return [...new Set((Array.isArray(values) ? values : []).filter(Boolean).map(String))];
   }
 
+  function normalizeRotationHistory(value, skippedProblemIds = []) {
+    if (!Array.isArray(value) || (value.length === 0 && skippedProblemIds.length > 0)) {
+      return skippedProblemIds.map((problemId) => ({ type: "choose-another", problemId }));
+    }
+    return value
+      .map((action) => ({
+        type: action?.type === "familiarity" ? "familiarity" : "choose-another",
+        problemId: String(action?.problemId || ""),
+        ...(action?.type === "familiarity"
+          ? { familiarityEventId: String(action?.familiarityEventId || "") }
+          : {}),
+      }))
+      .filter((action) => action.problemId && (action.type !== "familiarity" || action.familiarityEventId));
+  }
+
   return Object.freeze({
     ASSISTANCE,
     BLOCKERS,
@@ -236,9 +344,12 @@
     PHASES,
     SOLUTION_QUALITY,
     completionPlanUpdate,
+    chooseAnother,
     createRuntime,
+    markFamiliar,
     normalizeRuntime,
     reconcileRuntimeRevision,
+    restorePreviousPick,
     transition,
     timingSignal,
     validateReflection,

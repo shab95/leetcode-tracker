@@ -86,6 +86,85 @@ test("the same tracker revision preserves an idle recommendation", () => {
   assert.deepEqual(runtime.recommendation, recommendation);
 });
 
+test("restoring a previous pick pops only the latest session exclusion", () => {
+  const result = workflow.restorePreviousPick(workflow.createRuntime({
+    recommendation: { public: { problemId: "third" } },
+    skippedProblemIds: ["first", "second"],
+  }));
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.previousAction, { type: "choose-another", problemId: "second" });
+  assert.deepEqual(result.runtime.skippedProblemIds, ["first"]);
+  assert.deepEqual(result.runtime.rotationHistory, [{ type: "choose-another", problemId: "first" }]);
+  assert.equal(result.runtime.recommendation, null);
+  assert.equal(result.runtime.recommendationDate, "");
+});
+
+test("restoring a previous pick is a no-op outside ready state or without exclusions", () => {
+  const empty = workflow.restorePreviousPick(workflow.createRuntime());
+  const active = workflow.restorePreviousPick(workflow.createRuntime({
+    phase: "attempting",
+    skippedProblemIds: ["first"],
+  }));
+
+  assert.equal(empty.ok, false);
+  assert.equal(active.ok, false);
+  assert.deepEqual(active.runtime.skippedProblemIds, ["first"]);
+});
+
+test("marking a recommendation familiar rotates without creating a grade", () => {
+  const result = workflow.markFamiliar(workflow.createRuntime({
+    phase: "ready",
+    recommendation: { public: { problemId: "two-sum" } },
+  }), "two-sum", "familiar-1", "saved-two-sum");
+
+  assert.equal(result.ok, true);
+  assert.equal(result.runtime.phase, "ready");
+  assert.deepEqual(result.runtime.skippedProblemIds, []);
+  assert.deepEqual(result.runtime.rotationHistory, [{
+    type: "familiarity",
+    problemId: "saved-two-sum",
+    familiarityEventId: "familiar-1",
+  }]);
+  assert.equal(result.runtime.recommendation, null);
+});
+
+test("marking familiar is rejected after an attempt begins", () => {
+  const result = workflow.markFamiliar(workflow.createRuntime({
+    phase: "attempting",
+    recommendation: { public: { problemId: "two-sum" } },
+  }), "two-sum", "familiar-1");
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.runtime.rotationHistory, []);
+});
+
+test("restore preserves action provenance for familiarity and temporary skips", () => {
+  const ready = workflow.createRuntime({ recommendation: { public: { problemId: "first" } } });
+  const skipped = workflow.chooseAnother(ready, "first");
+  const familiarReady = {
+    ...skipped.runtime,
+    recommendation: { public: { problemId: "second" } },
+  };
+  const familiar = workflow.markFamiliar(familiarReady, "second", "familiar-2", "saved-second");
+  const restoredFamiliar = workflow.restorePreviousPick(familiar.runtime);
+
+  assert.deepEqual(restoredFamiliar.previousAction, {
+    type: "familiarity",
+    problemId: "saved-second",
+    familiarityEventId: "familiar-2",
+  });
+  assert.deepEqual(restoredFamiliar.runtime.skippedProblemIds, ["first"]);
+  assert.deepEqual(restoredFamiliar.runtime.rotationHistory, [{ type: "choose-another", problemId: "first" }]);
+});
+
+test("marking familiar without an active recommendation does nothing", () => {
+  const result = workflow.markFamiliar(workflow.createRuntime(), "two-sum");
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.runtime.skippedProblemIds, []);
+});
+
 test("revision reconciliation never discards an attempt in progress", () => {
   const runtime = workflow.reconcileRuntimeRevision(workflow.createRuntime({
     phase: "reflecting",

@@ -21,7 +21,10 @@
   const DEFAULT_PRACTICE_PLAN = Object.freeze({
     onboardingComplete: false,
     baselineStatus: "partial",
+    studyListScope: "blind75",
   });
+
+  const STUDY_LIST_SCOPES = Object.freeze(["blind75", "neetcode150", "all"]);
 
   function migrateStateToV4(input = {}, options = {}) {
     const source = isObject(input) ? cloneValue(input) : {};
@@ -45,6 +48,7 @@
       practicePlan: {
         ...cloneValue(DEFAULT_PRACTICE_PLAN),
         ...(isObject(source.practicePlan) ? source.practicePlan : {}),
+        studyListScope: normalizeStudyListScope(source.practicePlan?.studyListScope, source.problems),
       },
     };
   }
@@ -87,14 +91,28 @@
     return Number.isFinite(number) ? number : fallback;
   }
 
+  function normalizeStudyListScope(value, problems = []) {
+    if (STUDY_LIST_SCOPES.includes(value)) return value;
+    const memberships = new Set(
+      (Array.isArray(problems) ? problems : []).flatMap((problem) => (
+        Array.isArray(problem?.listMemberships) ? problem.listMemberships : []
+      )),
+    );
+    if (memberships.has("blind75") && memberships.has("neetcode150")) return "all";
+    if (memberships.has("neetcode150")) return "neetcode150";
+    return "blind75";
+  }
+
   return Object.freeze({
     STATE_VERSION,
     ALGORITHM_VERSION,
     DEFAULT_TRAINING_PROFILE,
     DEFAULT_PRACTICE_PLAN,
+    STUDY_LIST_SCOPES,
     migrateStateToV4,
     createEmptyState,
     needsMigration,
+    normalizeStudyListScope,
     cloneValue,
   });
 });

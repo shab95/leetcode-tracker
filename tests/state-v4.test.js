@@ -102,6 +102,43 @@ test("empty V4 state has an explicit training profile and plan", () => {
   assert.deepEqual(empty.practicePlan, DEFAULT_PRACTICE_PLAN);
 });
 
+test("study-list scope preserves explicit values and infers legacy list usage", () => {
+  assert.equal(
+    migrateStateToV4({ practicePlan: { studyListScope: "neetcode150" } }).practicePlan.studyListScope,
+    "neetcode150",
+  );
+  assert.equal(
+    migrateStateToV4({ problems: [{ listMemberships: ["neetcode150"] }] }).practicePlan.studyListScope,
+    "neetcode150",
+  );
+  assert.equal(
+    migrateStateToV4({ problems: [{ listMemberships: ["blind75", "neetcode150"] }] }).practicePlan.studyListScope,
+    "all",
+  );
+});
+
+test("familiarity history remains lossless without changing the V4 state boundary", () => {
+  const event = {
+    id: "familiar-1",
+    kind: "familiarity",
+    date: "2026-09-05",
+    occurredAt: "2026-09-05T12:00:00.000Z",
+    intervalDays: 14,
+    eligibleAgainAt: "2026-09-19",
+    familiaritySequence: 1,
+    revokedAt: "",
+  };
+  const migrated = migrateStateToV4({
+    version: STATE_VERSION,
+    problems: [{ id: "two-sum", reviewHistory: [event] }],
+    sessions: [],
+  });
+
+  assert.equal(migrated.version, STATE_VERSION);
+  assert.deepEqual(migrated.problems[0].reviewHistory[0], event);
+  assert.deepEqual(migrated.sessions, []);
+});
+
 test("timezone can be supplied by the runtime only when state has none", () => {
   const withRuntimeTimezone = migrateStateToV4(
     { version: 3, problems: [], sessions: [] },

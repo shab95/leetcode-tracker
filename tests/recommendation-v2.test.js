@@ -2,6 +2,8 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const {
+  calculateFamiliarityTransition,
+  filterCatalogByStudyScope,
   recommendNextRepV2,
   deriveV2Evidence,
 } = require("../recommendation-engine.js");
@@ -51,6 +53,177 @@ function grade(date, gradeValue, overrides = {}) {
   };
 }
 
+function familiarity(date, overrides = {}) {
+  return {
+    id: `familiar-${date}-${overrides.familiaritySequence || 1}`,
+    kind: "familiarity",
+    date,
+    occurredAt: `${date}T12:00:00.000Z`,
+    createdAt: `${date}T12:00:00.000Z`,
+    intervalDays: 14,
+    eligibleAgainAt: "2026-09-13",
+    familiaritySequence: 1,
+    revokedAt: "",
+    ...overrides,
+  };
+}
+
+test("familiarity uses a separate adaptive ladder without creating grade evidence", () => {
+  const unseen = problem();
+  const first = calculateFamiliarityTransition(unseen, {
+    today: TODAY,
+    now: `${TODAY}T13:00:00.000Z`,
+  });
+  assert.equal(first.intervalDays, 14);
+  assert.equal(first.eligibleAgainAt, "2026-09-13");
+  assert.equal(first.familiaritySequence, 1);
+
+  const laterExistingReview = calculateFamiliarityTransition(problem({ nextReview: "2026-10-01" }), {
+    today: TODAY,
+    now: `${TODAY}T13:00:00.000Z`,
+  });
+  assert.equal(laterExistingReview.eligibleAgainAt, "2026-10-01");
+
+  const repeated = problem({ reviewHistory: [familiarity(TODAY)] });
+  const second = calculateFamiliarityTransition(repeated, {
+    today: "2026-09-13",
+    now: "2026-09-13T13:00:00.000Z",
+  });
+  assert.equal(second.intervalDays, 30);
+  assert.equal(second.familiaritySequence, 2);
+
+  const weak = problem({
+    reviewHistory: [grade("2026-08-29", "yellow")],
+    nextReview: "2026-09-02",
+  });
+  const weakTransition = calculateFamiliarityTransition(weak, {
+    today: TODAY,
+    now: `${TODAY}T13:00:00.000Z`,
+  });
+  assert.equal(weakTransition.intervalDays, 7);
+  assert.equal(weakTransition.eligibleAgainAt, "2026-09-06");
+
+  const verified = problem({
+    stage: 4,
+    reviewHistory: [grade("2026-08-20", "green")],
+  });
+  assert.equal(calculateFamiliarityTransition(verified, {
+    today: TODAY,
+    now: `${TODAY}T13:00:00.000Z`,
+  }).intervalDays, 60);
+});
+
+test("revoked familiarity is ignored and a later real grade supersedes prior familiarity", () => {
+  const revoked = problem({
+    reviewHistory: [familiarity(TODAY, { revokedAt: `${TODAY}T13:00:00.000Z` })],
+  });
+  assert.equal(calculateFamiliarityTransition(revoked, {
+    today: TODAY,
+    now: `${TODAY}T14:00:00.000Z`,
+  }).familiaritySequence, 1);
+
+  const superseded = problem({
+    stage: 2,
+    reviewHistory: [
+      familiarity("2026-08-01", { eligibleAgainAt: "2026-09-19" }),
+      grade("2026-08-15", "green", { occurredAt: "2026-08-15T12:00:00.000Z" }),
+    ],
+    nextReview: "2026-09-01",
+  });
+  const recommendation = recommendNextRepV2({
+    today: "2026-09-01",
+    now: "2026-09-01T12:00:00.000Z",
+    state: state([superseded]),
+    capacityMinutes: 45,
+  });
+  assert.equal(recommendation.public.problemId, superseded.id);
+
+  const sameDayBackfill = problem({
+    reviewHistory: [
+      familiarity(TODAY),
+      grade(TODAY, "green", { backfilled: true, occurredAt: "", createdAt: "" }),
+    ],
+  });
+  assert.equal(calculateFamiliarityTransition(sameDayBackfill, {
+    today: TODAY,
+    now: `${TODAY}T14:00:00.000Z`,
+  }).familiaritySequence, 1);
+});
+
+test("familiarity defers only the exact title and can be explicitly overridden", () => {
+  const deferred = problem({
+    id: "deferred",
+    title: "Deferred Problem",
+    reviewHistory: [familiarity(TODAY)],
+  });
+  const normal = recommendNextRepV2({
+    today: TODAY,
+    now: `${TODAY}T13:00:00.000Z`,
+    state: state([deferred]),
+    capacityMinutes: 45,
+  });
+  assert.equal(normal.public, null);
+  assert.ok(normal.private.reasonCodes.includes("all-candidates-familiar-deferred"));
+  assert.equal(normal.private.earliestFamiliarEligibleAt, "2026-09-13");
+  const evidence = deriveV2Evidence(state([deferred]), { today: TODAY, now: `${TODAY}T13:00:00.000Z` });
+  assert.equal(evidence.skills.get("arrays-and-hashing").checked, false);
+  assert.equal(evidence.skills.get("arrays-and-hashing").independent, false);
+
+  const override = recommendNextRepV2({
+    today: TODAY,
+    now: `${TODAY}T13:00:00.000Z`,
+    state: state([deferred]),
+    capacityMinutes: 45,
+    includeFamiliarDeferred: true,
+  });
+  assert.equal(override.public.problemId, "deferred");
+
+  const deferredAfterGreen = problem({
+    id: "deferred-green",
+    title: "Deferred After Green",
+    stage: 3,
+    nextReview: "2026-09-13",
+    reviewHistory: [
+      grade("2026-08-15", "green"),
+      familiarity(TODAY, { eligibleAgainAt: "2026-09-29", intervalDays: 30 }),
+    ],
+  });
+  const greenOverride = recommendNextRepV2({
+    today: TODAY,
+    now: `${TODAY}T13:00:00.000Z`,
+    state: state([deferredAfterGreen]),
+    capacityMinutes: 45,
+    includeFamiliarDeferred: true,
+  });
+  assert.equal(greenOverride.public.problemId, "deferred-green");
+});
+
+test("a scoped materialized familiarity event suppresses its matching catalog title", () => {
+  const saved = problem({
+    id: "saved-two-sum",
+    title: "Two Sum",
+    titleSlug: "two-sum",
+    listMemberships: ["blind75", "neetcode150"],
+    reviewHistory: [familiarity(TODAY)],
+  });
+  const recommendation = recommendNextRepV2({
+    today: TODAY,
+    now: `${TODAY}T13:00:00.000Z`,
+    state: state([saved], { practicePlan: { studyListScope: "blind75" } }),
+    catalog: [{
+      title: "Two Sum",
+      slug: "two-sum",
+      topic: "Arrays and Hashing",
+      difficulty: "Easy",
+      listMemberships: ["blind75", "neetcode150"],
+    }],
+    capacityMinutes: 45,
+  });
+
+  assert.equal(recommendation.public, null);
+  assert.ok(recommendation.private.reasonCodes.includes("all-candidates-familiar-deferred"));
+});
+
 test("imported-only history is unverified current work, not independent evidence", () => {
   const imported = problem({
     id: "imported",
@@ -66,6 +239,41 @@ test("imported-only history is unverified current work, not independent evidence
   assert.equal(recommendation.private.taskType, "learn");
   assert.equal(recommendation.public.topic, undefined);
   assert.ok(recommendation.private.reasonCodes.includes("historical-exposure-unverified"));
+});
+
+test("Blind 75 scope excludes NeetCode-only catalog candidates", () => {
+  const catalog = [
+    {
+      title: "Valid Sudoku",
+      slug: "valid-sudoku",
+      listMemberships: ["neetcode150"],
+      topic: "Arrays and Hashing",
+      difficulty: "Medium",
+    },
+    {
+      title: "Two Sum",
+      slug: "two-sum",
+      listMemberships: ["blind75"],
+      topic: "Arrays and Hashing",
+      difficulty: "Easy",
+    },
+  ];
+  assert.deepEqual(filterCatalogByStudyScope(catalog, "blind75").map((item) => item.slug), ["two-sum"]);
+  const recommendation = recommendNextRepV2({
+    today: TODAY,
+    now: `${TODAY}T12:00:00.000Z`,
+    state: state([
+      problem({
+        id: "saved-valid-sudoku",
+        title: "Valid Sudoku",
+        titleSlug: "valid-sudoku",
+        listMemberships: ["neetcode150"],
+      }),
+    ], { practicePlan: { studyListScope: "blind75" } }),
+    catalog,
+    capacityMinutes: 45,
+  });
+  assert.equal(recommendation.public.title, "Two Sum");
 });
 
 test("unseen work in a familiar skill is preferred over a recent exact green repeat", () => {

@@ -646,7 +646,7 @@ Use honest progress labels:
 
 ## Recommendation V2 Policy Layer
 
-The tracker can run a reversible `readiness-v2.0` recommendation policy over the existing v4
+The tracker can run a reversible `readiness-v2.1` recommendation policy over the existing v4
 state. It does not rewrite stages, review dates, history, imports, or grades. The legacy
 `readiness-v1.9` policy remains available as the rollback path.
 
