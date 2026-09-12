@@ -38,6 +38,7 @@
       importMeta: source.importMeta ?? null,
       problems: Array.isArray(source.problems) ? source.problems : [],
       sessions: Array.isArray(source.sessions) ? source.sessions : [],
+      practiceTelemetry: Array.isArray(source.practiceTelemetry) ? source.practiceTelemetry : [],
       recoveryProblemIds: Array.isArray(source.recoveryProblemIds) ? source.recoveryProblemIds : [],
       algorithmVersion: nonEmptyString(source.algorithmVersion) || ALGORITHM_VERSION,
       trainingProfile: {

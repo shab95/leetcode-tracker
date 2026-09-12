@@ -49,6 +49,7 @@ test("v3 migration is lossless below the version boundary", () => {
   assert.deepEqual(migrated.importMeta, before.importMeta);
   assert.deepEqual(migrated.problems, before.problems);
   assert.deepEqual(migrated.sessions, before.sessions);
+  assert.deepEqual(migrated.practiceTelemetry, before.practiceTelemetry || []);
   assert.deepEqual(migrated.recoveryProblemIds, before.recoveryProblemIds);
   assert.deepEqual(migrated.futureTopLevel, before.futureTopLevel);
   assert.equal(migrated.problems[0].confidence, before.problems[0].confidence);
@@ -97,6 +98,7 @@ test("empty V4 state has an explicit training profile and plan", () => {
   assert.equal(empty.algorithmVersion, ALGORITHM_VERSION);
   assert.deepEqual(empty.problems, []);
   assert.deepEqual(empty.sessions, []);
+  assert.deepEqual(empty.practiceTelemetry, []);
   assert.deepEqual(empty.recoveryProblemIds, []);
   assert.deepEqual(empty.trainingProfile, DEFAULT_TRAINING_PROFILE);
   assert.deepEqual(empty.practicePlan, DEFAULT_PRACTICE_PLAN);
@@ -136,6 +138,35 @@ test("familiarity history remains lossless without changing the V4 state boundar
 
   assert.equal(migrated.version, STATE_VERSION);
   assert.deepEqual(migrated.problems[0].reviewHistory[0], event);
+  assert.deepEqual(migrated.sessions, []);
+});
+
+test("choose-another telemetry remains lossless without changing the V4 state boundary", () => {
+  const event = {
+    id: "choose-1",
+    kind: "choose-another",
+    date: "2026-09-12",
+    occurredAt: "2026-09-12T12:00:00.000Z",
+    problemId: "two-sum",
+    recommendationId: "readiness-v2.1:two-sum",
+    algorithmVersion: "readiness-v2.1",
+    source: "practice-v2",
+    studyListScope: "blind75",
+    capacityMinutes: 45,
+    nextProblemId: "valid-anagram",
+    nextRecommendationId: "readiness-v2.1:valid-anagram",
+    restoredAt: "",
+  };
+  const migrated = migrateStateToV4({
+    version: STATE_VERSION,
+    problems: [],
+    sessions: [],
+    practiceTelemetry: [event],
+  });
+
+  assert.equal(migrated.version, STATE_VERSION);
+  assert.deepEqual(migrated.practiceTelemetry, [event]);
+  assert.deepEqual(migrated.problems, []);
   assert.deepEqual(migrated.sessions, []);
 });
 

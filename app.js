@@ -2,6 +2,7 @@ const STORAGE_KEY = "leetcode-tracker.problems.v3";
 const LEGACY_STORAGE_KEYS = ["leetcode-tracker.problems.v2", "leetcode-tracker.problems.v1"];
 const IMPORT_META_KEY = "leetcode-tracker.import.v1";
 const SESSION_KEY = "leetcode-tracker.sessions.v1";
+const PRACTICE_TELEMETRY_KEY = "leetcode-tracker.practice-telemetry.v1";
 const RECOVERY_LANE_KEY = "leetcode-tracker.recovery.v1";
 const COLD_WORKFLOW_SESSION_KEY = "leetcode-tracker.cold-workflow.v1";
 const NOTIFICATION_BANNER_KEY = "leetcode-tracker.notification-banner-seen.v1";
@@ -373,6 +374,7 @@ const themeModeInputs = document.querySelectorAll("input[name='themeMode']");
 let problems = [];
 let importMeta = null;
 let sessions = [];
+let practiceTelemetry = [];
 let recoveryProblemIds = [];
 let algorithmVersion = PRACTICE_V2_ENGINE?.ALGORITHM_VERSION || STATE_V4?.ALGORITHM_VERSION || "readiness-v1";
 let trainingProfile = cloneState(STATE_V4?.DEFAULT_TRAINING_PROFILE || {});
@@ -795,6 +797,7 @@ async function initApp() {
   const localProblems = appEnv.authRequired ? [] : loadProblemsFromStorage();
   const localImportMeta = appEnv.authRequired ? null : loadJson(IMPORT_META_KEY, null);
   const localSessions = appEnv.authRequired ? [] : loadJson(SESSION_KEY, []);
+  const localPracticeTelemetry = appEnv.authRequired ? [] : loadJson(PRACTICE_TELEMETRY_KEY, []);
   const localRecoveryProblemIds = appEnv.authRequired ? [] : loadJson(RECOVERY_LANE_KEY, []);
   const remoteState = await loadRemoteState();
 
@@ -805,6 +808,7 @@ async function initApp() {
       remoteState.importMeta ||
       remoteState.problems?.length > 0 ||
       remoteState.sessions?.length > 0 ||
+      remoteState.practiceTelemetry?.length > 0 ||
       remoteState.practicePlan?.onboardingComplete
     );
 
@@ -815,10 +819,11 @@ async function initApp() {
     problems = localProblems;
     importMeta = localImportMeta;
     sessions = Array.isArray(localSessions) ? localSessions : [];
+    practiceTelemetry = Array.isArray(localPracticeTelemetry) ? localPracticeTelemetry : [];
     recoveryProblemIds = normalizeRecoveryProblemIds(localRecoveryProblemIds);
     if (appEnv.authRequired) {
       setSaveStatus("saved", "Ready to save to your cloud account.");
-    } else if (problems.length > 0 || importMeta || sessions.length > 0) {
+    } else if (problems.length > 0 || importMeta || sessions.length > 0 || practiceTelemetry.length > 0) {
       setSaveStatus("saving", "Migrating browser data to local file...");
       await persist();
     } else {
@@ -837,6 +842,7 @@ function applyRemoteState(state) {
   problems = cloneState(migrated.problems);
   importMeta = cloneState(migrated.importMeta);
   sessions = cloneState(migrated.sessions);
+  practiceTelemetry = cloneState(migrated.practiceTelemetry);
   recoveryProblemIds = normalizeRecoveryProblemIds(migrated.recoveryProblemIds);
   algorithmVersion = migrated.algorithmVersion || activePracticeAlgorithmVersion();
   trainingProfile = cloneState(migrated.trainingProfile);
@@ -867,6 +873,7 @@ function extractTrackerStateExtras(state) {
     "importMeta",
     "problems",
     "sessions",
+    "practiceTelemetry",
     "recoveryProblemIds",
     "algorithmVersion",
     "trainingProfile",
@@ -889,6 +896,7 @@ function buildTrackerStatePayload(overrides = {}) {
     importMeta,
     problems,
     sessions,
+    practiceTelemetry,
     recoveryProblemIds,
     algorithmVersion: activePracticeAlgorithmVersion(),
     trainingProfile,
@@ -1037,6 +1045,7 @@ function captureTrackerMutationState() {
     problems: cloneState(problems),
     importMeta: importMeta ? cloneState(importMeta) : null,
     sessions: cloneState(sessions),
+    practiceTelemetry: cloneState(practiceTelemetry),
     recoveryProblemIds: cloneState(recoveryProblemIds),
     algorithmVersion,
     trainingProfile: cloneState(trainingProfile),
@@ -1057,6 +1066,7 @@ function restoreTrackerMutationState(snapshot) {
   problems = snapshot.problems;
   importMeta = snapshot.importMeta;
   sessions = snapshot.sessions;
+  practiceTelemetry = snapshot.practiceTelemetry;
   recoveryProblemIds = snapshot.recoveryProblemIds;
   algorithmVersion = snapshot.algorithmVersion;
   trainingProfile = snapshot.trainingProfile;
@@ -1115,6 +1125,7 @@ function writeBrowserFallbackState() {
   if (!appEnv.authRequired) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(problems));
     localStorage.setItem(SESSION_KEY, JSON.stringify(sessions));
+    localStorage.setItem(PRACTICE_TELEMETRY_KEY, JSON.stringify(practiceTelemetry));
     localStorage.setItem(RECOVERY_LANE_KEY, JSON.stringify(recoveryProblemIds));
     if (importMeta) localStorage.setItem(IMPORT_META_KEY, JSON.stringify(importMeta));
     else localStorage.removeItem(IMPORT_META_KEY);
@@ -3322,6 +3333,9 @@ function renderPracticeV2() {
       : "I already know how to do this";
   }
   els.practiceV2ChangeBtn.disabled = !publicPick || practiceV2FamiliarMutationInFlight;
+  els.practiceV2ChangeBtn.textContent = practiceV2FamiliarMutationInFlight
+    ? "Saving..."
+    : "Choose another";
   const canRestorePreviousPick = phase === "ready"
     && Array.isArray(practiceV2Runtime.rotationHistory)
     && practiceV2Runtime.rotationHistory.length > 0
@@ -3490,16 +3504,75 @@ async function markPracticeV2Familiar() {
   render();
 }
 
-function chooseAnotherPracticeV2Rep() {
+async function chooseAnotherPracticeV2Rep() {
   const currentId = practiceV2Runtime?.recommendation?.public?.problemId;
-  if (!currentId || practiceV2FamiliarMutationInFlight) return;
+  if (
+    !currentId ||
+    practiceV2Runtime?.phase !== "ready" ||
+    practiceV2FamiliarMutationInFlight ||
+    blockTrackerMutationWhileSaving()
+  ) return;
+  const today = toIsoDate(new Date());
+  if (
+    practiceV2Runtime.recommendationDate !== today ||
+    Number(practiceV2Runtime.expectedRevision || 0) !== currentRevision
+  ) {
+    invalidateReadyPracticeV2Recommendation();
+    renderPracticeV2();
+    return;
+  }
+
+  const stateBeforeMutation = captureTrackerMutationState();
+  const currentRecommendation = cloneState(practiceV2Runtime.recommendation);
   const result = PRACTICE_V2_WORKFLOW.chooseAnother(practiceV2Runtime, currentId);
   if (!result.ok) return;
   practiceV2Runtime = result.runtime;
-  practiceV2Runtime.recommendation = getPracticeV2Recommendation();
-  practiceV2Runtime.recommendationDate = toIsoDate(new Date());
-  persistPracticeV2Runtime();
+  const nextRecommendation = getPracticeV2Recommendation();
+  practiceV2Runtime.recommendation = nextRecommendation;
+  practiceV2Runtime.recommendationDate = today;
+  const now = new Date().toISOString();
+  practiceTelemetry = [
+    ...practiceTelemetry,
+    {
+      id: crypto.randomUUID(),
+      kind: "choose-another",
+      date: today,
+      occurredAt: now,
+      createdAt: now,
+      problemId: currentId,
+      title: currentRecommendation.public.title,
+      recommendationId: currentRecommendation.public.recommendationId,
+      algorithmVersion: currentRecommendation.algorithmVersion,
+      source: "practice-v2",
+      studyListScope: practicePlan.studyListScope || "",
+      capacityMinutes: Number(practiceV2Runtime.capacityMinutes || 45),
+      nextProblemId: nextRecommendation?.public?.problemId || "",
+      nextRecommendationId: nextRecommendation?.public?.recommendationId || "",
+      restoredAt: "",
+    },
+  ];
+  practiceV2FamiliarMutationInFlight = true;
+  practiceV2Runtime.actionNotice = "";
   renderPracticeV2();
+  writeBrowserFallbackState();
+  const saveResult = await saveRemoteState();
+  practiceV2FamiliarMutationInFlight = false;
+  if (!saveResult.ok) {
+    restoreTrackerMutationState(stateBeforeMutation);
+    practiceV2Runtime.actionNotice = saveResult.conflict
+      ? "Another tab or device changed your tracker. Reload before choosing another problem."
+      : "Choose another could not be recorded. Your current recommendation is still here.";
+    persistPracticeV2Runtime();
+    renderPracticeV2();
+    return;
+  }
+  practiceV2Runtime.expectedRevision = currentRevision;
+  practiceV2Runtime.staleRevision = false;
+  practiceV2Runtime.actionNotice = nextRecommendation?.public
+    ? "Choose another recorded."
+    : "Choose another recorded. No additional candidate is available right now.";
+  persistPracticeV2Runtime();
+  render();
 }
 
 async function restorePreviousPracticeV2Pick() {
