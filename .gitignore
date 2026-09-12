@@ -9,6 +9,7 @@ data/*.sqlite
 data/*.sqlite-*
 *.sqlite
 *.sqlite-*
+reports/*.json
 .env
 .env.*
 
