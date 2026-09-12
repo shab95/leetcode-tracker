@@ -3524,23 +3524,32 @@ async function chooseAnotherPracticeV2Rep() {
 
   const stateBeforeMutation = captureTrackerMutationState();
   const currentRecommendation = cloneState(practiceV2Runtime.recommendation);
-  const result = PRACTICE_V2_WORKFLOW.chooseAnother(practiceV2Runtime, currentId);
+  const telemetryEventId = crypto.randomUUID();
+  const result = PRACTICE_V2_WORKFLOW.chooseAnother(practiceV2Runtime, currentId, telemetryEventId);
   if (!result.ok) return;
   practiceV2Runtime = result.runtime;
   const nextRecommendation = getPracticeV2Recommendation();
+  const rotationHistory = [...practiceV2Runtime.rotationHistory];
+  const latestRotation = rotationHistory.at(-1);
+  if (latestRotation?.type === "choose-another" && latestRotation.telemetryEventId === telemetryEventId) {
+    rotationHistory[rotationHistory.length - 1] = {
+      ...latestRotation,
+      rotationOutcome: nextRecommendation?.public ? "rotated" : "cycled",
+    };
+  }
   practiceV2Runtime.recommendation = nextRecommendation;
   practiceV2Runtime.recommendationDate = today;
+  practiceV2Runtime.rotationHistory = rotationHistory;
   const now = new Date().toISOString();
-  practiceTelemetry = [
+  const rotationOutcome = nextRecommendation?.public ? "rotated" : "cycled";
+  practiceTelemetry = PRACTICE_V2_WORKFLOW.retainPracticeTelemetry([
     ...practiceTelemetry,
     {
-      id: crypto.randomUUID(),
+      id: telemetryEventId,
       kind: "choose-another",
       date: today,
       occurredAt: now,
-      createdAt: now,
       problemId: currentId,
-      title: currentRecommendation.public.title,
       recommendationId: currentRecommendation.public.recommendationId,
       algorithmVersion: currentRecommendation.algorithmVersion,
       source: "practice-v2",
@@ -3548,9 +3557,10 @@ async function chooseAnotherPracticeV2Rep() {
       capacityMinutes: Number(practiceV2Runtime.capacityMinutes || 45),
       nextProblemId: nextRecommendation?.public?.problemId || "",
       nextRecommendationId: nextRecommendation?.public?.recommendationId || "",
+      rotationOutcome,
       restoredAt: "",
     },
-  ];
+  ], now);
   practiceV2FamiliarMutationInFlight = true;
   practiceV2Runtime.actionNotice = "";
   renderPracticeV2();
@@ -3585,8 +3595,9 @@ async function restorePreviousPracticeV2Pick() {
   const result = PRACTICE_V2_WORKFLOW.restorePreviousPick(practiceV2Runtime);
   if (!result.ok) return;
   const previousAction = result.previousAction;
+  const stateBeforeMutation = captureTrackerMutationState();
+  let shouldPersistRestore = false;
   if (previousAction.type === "familiarity") {
-    const stateBeforeMutation = captureTrackerMutationState();
     const now = new Date().toISOString();
     let found = false;
     problems = problems.map((problem) => {
@@ -3606,6 +3617,25 @@ async function restorePreviousPracticeV2Pick() {
       renderPracticeV2();
       return;
     }
+    shouldPersistRestore = true;
+  } else if (previousAction.telemetryEventId) {
+    const restoredAt = new Date().toISOString();
+    const restoredTelemetry = PRACTICE_V2_WORKFLOW.restoreChooseAnotherTelemetry(
+      practiceTelemetry,
+      previousAction.telemetryEventId,
+      restoredAt,
+    );
+    if (!restoredTelemetry.found) {
+      restoreTrackerMutationState(stateBeforeMutation);
+      practiceV2Runtime.actionNotice = "That Choose another event could not be restored safely.";
+      persistPracticeV2Runtime();
+      renderPracticeV2();
+      return;
+    }
+    practiceTelemetry = restoredTelemetry.events;
+    shouldPersistRestore = true;
+  }
+  if (shouldPersistRestore) {
     practiceV2FamiliarMutationInFlight = true;
     renderPracticeV2();
     writeBrowserFallbackState();
@@ -3615,7 +3645,7 @@ async function restorePreviousPracticeV2Pick() {
       restoreTrackerMutationState(stateBeforeMutation);
       practiceV2Runtime.actionNotice = saveResult.conflict
         ? "Another tab or device changed your tracker. Reload before restoring this pick."
-        : "The familiarity mark could not be undone. Your current recommendation was kept.";
+        : "The previous pick could not be restored. Your current recommendation was kept.";
       persistPracticeV2Runtime();
       renderPracticeV2();
       return;

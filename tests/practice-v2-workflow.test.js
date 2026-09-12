@@ -90,12 +90,26 @@ test("restoring a previous pick pops only the latest session exclusion", () => {
   const result = workflow.restorePreviousPick(workflow.createRuntime({
     recommendation: { public: { problemId: "third" } },
     skippedProblemIds: ["first", "second"],
+    rotationHistory: [
+      { type: "choose-another", problemId: "first", telemetryEventId: "telemetry-1" },
+      { type: "choose-another", problemId: "second", telemetryEventId: "telemetry-2" },
+    ],
   }));
 
   assert.equal(result.ok, true);
-  assert.deepEqual(result.previousAction, { type: "choose-another", problemId: "second" });
+  assert.deepEqual(result.previousAction, {
+    type: "choose-another",
+    problemId: "second",
+    telemetryEventId: "telemetry-2",
+    rotationOutcome: "rotated",
+  });
   assert.deepEqual(result.runtime.skippedProblemIds, ["first"]);
-  assert.deepEqual(result.runtime.rotationHistory, [{ type: "choose-another", problemId: "first" }]);
+  assert.deepEqual(result.runtime.rotationHistory, [{
+    type: "choose-another",
+    problemId: "first",
+    telemetryEventId: "telemetry-1",
+    rotationOutcome: "rotated",
+  }]);
   assert.equal(result.runtime.recommendation, null);
   assert.equal(result.runtime.recommendationDate, "");
 });
@@ -141,7 +155,7 @@ test("marking familiar is rejected after an attempt begins", () => {
 
 test("restore preserves action provenance for familiarity and temporary skips", () => {
   const ready = workflow.createRuntime({ recommendation: { public: { problemId: "first" } } });
-  const skipped = workflow.chooseAnother(ready, "first");
+  const skipped = workflow.chooseAnother(ready, "first", "telemetry-1");
   const familiarReady = {
     ...skipped.runtime,
     recommendation: { public: { problemId: "second" } },
@@ -155,7 +169,45 @@ test("restore preserves action provenance for familiarity and temporary skips", 
     familiarityEventId: "familiar-2",
   });
   assert.deepEqual(restoredFamiliar.runtime.skippedProblemIds, ["first"]);
-  assert.deepEqual(restoredFamiliar.runtime.rotationHistory, [{ type: "choose-another", problemId: "first" }]);
+  assert.deepEqual(restoredFamiliar.runtime.rotationHistory, [{
+    type: "choose-another",
+    problemId: "first",
+    telemetryEventId: "telemetry-1",
+    rotationOutcome: "rotated",
+  }]);
+});
+
+test("choose-another preserves its durable event identity through restore", () => {
+  const skipped = workflow.chooseAnother(workflow.createRuntime({
+    recommendation: { public: { problemId: "first" } },
+  }), "first", "telemetry-1");
+  const restored = workflow.restorePreviousPick({
+    ...skipped.runtime,
+    recommendation: { public: { problemId: "second" } },
+  });
+
+  assert.equal(restored.previousAction.telemetryEventId, "telemetry-1");
+  const telemetry = workflow.restoreChooseAnotherTelemetry([
+    { id: "telemetry-1", kind: "choose-another", restoredAt: "" },
+  ], restored.previousAction.telemetryEventId, "2026-09-12T12:00:00.000Z");
+  assert.equal(telemetry.found, true);
+  assert.equal(telemetry.events[0].restoredAt, "2026-09-12T12:00:00.000Z");
+  assert.equal(telemetry.events[0].revocationReason, "restore-previous-pick");
+});
+
+test("practice telemetry is bounded and retains recent events", () => {
+  const events = Array.from({ length: workflow.PRACTICE_TELEMETRY_MAX_EVENTS + 2 }, (_, index) => ({
+    id: `event-${index}`,
+    kind: "choose-another",
+    occurredAt: "2026-09-12T12:00:00.000Z",
+  }));
+  const retained = workflow.retainPracticeTelemetry(events, "2026-09-12T12:00:00.000Z");
+  assert.equal(retained.length, workflow.PRACTICE_TELEMETRY_MAX_EVENTS);
+  assert.equal(retained[0].id, "event-2");
+  assert.deepEqual(workflow.retainPracticeTelemetry([
+    { id: "old", occurredAt: "2026-01-01T00:00:00.000Z" },
+    { id: "new", occurredAt: "2026-09-12T12:00:00.000Z" },
+  ], "2026-09-12T12:00:00.000Z").map((event) => event.id), ["new"]);
 });
 
 test("marking familiar without an active recommendation does nothing", () => {

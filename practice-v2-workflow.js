@@ -10,6 +10,8 @@
   const COMPLEXITY_STATUSES = Object.freeze(["not-checked", "partial", "explained"]);
   const SOLUTION_QUALITY = Object.freeze(["expected", "suboptimal", "unknown"]);
   const HISTORICAL_UNKNOWN = "unknown";
+  const PRACTICE_TELEMETRY_MAX_EVENTS = 500;
+  const PRACTICE_TELEMETRY_RETENTION_DAYS = 180;
   const ASSISTANCE = Object.freeze(["none", "hint", "solution", "editorial", "ai", "person"]);
   const BLOCKERS = Object.freeze([
     "getting-started",
@@ -161,9 +163,10 @@
     };
   }
 
-  function chooseAnother(runtime, problemId) {
+  function chooseAnother(runtime, problemId, telemetryEventId = "", rotationOutcome = "rotated") {
     const current = normalizeRuntime(runtime);
     const id = String(problemId || "").trim();
+    const eventId = String(telemetryEventId || "").trim();
     if (!id || current.phase !== "ready" || String(current.recommendation?.public?.problemId || "") !== id) {
       return { ok: false, runtime: current, error: "There is no active recommendation to skip." };
     }
@@ -174,11 +177,43 @@
         recommendation: null,
         recommendationDate: "",
         skippedProblemIds: uniqueStrings([...current.skippedProblemIds, id]),
-        rotationHistory: [...current.rotationHistory, { type: "choose-another", problemId: id }],
+        rotationHistory: [
+          ...current.rotationHistory,
+          {
+            type: "choose-another",
+            problemId: id,
+            ...(eventId ? { telemetryEventId: eventId } : {}),
+            rotationOutcome: rotationOutcome === "cycled" ? "cycled" : "rotated",
+          },
+        ],
         familiarOverrideProblemId: "",
       },
       error: "",
     };
+  }
+
+  function retainPracticeTelemetry(events, now = new Date().toISOString()) {
+    const nowMs = Date.parse(now) || Date.now();
+    const cutoffMs = nowMs - PRACTICE_TELEMETRY_RETENTION_DAYS * 86400000;
+    return (Array.isArray(events) ? events : [])
+      .filter((event) => {
+        if (!event || typeof event !== "object" || !event.id) return false;
+        const eventMs = Date.parse(event.occurredAt || event.createdAt || event.date || "");
+        return !eventMs || eventMs >= cutoffMs;
+      })
+      .slice(-PRACTICE_TELEMETRY_MAX_EVENTS);
+  }
+
+  function restoreChooseAnotherTelemetry(events, eventId, restoredAt = new Date().toISOString()) {
+    const id = String(eventId || "").trim();
+    if (!id) return { found: false, events: Array.isArray(events) ? events : [] };
+    let found = false;
+    const nextEvents = (Array.isArray(events) ? events : []).map((event) => {
+      if (event?.id !== id || event.kind !== "choose-another" || event.restoredAt) return event;
+      found = true;
+      return { ...event, restoredAt, revocationReason: "restore-previous-pick" };
+    });
+    return { found, events: nextEvents };
   }
 
   function transition(runtime, event) {
@@ -330,7 +365,10 @@
         problemId: String(action?.problemId || ""),
         ...(action?.type === "familiarity"
           ? { familiarityEventId: String(action?.familiarityEventId || "") }
-          : {}),
+          : {
+              ...(action?.telemetryEventId ? { telemetryEventId: String(action.telemetryEventId) } : {}),
+              rotationOutcome: action?.rotationOutcome === "cycled" ? "cycled" : "rotated",
+            }),
       }))
       .filter((action) => action.problemId && (action.type !== "familiarity" || action.familiarityEventId));
   }
@@ -341,6 +379,8 @@
     COMPLEXITY_STATUSES,
     GRADES,
     HISTORICAL_UNKNOWN,
+    PRACTICE_TELEMETRY_MAX_EVENTS,
+    PRACTICE_TELEMETRY_RETENTION_DAYS,
     PHASES,
     SOLUTION_QUALITY,
     completionPlanUpdate,
@@ -349,6 +389,8 @@
     markFamiliar,
     normalizeRuntime,
     reconcileRuntimeRevision,
+    retainPracticeTelemetry,
+    restoreChooseAnotherTelemetry,
     restorePreviousPick,
     transition,
     timingSignal,
