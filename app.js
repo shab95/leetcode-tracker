@@ -244,6 +244,7 @@ const els = {
   practiceV2CapacityHint: document.querySelector("#practiceV2CapacityHint"),
   practiceV2ActionStatus: document.querySelector("#practiceV2ActionStatus"),
   practiceV2BeginBtn: document.querySelector("#practiceV2BeginBtn"),
+  practiceV2RefreshBtn: document.querySelector("#practiceV2RefreshBtn"),
   practiceV2FamiliarBtn: document.querySelector("#practiceV2FamiliarBtn"),
   practiceV2ChangeBtn: document.querySelector("#practiceV2ChangeBtn"),
   practiceV2RestoreBtn: document.querySelector("#practiceV2RestoreBtn"),
@@ -591,6 +592,7 @@ els.skipReviewBtn.addEventListener("click", () => skipDailyPick("review"));
 els.newStartAttemptBtn?.addEventListener("click", () => startAttempt("new"));
 els.undoGradeBtn.addEventListener("click", handlePostGradeUndo);
 els.practiceV2BeginBtn?.addEventListener("click", beginPracticeV2Rep);
+els.practiceV2RefreshBtn?.addEventListener("click", refreshPracticeV2Recommendation);
 els.practiceV2FamiliarBtn?.addEventListener("click", markPracticeV2Familiar);
 els.practiceV2ChangeBtn?.addEventListener("click", chooseAnotherPracticeV2Rep);
 els.practiceV2RestoreBtn?.addEventListener("click", restorePreviousPracticeV2Pick);
@@ -3071,7 +3073,7 @@ function sharedPracticeV2QueueFromRuntime() {
 }
 
 function hydrateSharedPracticeV2Queue(runtime, queue = practiceV2Queue) {
-  if (!queue || queue.recommendationDate !== toIsoDate(new Date())) return runtime;
+  if (!queue) return runtime;
   if (queue.algorithmVersion && queue.algorithmVersion !== activePracticeV2AlgorithmVersion()) return runtime;
   const hydrated = PRACTICE_V2_WORKFLOW.normalizeRuntime({
     ...runtime,
@@ -3363,8 +3365,7 @@ function ensurePracticeV2Recommendation() {
     practiceV2Runtime.phase === "ready" &&
     practiceV2Runtime.recommendation &&
     practiceV2Runtime.recommendation.algorithmVersion === activePracticeV2AlgorithmVersion() &&
-    Number(practiceV2Runtime.expectedRevision || 0) === currentRevision &&
-    practiceV2Runtime.recommendationDate === today
+    Number(practiceV2Runtime.expectedRevision || 0) === currentRevision
   ) {
     if (!sharedPracticeV2QueueMatchesRuntime()) void syncSharedPracticeV2Queue();
     return;
@@ -3445,21 +3446,30 @@ function renderPracticeV2() {
       ? "You can stop here or deliberately review a deferred problem."
       : "Stopping without penalty is always valid.";
   }
-  els.practiceV2BeginBtn.disabled = !publicPick || practiceV2FamiliarMutationInFlight;
+  const refreshRequired = phase === "ready"
+    && Boolean(practiceV2Runtime.recommendationDate)
+    && practiceV2Runtime.recommendationDate !== toIsoDate(new Date());
+  els.practiceV2BeginBtn.hidden = refreshRequired;
+  els.practiceV2BeginBtn.disabled = !publicPick || practiceV2FamiliarMutationInFlight || refreshRequired;
+  if (els.practiceV2RefreshBtn) {
+    els.practiceV2RefreshBtn.hidden = !refreshRequired;
+    els.practiceV2RefreshBtn.disabled = practiceV2FamiliarMutationInFlight;
+  }
   if (els.practiceV2FamiliarBtn) {
-    els.practiceV2FamiliarBtn.disabled = !publicPick || practiceV2FamiliarMutationInFlight;
+    els.practiceV2FamiliarBtn.disabled = !publicPick || practiceV2FamiliarMutationInFlight || refreshRequired;
     els.practiceV2FamiliarBtn.textContent = practiceV2FamiliarMutationInFlight
       ? "Saving familiarity..."
       : "I already know how to do this";
   }
-  els.practiceV2ChangeBtn.disabled = !publicPick || practiceV2FamiliarMutationInFlight;
+  els.practiceV2ChangeBtn.disabled = !publicPick || practiceV2FamiliarMutationInFlight || refreshRequired;
   els.practiceV2ChangeBtn.textContent = practiceV2FamiliarMutationInFlight
     ? "Saving..."
     : "Choose another";
   const canRestorePreviousPick = phase === "ready"
     && Array.isArray(practiceV2Runtime.rotationHistory)
     && practiceV2Runtime.rotationHistory.length > 0
-    && !practiceV2FamiliarMutationInFlight;
+    && !practiceV2FamiliarMutationInFlight
+    && !refreshRequired;
   els.practiceV2RestoreBtn.hidden = !canRestorePreviousPick;
   els.practiceV2RestoreBtn.disabled = !canRestorePreviousPick;
   if (els.practiceV2ReviewDeferredBtn) {
@@ -3467,7 +3477,9 @@ function renderPracticeV2() {
     els.practiceV2ReviewDeferredBtn.disabled = practiceV2FamiliarMutationInFlight;
   }
   if (els.practiceV2ActionStatus) {
-    els.practiceV2ActionStatus.textContent = String(practiceV2Runtime.actionNotice || "");
+    els.practiceV2ActionStatus.textContent = refreshRequired
+      ? "A new-day refresh is ready. Refresh before changing or starting this recommendation."
+      : String(practiceV2Runtime.actionNotice || "");
   }
 
   renderPracticeV2Grade();
@@ -3521,6 +3533,10 @@ function movePracticeV2(event) {
 
 function beginPracticeV2Rep() {
   if (!practiceV2Runtime?.recommendation?.public || practiceV2FamiliarMutationInFlight) return;
+  if (practiceV2Runtime.recommendationDate !== toIsoDate(new Date())) {
+    renderPracticeV2();
+    return;
+  }
   if (
     practiceV2Runtime.recommendationDate !== toIsoDate(new Date()) ||
     Number(practiceV2Runtime.expectedRevision || 0) !== currentRevision
@@ -3534,6 +3550,37 @@ function beginPracticeV2Rep() {
   practiceV2Runtime.lockedTimeBoxMinutes = practiceV2Runtime.recommendation.public.timeBoxMinutes;
   practiceV2Runtime.expectedRevision = currentRevision;
   movePracticeV2("begin");
+}
+
+async function refreshPracticeV2Recommendation() {
+  if (!practiceV2Runtime || practiceV2Runtime.phase !== "ready" || practiceV2FamiliarMutationInFlight) return;
+  const stateBeforeMutation = captureTrackerMutationState();
+  const today = toIsoDate(new Date());
+  practiceV2Runtime.recommendation = getPracticeV2Recommendation({ resetExclusions: true });
+  practiceV2Runtime.recommendationDate = today;
+  practiceV2Runtime.actionNotice = "";
+  stageSharedPracticeV2Queue();
+  practiceV2FamiliarMutationInFlight = true;
+  renderPracticeV2();
+  writeBrowserFallbackState();
+  const saveResult = await saveRemoteState();
+  practiceV2FamiliarMutationInFlight = false;
+  if (!saveResult.ok) {
+    restoreTrackerMutationState(stateBeforeMutation);
+    practiceV2Runtime.actionNotice = saveResult.conflict
+      ? "Another device changed your tracker. Reload before refreshing."
+      : "The refreshed recommendation could not be saved. Your previous pick is still here.";
+    persistPracticeV2Runtime();
+    renderPracticeV2();
+    return;
+  }
+  practiceV2Runtime.expectedRevision = currentRevision;
+  practiceV2Runtime.staleRevision = false;
+  practiceV2Runtime.actionNotice = practiceV2Runtime.recommendation?.public
+    ? "Recommendation refreshed."
+    : "Recommendation refreshed. No eligible rep is available right now.";
+  persistPracticeV2Runtime();
+  render();
 }
 
 async function markPracticeV2Familiar() {
