@@ -1029,7 +1029,18 @@ function clearColdWorkflowSession() {
 }
 
 function persist() {
-  invalidateReadyPracticeV2Recommendation();
+  // Recompute a Ready pick against the mutation being saved, rather than
+  // writing a transient empty queue and letting another device invent one.
+  if (practiceV2Runtime?.phase === "ready" && practiceV2Runtime.recommendation) {
+    practiceV2Runtime.recommendation = null;
+    practiceV2Runtime.recommendationDate = "";
+    practiceV2Runtime.recommendation = getPracticeV2Recommendation();
+    practiceV2Runtime.recommendationDate = toIsoDate(new Date());
+    practiceV2Runtime.expectedRevision = currentRevision;
+    practiceV2Runtime.staleRevision = false;
+    stageSharedPracticeV2Queue();
+    persistPracticeV2Runtime();
+  }
   writeBrowserFallbackState();
   return saveRemoteState();
 }
@@ -3089,13 +3100,18 @@ function sharedPracticeV2QueueMatchesRuntime() {
 
 async function syncSharedPracticeV2Queue() {
   if (practiceV2QueueSyncInFlight || !practiceV2Runtime || practiceV2Runtime.phase !== "ready") return;
+  const queueBeforeSync = practiceV2Queue ? cloneState(practiceV2Queue) : null;
   practiceV2QueueSyncInFlight = true;
   stageSharedPracticeV2Queue();
   writeBrowserFallbackState();
   const result = await saveRemoteState();
   practiceV2QueueSyncInFlight = false;
-  if (!result.ok && result.conflict) {
-    await refreshHostedStateIfIdle();
+  if (!result.ok) {
+    practiceV2Queue = queueBeforeSync;
+    if (result.conflict) {
+      lastRemoteStateRefreshAt = 0;
+      await refreshHostedStateIfIdle();
+    }
   }
 }
 
@@ -3349,7 +3365,10 @@ function ensurePracticeV2Recommendation() {
     practiceV2Runtime.recommendation.algorithmVersion === activePracticeV2AlgorithmVersion() &&
     Number(practiceV2Runtime.expectedRevision || 0) === currentRevision &&
     practiceV2Runtime.recommendationDate === today
-  ) return;
+  ) {
+    if (!sharedPracticeV2QueueMatchesRuntime()) void syncSharedPracticeV2Queue();
+    return;
+  }
   if (practiceV2Runtime.phase === "ready") practiceV2Runtime.recommendation = null;
   practiceV2Runtime.recommendation = getPracticeV2Recommendation();
   practiceV2Runtime.expectedRevision = currentRevision;
