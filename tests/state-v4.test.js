@@ -102,6 +102,21 @@ test("empty V4 state has an explicit training profile and plan", () => {
   assert.deepEqual(empty.recoveryProblemIds, []);
   assert.deepEqual(empty.trainingProfile, DEFAULT_TRAINING_PROFILE);
   assert.deepEqual(empty.practicePlan, DEFAULT_PRACTICE_PLAN);
+  assert.equal(empty.practiceV2Queue, null);
+});
+
+test("shared Practice V2 queue survives migration without changing the V4 boundary", () => {
+  const queue = {
+    version: 1,
+    recommendation: { problemId: "min-cost-connect-points", title: "Min Cost to Connect All Points" },
+    recommendationDate: "2026-09-12",
+    skippedProblemIds: ["coin-change-ii"],
+    rotationHistory: [{ type: "choose-another", problemId: "coin-change-ii", telemetryEventId: "event-1" }],
+  };
+  const migrated = migrateStateToV4({ practiceV2Queue: queue });
+
+  assert.equal(migrated.version, STATE_VERSION);
+  assert.deepEqual(migrated.practiceV2Queue, queue);
 });
 
 test("study-list scope preserves explicit values and infers legacy list usage", () => {

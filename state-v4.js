@@ -39,6 +39,10 @@
       problems: Array.isArray(source.problems) ? source.problems : [],
       sessions: Array.isArray(source.sessions) ? source.sessions : [],
       practiceTelemetry: Array.isArray(source.practiceTelemetry) ? source.practiceTelemetry : [],
+      // The Ready queue is shared state. Drafts and an in-progress attempt stay
+      // in the browser, but every device must see the same active pick and
+      // rotation trail.
+      practiceV2Queue: isObject(source.practiceV2Queue) ? source.practiceV2Queue : null,
       recoveryProblemIds: Array.isArray(source.recoveryProblemIds) ? source.recoveryProblemIds : [],
       algorithmVersion: nonEmptyString(source.algorithmVersion) || ALGORITHM_VERSION,
       trainingProfile: {

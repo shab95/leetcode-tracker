@@ -375,6 +375,7 @@ let problems = [];
 let importMeta = null;
 let sessions = [];
 let practiceTelemetry = [];
+let practiceV2Queue = null;
 let recoveryProblemIds = [];
 let algorithmVersion = PRACTICE_V2_ENGINE?.ALGORITHM_VERSION || STATE_V4?.ALGORITHM_VERSION || "readiness-v1";
 let trainingProfile = cloneState(STATE_V4?.DEFAULT_TRAINING_PROFILE || {});
@@ -409,6 +410,7 @@ let backfillProblemId = "";
 let backfillDraft = null;
 let practiceV2Runtime = PRACTICE_V2_WORKFLOW?.createRuntime() || null;
 let practiceV2FamiliarMutationInFlight = false;
+let practiceV2QueueSyncInFlight = false;
 let currentNewSourceId = els.newSourceSelect.value || "blind75";
 let tableSort = { column: "nextReview", direction: "asc" };
 let leaderboardProfile = {
@@ -843,6 +845,7 @@ function applyRemoteState(state) {
   importMeta = cloneState(migrated.importMeta);
   sessions = cloneState(migrated.sessions);
   practiceTelemetry = cloneState(migrated.practiceTelemetry);
+  practiceV2Queue = normalizeSharedPracticeV2Queue(migrated.practiceV2Queue);
   recoveryProblemIds = normalizeRecoveryProblemIds(migrated.recoveryProblemIds);
   algorithmVersion = migrated.algorithmVersion || activePracticeAlgorithmVersion();
   trainingProfile = cloneState(migrated.trainingProfile);
@@ -874,6 +877,7 @@ function extractTrackerStateExtras(state) {
     "problems",
     "sessions",
     "practiceTelemetry",
+    "practiceV2Queue",
     "recoveryProblemIds",
     "algorithmVersion",
     "trainingProfile",
@@ -897,6 +901,7 @@ function buildTrackerStatePayload(overrides = {}) {
     problems,
     sessions,
     practiceTelemetry,
+    practiceV2Queue,
     recoveryProblemIds,
     algorithmVersion: activePracticeAlgorithmVersion(),
     trainingProfile,
@@ -1046,6 +1051,7 @@ function captureTrackerMutationState() {
     importMeta: importMeta ? cloneState(importMeta) : null,
     sessions: cloneState(sessions),
     practiceTelemetry: cloneState(practiceTelemetry),
+    practiceV2Queue: practiceV2Queue ? cloneState(practiceV2Queue) : null,
     recoveryProblemIds: cloneState(recoveryProblemIds),
     algorithmVersion,
     trainingProfile: cloneState(trainingProfile),
@@ -1067,6 +1073,7 @@ function restoreTrackerMutationState(snapshot) {
   importMeta = snapshot.importMeta;
   sessions = snapshot.sessions;
   practiceTelemetry = snapshot.practiceTelemetry;
+  practiceV2Queue = snapshot.practiceV2Queue;
   recoveryProblemIds = snapshot.recoveryProblemIds;
   algorithmVersion = snapshot.algorithmVersion;
   trainingProfile = snapshot.trainingProfile;
@@ -1164,7 +1171,12 @@ async function refreshHostedStateIfIdle() {
     if (!remoteState || remoteRevision <= currentRevision) return;
 
     applyRemoteState(remoteState);
-    reconcilePracticeV2RuntimeRevision();
+    if (practiceV2Runtime?.phase === "ready" && practiceV2Queue) {
+      practiceV2Runtime = hydrateSharedPracticeV2Queue(practiceV2Runtime);
+      persistPracticeV2Runtime();
+    } else {
+      reconcilePracticeV2RuntimeRevision();
+    }
     setSaveStatus("saved", buildSavedMessage(lastServerSavedAt));
     render();
   } finally {
@@ -1329,7 +1341,12 @@ async function performRemoteStateSave(stateSnapshot) {
     lastServerSavedAt = result.savedAt || new Date().toISOString();
     currentRevision = Number(result.revision || currentRevision);
     setSaveStatus("saved", buildSavedMessage(lastServerSavedAt));
-    reconcilePracticeV2RuntimeRevision();
+    if (practiceV2QueueSyncInFlight && practiceV2Runtime?.phase === "ready") {
+      practiceV2Runtime.expectedRevision = currentRevision;
+      practiceV2Runtime.staleRevision = false;
+    } else {
+      reconcilePracticeV2RuntimeRevision();
+    }
     if (practiceV2Runtime?.phase === "ready") renderPracticeV2();
     if (canUseFriendPulse()) loadFriendPulseData().then(renderFriendPulse);
     return { ok: true, revision: currentRevision, savedAt: lastServerSavedAt };
@@ -3009,6 +3026,79 @@ function practiceV2StorageKey() {
   return `leetcode-tracker.practice-v2-runtime.v1.${coldWorkflowOwner()}`;
 }
 
+function normalizeSharedPracticeV2Queue(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const recommendation = publicPracticeV2Recommendation(value.recommendation);
+  if (!recommendation?.problemId || !value.recommendationDate) return null;
+  return {
+    version: 1,
+    recommendation,
+    recommendationDate: String(value.recommendationDate),
+    algorithmVersion: String(value.algorithmVersion || ""),
+    capacityMinutes: Number(value.capacityMinutes || trainingProfile.defaultSessionMinutes || 45),
+    skippedProblemIds: Array.isArray(value.skippedProblemIds) ? [...new Set(value.skippedProblemIds.map(String).filter(Boolean))] : [],
+    rotationHistory: Array.isArray(value.rotationHistory) ? cloneState(value.rotationHistory) : [],
+    familiarOverrideProblemId: String(value.familiarOverrideProblemId || ""),
+    updatedAt: String(value.updatedAt || ""),
+  };
+}
+
+function sharedPracticeV2QueueFromRuntime() {
+  const recommendation = publicPracticeV2Recommendation(practiceV2Runtime?.recommendation);
+  if (!recommendation?.problemId || practiceV2Runtime?.phase !== "ready") return null;
+  return normalizeSharedPracticeV2Queue({
+    version: 1,
+    recommendation,
+    recommendationDate: practiceV2Runtime.recommendationDate || toIsoDate(new Date()),
+    algorithmVersion: practiceV2Runtime.recommendation?.algorithmVersion || activePracticeV2AlgorithmVersion(),
+    capacityMinutes: practiceV2Runtime.capacityMinutes,
+    skippedProblemIds: practiceV2Runtime.skippedProblemIds,
+    rotationHistory: practiceV2Runtime.rotationHistory,
+    familiarOverrideProblemId: practiceV2Runtime.familiarOverrideProblemId,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+function hydrateSharedPracticeV2Queue(runtime, queue = practiceV2Queue) {
+  if (!queue || queue.recommendationDate !== toIsoDate(new Date())) return runtime;
+  if (queue.algorithmVersion && queue.algorithmVersion !== activePracticeV2AlgorithmVersion()) return runtime;
+  const hydrated = PRACTICE_V2_WORKFLOW.normalizeRuntime({
+    ...runtime,
+    phase: "ready",
+    recommendation: { public: queue.recommendation, algorithmVersion: queue.algorithmVersion },
+    recommendationDate: queue.recommendationDate,
+    expectedRevision: currentRevision,
+    skippedProblemIds: queue.skippedProblemIds,
+    rotationHistory: queue.rotationHistory,
+    familiarOverrideProblemId: queue.familiarOverrideProblemId,
+    staleRevision: false,
+  });
+  const restored = restorePrivatePracticeV2Recommendation(hydrated.recommendation.public, hydrated);
+  return restored ? { ...hydrated, recommendation: restored } : runtime;
+}
+
+function stageSharedPracticeV2Queue() {
+  practiceV2Queue = sharedPracticeV2QueueFromRuntime();
+}
+
+function sharedPracticeV2QueueMatchesRuntime() {
+  const next = sharedPracticeV2QueueFromRuntime();
+  if (!next || !practiceV2Queue) return next === practiceV2Queue;
+  return JSON.stringify({ ...next, updatedAt: "" }) === JSON.stringify({ ...practiceV2Queue, updatedAt: "" });
+}
+
+async function syncSharedPracticeV2Queue() {
+  if (practiceV2QueueSyncInFlight || !practiceV2Runtime || practiceV2Runtime.phase !== "ready") return;
+  practiceV2QueueSyncInFlight = true;
+  stageSharedPracticeV2Queue();
+  writeBrowserFallbackState();
+  const result = await saveRemoteState();
+  practiceV2QueueSyncInFlight = false;
+  if (!result.ok && result.conflict) {
+    await refreshHostedStateIfIdle();
+  }
+}
+
 function publicPracticeV2Recommendation(value) {
   const source = value?.public && typeof value.public === "object" ? value.public : value;
   if (!source || typeof source !== "object" || !source.problemId || !source.title) return null;
@@ -3045,7 +3135,7 @@ function sanitizePersistedPracticeV2Runtime(value) {
   };
 }
 
-function restorePrivatePracticeV2Recommendation(publicRecommendation) {
+function restorePrivatePracticeV2Recommendation(publicRecommendation, runtime = practiceV2Runtime) {
   if (!publicRecommendation?.problemId || !PRACTICE_V2_ENGINE) return null;
   const recommender = activePracticeV2Recommender();
   if (!recommender) return null;
@@ -3054,12 +3144,12 @@ function restorePrivatePracticeV2Recommendation(publicRecommendation) {
     catalog: practiceV2Catalog(),
     today: toIsoDate(new Date()),
     now: new Date().toISOString(),
-    capacityMinutes: Number(practiceV2Runtime.capacityMinutes || trainingProfile.defaultSessionMinutes || 45),
+    capacityMinutes: Number(runtime?.capacityMinutes || trainingProfile.defaultSessionMinutes || 45),
     pinnedProblemId: publicRecommendation.problemId,
     pinnedRecommendationId: publicRecommendation.recommendationId,
-    includeFamiliarDeferred: Boolean(practiceV2Runtime.familiarOverrideProblemId),
+    includeFamiliarDeferred: Boolean(runtime?.familiarOverrideProblemId),
     activeProblemId: "",
-    skippedProblemIds: practiceV2Runtime.skippedProblemIds,
+    skippedProblemIds: runtime?.skippedProblemIds || [],
   });
   if (
     generated?.public?.problemId !== publicRecommendation.problemId ||
@@ -3082,10 +3172,19 @@ function restorePracticeV2Runtime() {
   } catch {
     saved = null;
   }
+  // Ready recommendations, exclusions, and restores are cloud state. Ignore a
+  // browser-only Ready session when there is no shared queue: it may be a
+  // pre-sync session whose temporary skips would otherwise hide a valid rep.
+  const savedPhase = saved?.phase === "session-complete" ? "completed" : saved?.phase;
+  const hasLocalWork = ["attempting", "grading", "reflecting", "saving", "completed"].includes(savedPhase);
+  if (!hasLocalWork && appEnv.authRequired && !practiceV2Queue) saved = null;
   practiceV2Runtime = PRACTICE_V2_WORKFLOW.normalizeRuntime(saved || {
     capacityMinutes: Number(trainingProfile.defaultSessionMinutes || 45),
     expectedRevision: currentRevision,
   });
+  if (!hasLocalWork && practiceV2Queue) {
+    practiceV2Runtime = hydrateSharedPracticeV2Queue(practiceV2Runtime);
+  }
   reconcilePracticeV2RuntimeRevision();
   const activePhase = ["attempting", "grading", "reflecting", "saving"].includes(practiceV2Runtime.phase);
   if (practiceV2Runtime.recommendation) {
@@ -3257,6 +3356,7 @@ function ensurePracticeV2Recommendation() {
   practiceV2Runtime.recommendationDate = today;
   practiceV2Runtime.staleRevision = false;
   persistPracticeV2Runtime();
+  if (!sharedPracticeV2QueueMatchesRuntime()) void syncSharedPracticeV2Queue();
 }
 
 function invalidateReadyPracticeV2Recommendation() {
@@ -3267,6 +3367,7 @@ function invalidateReadyPracticeV2Recommendation() {
   practiceV2Runtime.rotationHistory = [];
   practiceV2Runtime.familiarOverrideProblemId = "";
   practiceV2Runtime.actionNotice = "";
+  practiceV2Queue = null;
   persistPracticeV2Runtime();
 }
 
@@ -3478,6 +3579,11 @@ async function markPracticeV2Familiar() {
       })
     : item);
 
+  practiceV2Runtime = result.runtime;
+  practiceV2Runtime.recommendation = getPracticeV2Recommendation();
+  practiceV2Runtime.recommendationDate = today;
+  practiceV2Runtime.staleRevision = false;
+  stageSharedPracticeV2Queue();
   practiceV2FamiliarMutationInFlight = true;
   practiceV2Runtime.actionNotice = "";
   renderPracticeV2();
@@ -3494,11 +3600,7 @@ async function markPracticeV2Familiar() {
     return;
   }
 
-  practiceV2Runtime = result.runtime;
   practiceV2Runtime.expectedRevision = currentRevision;
-  practiceV2Runtime.recommendation = getPracticeV2Recommendation();
-  practiceV2Runtime.recommendationDate = today;
-  practiceV2Runtime.staleRevision = false;
   practiceV2Runtime.actionNotice = `Marked familiar. We’ll revisit ${recommendation.public.title} after ${formatDate(transition.eligibleAgainAt)}.`;
   persistPracticeV2Runtime();
   render();
@@ -3557,10 +3659,14 @@ async function chooseAnotherPracticeV2Rep() {
       capacityMinutes: Number(practiceV2Runtime.capacityMinutes || 45),
       nextProblemId: nextRecommendation?.public?.problemId || "",
       nextRecommendationId: nextRecommendation?.public?.recommendationId || "",
+      reason: "user-requested-alternative",
+      priorTaskType: currentRecommendation.private?.taskType || "",
+      nextTaskType: nextRecommendation?.private?.taskType || "",
       rotationOutcome,
       restoredAt: "",
     },
   ], now);
+  stageSharedPracticeV2Queue();
   practiceV2FamiliarMutationInFlight = true;
   practiceV2Runtime.actionNotice = "";
   renderPracticeV2();
@@ -3596,7 +3702,7 @@ async function restorePreviousPracticeV2Pick() {
   if (!result.ok) return;
   const previousAction = result.previousAction;
   const stateBeforeMutation = captureTrackerMutationState();
-  let shouldPersistRestore = false;
+  const currentProblemId = practiceV2Runtime.recommendation?.public?.problemId || "";
   if (previousAction.type === "familiarity") {
     const now = new Date().toISOString();
     let found = false;
@@ -3617,7 +3723,6 @@ async function restorePreviousPracticeV2Pick() {
       renderPracticeV2();
       return;
     }
-    shouldPersistRestore = true;
   } else if (previousAction.telemetryEventId) {
     const restoredAt = new Date().toISOString();
     const restoredTelemetry = PRACTICE_V2_WORKFLOW.restoreChooseAnotherTelemetry(
@@ -3633,28 +3738,33 @@ async function restorePreviousPracticeV2Pick() {
       return;
     }
     practiceTelemetry = restoredTelemetry.events;
-    shouldPersistRestore = true;
-  }
-  if (shouldPersistRestore) {
-    practiceV2FamiliarMutationInFlight = true;
-    renderPracticeV2();
-    writeBrowserFallbackState();
-    const saveResult = await saveRemoteState();
-    practiceV2FamiliarMutationInFlight = false;
-    if (!saveResult.ok) {
-      restoreTrackerMutationState(stateBeforeMutation);
-      practiceV2Runtime.actionNotice = saveResult.conflict
-        ? "Another tab or device changed your tracker. Reload before restoring this pick."
-        : "The previous pick could not be restored. Your current recommendation was kept.";
-      persistPracticeV2Runtime();
-      renderPracticeV2();
-      return;
-    }
   }
   practiceV2Runtime = result.runtime;
-  practiceV2Runtime.expectedRevision = currentRevision;
   practiceV2Runtime.recommendation = getPracticeV2Recommendation({ pinnedProblemId: previousAction.problemId });
   practiceV2Runtime.recommendationDate = toIsoDate(new Date());
+  if (practiceV2Runtime.recommendation?.public?.problemId === currentProblemId) {
+    restoreTrackerMutationState(stateBeforeMutation);
+    practiceV2Runtime.actionNotice = "The previous rotation also led to this problem, so nothing was restored.";
+    persistPracticeV2Runtime();
+    renderPracticeV2();
+    return;
+  }
+  stageSharedPracticeV2Queue();
+  practiceV2FamiliarMutationInFlight = true;
+  renderPracticeV2();
+  writeBrowserFallbackState();
+  const saveResult = await saveRemoteState();
+  practiceV2FamiliarMutationInFlight = false;
+  if (!saveResult.ok) {
+    restoreTrackerMutationState(stateBeforeMutation);
+    practiceV2Runtime.actionNotice = saveResult.conflict
+      ? "Another tab or device changed your tracker. Reload before restoring this pick."
+      : "The previous pick could not be restored. Your current recommendation was kept.";
+    persistPracticeV2Runtime();
+    renderPracticeV2();
+    return;
+  }
+  practiceV2Runtime.expectedRevision = currentRevision;
   practiceV2Runtime.actionNotice = previousAction.type === "familiarity"
     ? "Familiarity mark undone. The previous problem is ready again."
     : "Previous pick restored.";
@@ -3670,7 +3780,9 @@ function reviewDeferredPracticeV2Problem() {
   practiceV2Runtime.recommendation = recommendation;
   practiceV2Runtime.recommendationDate = toIsoDate(new Date());
   practiceV2Runtime.actionNotice = "Showing one deferred problem. Its familiarity history remains unchanged unless you save a real result.";
+  stageSharedPracticeV2Queue();
   persistPracticeV2Runtime();
+  void syncSharedPracticeV2Queue();
   renderPracticeV2();
 }
 
@@ -3879,6 +3991,10 @@ async function savePracticeV2Rep(event) {
     lockedTimeBoxMinutes: practiceV2Runtime.lockedTimeBoxMinutes,
   };
   const attemptType = isAttempted(problemSnapshot || problem) ? "review" : "new";
+  const queueBeforeGrade = practiceV2Queue ? cloneState(practiceV2Queue) : null;
+  // A completed grade changes the recommendation inputs. Do not let another
+  // device begin the now-stale Ready pick while this grade is being saved.
+  practiceV2Queue = null;
   practiceV2Runtime.phase = "saving";
   persistPracticeV2Runtime();
   renderPracticeV2();
@@ -3893,6 +4009,7 @@ async function savePracticeV2Rep(event) {
     suppressPostGradePrompt: true,
   });
   if (!gradeResult.ok) {
+    practiceV2Queue = queueBeforeGrade;
     practiceV2Runtime.phase = "reflecting";
     els.practiceV2Error.textContent = gradeResult.saveResult?.conflict
       ? "Another tab or device saved newer tracker data. Reload before saving this rep."
