@@ -11,6 +11,7 @@ const LEADERBOARD_TAB_KEY = "leetcode-tracker.show-leaderboard-tab.v1";
 const STATE_V4 = window.TrackerStateV4;
 const PRACTICE_V2_ENGINE = window.PracticeV2Engine;
 const PRACTICE_V2_WORKFLOW = window.PracticeV2Workflow;
+const MILESTONE_CELEBRATIONS = window.MilestoneCelebrations;
 const PRACTICE_V2_EVIDENCE_WINDOW_DAYS = PRACTICE_V2_ENGINE?.EVIDENCE_WINDOW_DAYS || 30;
 const EXPORT_VERSION = STATE_V4?.STATE_VERSION || 4;
 const API_STATE_URL = "/api/state";
@@ -39,9 +40,16 @@ const DEFAULT_FEATURES = {
 
 const BLIND_75 = window.BLIND_75 || [];
 const NEETCODE_150 = window.NEETCODE_150 || [];
+const NEETCODE_250 = window.NEETCODE_250 || [];
+const BUILT_IN_CATALOG = window.CatalogMemberships?.buildCatalog({
+  blind75: BLIND_75,
+  neetcode150: NEETCODE_150,
+  neetcode250: NEETCODE_250,
+}) || { catalog: [] };
 const STUDY_LISTS = {
   blind75: { label: "Blind 75", membership: "blind75", problems: BLIND_75 },
   neetcode150: { label: "NeetCode 150", membership: "neetcode150", problems: NEETCODE_150 },
+  neetcode250: { label: "NeetCode 250", membership: "neetcode250", problems: NEETCODE_250 },
 };
 const SLUG_ALIASES = {
   "generate-parenthesis": "generate-parentheses",
@@ -176,6 +184,13 @@ const els = {
   leetcodeImportReviewBtn: document.querySelector("#leetcodeImportReviewBtn"),
   leetcodeImportStatus: document.querySelector("#leetcodeImportStatus"),
   leetcodeImportSummary: document.querySelector("#leetcodeImportSummary"),
+  milestoneCelebration: document.querySelector("#milestoneCelebration"),
+  milestoneCloseBtn: document.querySelector("#milestoneCloseBtn"),
+  milestoneEmblem: document.querySelector("#milestoneEmblem"),
+  milestoneTitle: document.querySelector("#milestoneTitle"),
+  milestoneSummary: document.querySelector("#milestoneSummary"),
+  milestoneAchievements: document.querySelector("#milestoneAchievements"),
+  milestoneTotal: document.querySelector("#milestoneTotal"),
   pactDisplayNameInput: document.querySelector("#pactDisplayNameInput"),
   pactsNavLink: document.querySelector("#pactsNavLink"),
   pactsView: document.querySelector("#pactsView"),
@@ -200,6 +215,7 @@ const els = {
   newMeta: document.querySelector("#newMeta"),
   newAttemptState: document.querySelector("#newAttemptState"),
   neetcodeAttempted: document.querySelector("#neetcodeAttempted"),
+  neetcode250Attempted: document.querySelector("#neetcode250Attempted"),
   newSourceSelect: document.querySelector("#newSourceSelect"),
   newOpenLink: document.querySelector("#newOpenLink"),
   newStartAttemptBtn: document.querySelector("#newStartAttemptBtn"),
@@ -406,6 +422,7 @@ let problemMutationInFlight = false;
 let recoveryMutationInFlight = false;
 let settingsDataMutationInFlight = false;
 let postGradeMutationInFlight = false;
+let milestoneDismissTimer = 0;
 let problemDialogInitialValues = null;
 let backfillProblemId = "";
 let backfillDraft = null;
@@ -582,9 +599,12 @@ els.reviewRecoveryBtn?.addEventListener("click", () => addToRecoveryLane(dailyPi
 els.reviewStartAttemptBtn?.addEventListener("click", () => startAttempt("review"));
 els.seedBlindBtn.addEventListener("click", seedBlind75);
 els.seedNeetcodeBtn.addEventListener("click", seedNeetcode150);
+els.seedNeetcode250Btn?.addEventListener("click", seedNeetcode250);
+els.milestoneCloseBtn?.addEventListener("click", hideMilestoneCelebration);
 els.setupImportJsonBtn?.addEventListener("click", () => els.jsonImportInput.click());
 els.setupSeedBlindBtn?.addEventListener("click", seedBlind75);
 els.setupSeedNeetcodeBtn?.addEventListener("click", seedNeetcode150);
+els.setupSeedNeetcode250Btn?.addEventListener("click", seedNeetcode250);
 els.savePostGradeNoteBtn.addEventListener("click", savePostGradeNote);
 els.skipNewBtn.addEventListener("click", () => skipDailyPick("new"));
 els.skipPostGradeNoteBtn.addEventListener("click", clearPostGradeNote);
@@ -894,7 +914,7 @@ function extractTrackerStateExtras(state) {
 }
 
 function buildTrackerStatePayload(overrides = {}) {
-  return migrateTrackerState({
+  const migrated = migrateTrackerState({
     ...trackerStateExtras,
     version: EXPORT_VERSION,
     savedAt: overrides.savedAt ?? lastServerSavedAt ?? null,
@@ -910,6 +930,15 @@ function buildTrackerStatePayload(overrides = {}) {
     practicePlan,
     ...overrides,
   });
+  return {
+    ...migrated,
+    // Scope filtering must see canonical memberships immediately, including
+    // restored backups that predate the persisted membership backfill.
+    problems: migrated.problems.map((problem) => ({
+      ...problem,
+      listMemberships: getBuiltInMemberships(problem.titleSlug || problem.slug, problem.title),
+    })),
+  };
 }
 
 function loadProblems() {
@@ -1920,9 +1949,12 @@ function renderLibraryTerminology() {
       <option value="all">All problems</option>
       <option value="blind75">Blind 75</option>
       <option value="neetcode150">NeetCode 150</option>
+      <option value="neetcode250">NeetCode 250</option>
+      <option value="other">Other</option>
     `;
     els.sortSelect.innerHTML = `
       <option value="recentPractice">Recently practiced</option>
+      <option value="studyListOrder">Study-list order</option>
       <option value="title">A-Z</option>
       <option value="due">Next exact-title review</option>
       <option value="difficulty">Difficulty</option>
@@ -1945,11 +1977,14 @@ function renderLibraryTerminology() {
     <option value="all">All problems</option>
     <option value="blind75">Blind 75</option>
     <option value="neetcode150">NeetCode 150</option>
+    <option value="neetcode250">NeetCode 250</option>
+    <option value="other">Other</option>
     <option value="due">Due reviews</option>
   `;
   els.sortSelect.innerHTML = `
     <option value="due">Due first</option>
     <option value="dueDesc">Due last</option>
+    <option value="studyListOrder">Study-list order</option>
     <option value="updated">Recently updated</option>
     <option value="difficulty">Difficulty</option>
     <option value="topic">Topic</option>
@@ -2077,6 +2112,18 @@ function leaderboardColumns(viewMode) {
         shortLabel: "NC 150",
         description: "Distinct NeetCode 150 titles that have ever received a real grade. Imported history is excluded.",
       },
+      {
+        key: "neetcode250Graded",
+        label: "NC 250 graded",
+        shortLabel: "NC 250",
+        description: "Distinct NeetCode 250 titles that have ever received a real grade. List coverage overlaps with Blind 75 and NC 150.",
+      },
+      {
+        key: "otherGraded",
+        label: "Other graded",
+        shortLabel: "Other",
+        description: "Distinct real graded titles outside Blind 75, NeetCode 150, and NeetCode 250.",
+      },
     ];
   }
 
@@ -2176,6 +2223,8 @@ function leaderboardMetricValue(row, key) {
     if (key === "totalRealReps") return Number(row?.lifetime?.totalGradedAttempts || 0);
     if (key === "blind75Graded") return Number(row?.lifetime?.blind75Evidence || 0);
     if (key === "neetcode150Graded") return Number(row?.lifetime?.neetcode150Evidence || 0);
+    if (key === "neetcode250Graded") return Number(row?.lifetime?.neetcode250Evidence || 0);
+    if (key === "otherGraded") return Number(row?.lifetime?.otherEvidence || 0);
   }
 
   return 0;
@@ -2459,10 +2508,15 @@ function renderStats() {
     const row = findProblemByPlan(planProblem);
     return row && hasProperGradeHistory(row);
   }).length;
+  const neetcode250Attempted = NEETCODE_250.filter((planProblem) => {
+    const row = findProblemByPlan(planProblem);
+    return row && hasProperGradeHistory(row);
+  }).length;
   const evidence = buildMemoryEvidenceModel();
 
   els.blindAttempted.textContent = `${blindAttempted}/${BLIND_75.length}`;
   els.neetcodeAttempted.textContent = `${neetcodeAttempted}/${NEETCODE_150.length}`;
+  if (els.neetcode250Attempted) els.neetcode250Attempted.textContent = `${neetcode250Attempted}/${NEETCODE_250.length}`;
   els.checkedSkillCount.textContent = `${evidence.checkedCount}/${evidence.skillCount}`;
   els.independentSkillCount.textContent = `${evidence.independentCount}/${evidence.skillCount}`;
   els.transferSkillCount.textContent = `${evidence.transferCount}/${evidence.skillCount}`;
@@ -3295,10 +3349,7 @@ function clearPracticeV2Runtime() {
 }
 
 function practiceV2Catalog() {
-  return [
-    ...BLIND_75.map((problem) => ({ ...problem, listMemberships: ["blind75"] })),
-    ...NEETCODE_150.map((problem) => ({ ...problem, listMemberships: ["neetcode150"] })),
-  ];
+  return BUILT_IN_CATALOG.catalog;
 }
 
 function activePracticeV2AlgorithmVersion() {
@@ -4721,7 +4772,7 @@ function latestActiveFamiliarityEntry(problem) {
 }
 
 function renderMembershipBadges(problem) {
-  const memberships = problem.listMemberships || [];
+  const memberships = effectiveMemberships(problem);
   return Object.values(STUDY_LISTS)
     .filter((list) => memberships.includes(list.membership))
     .map((list) => `<span class="mini-pill">${escapeHtml(list.label)}</span>`)
@@ -4814,8 +4865,10 @@ function getFilteredProblems() {
         (difficulty === "all" || problem.difficulty === difficulty) &&
         (topic === "all" || problem.topic === topic) &&
         (list === "all" ||
-          (list === "blind75" && problem.listMemberships?.includes("blind75")) ||
-          (list === "neetcode150" && problem.listMemberships?.includes("neetcode150")) ||
+          (list === "blind75" && effectiveMemberships(problem).includes("blind75")) ||
+          (list === "neetcode150" && effectiveMemberships(problem).includes("neetcode150")) ||
+          (list === "neetcode250" && effectiveMemberships(problem).includes("neetcode250")) ||
+          (list === "other" && effectiveMemberships(problem).length === 0) ||
           (list === "due" && hasProperGradeHistory(problem) && isReviewDue(problem.nextReview)))
       );
     })
@@ -4854,6 +4907,9 @@ function sortProblems(a, b) {
     result = clampStage(a.stage) - clampStage(b.stage);
   } else if (tableSort.column === "attempts") {
     result = Number(a.completionCount || 0) - Number(b.completionCount || 0);
+  } else if (tableSort.column === "studyListOrder") {
+    result = getCatalogOrder(a, els.listFilter.value === "all" ? "all" : els.listFilter.value) -
+      getCatalogOrder(b, els.listFilter.value === "all" ? "all" : els.listFilter.value);
   }
 
   return (tableSort.column === "nextReview" ? result : result * direction) || a.title.localeCompare(b.title);
@@ -4873,6 +4929,7 @@ function compareReviewDates(aDate, bDate, direction) {
 function sortSelectValueToTableSort(value) {
   const mappings = {
     recentPractice: { column: "lastActivity", direction: "desc" },
+    studyListOrder: { column: "studyListOrder", direction: "asc" },
     title: { column: "title", direction: "asc" },
     due: { column: "nextReview", direction: "asc" },
     dueDesc: { column: "nextReview", direction: "desc" },
@@ -4886,6 +4943,7 @@ function sortSelectValueToTableSort(value) {
 function syncSortSelect() {
   const valueBySort = {
     "lastActivity:desc": "recentPractice",
+    "studyListOrder:asc": "studyListOrder",
     "title:asc": "title",
     "nextReview:asc": "due",
     "nextReview:desc": "dueDesc",
@@ -5159,6 +5217,7 @@ async function applyGrade(id, grade, undoContext = {}) {
   const now = new Date().toISOString();
   const previousUndo = lastGradeUndo;
   const wasInRecoveryBefore = recoveryProblemIds.includes(id);
+  const milestoneBefore = MILESTONE_CELEBRATIONS?.buildSnapshot(problems, BUILT_IN_CATALOG) || null;
 
   let gradeTransition = null;
 
@@ -5272,6 +5331,8 @@ async function applyGrade(id, grade, undoContext = {}) {
   render();
   if (els.gradeResult && gradeTransition) els.gradeResult.textContent = buildGradeResultSummary(gradeTransition);
   celebrateRep(undoContext.attemptType || "");
+  const milestoneAfter = MILESTONE_CELEBRATIONS?.buildSnapshot(problems, BUILT_IN_CATALOG) || null;
+  showMilestoneCelebration(MILESTONE_CELEBRATIONS?.findAchievements(milestoneBefore, milestoneAfter));
   if (!undoContext.suppressPostGradePrompt) showPostGradeNotePrompt(gradedProblem);
   return { ok: true, saveResult, receipt };
 }
@@ -5285,6 +5346,45 @@ function celebrateRep(attemptType) {
   window.setTimeout(() => {
     els.todayPanel.classList.remove("is-rep-complete");
   }, 1600);
+}
+
+function showMilestoneCelebration(celebration) {
+  if (!celebration || !els.milestoneCelebration) return;
+  window.clearTimeout(milestoneDismissTimer);
+  const panel = els.milestoneCelebration;
+  panel.hidden = false;
+  panel.dataset.tier = String(celebration.tier);
+  panel.classList.remove("is-visible");
+  if (els.milestoneEmblem) els.milestoneEmblem.textContent = celebration.icon;
+  if (els.milestoneTitle) els.milestoneTitle.textContent = celebration.title;
+  if (els.milestoneSummary) els.milestoneSummary.textContent = celebration.summary;
+  if (els.milestoneTotal) els.milestoneTotal.textContent = celebration.gradedTitles;
+  if (els.milestoneAchievements) {
+    els.milestoneAchievements.innerHTML = celebration.items
+      .map((item) => `<span>${escapeHtml(item.label)}</span>`)
+      .join("");
+  }
+  const confetti = panel.querySelector(".milestone-confetti");
+  if (confetti) {
+    const particleCount = 8 + celebration.tier * 4;
+    confetti.innerHTML = Array.from({ length: particleCount }, (_, index) => {
+      const x = (index * 37) % 100;
+      const drift = ((x - 50) * 0.45).toFixed(1);
+      return `<i style="--i:${index};--x:${x};--drift:${drift}px;--delay:${(index % 7) * 45}ms;--d:${700 + (index % 5) * 140}ms"></i>`;
+    }).join("");
+  }
+  window.requestAnimationFrame(() => panel.classList.add("is-visible"));
+  milestoneDismissTimer = window.setTimeout(hideMilestoneCelebration, 6500 + celebration.tier * 700);
+}
+
+function hideMilestoneCelebration() {
+  window.clearTimeout(milestoneDismissTimer);
+  milestoneDismissTimer = 0;
+  if (!els.milestoneCelebration) return;
+  els.milestoneCelebration.classList.remove("is-visible");
+  window.setTimeout(() => {
+    if (!els.milestoneCelebration.classList.contains("is-visible")) els.milestoneCelebration.hidden = true;
+  }, 260);
 }
 
 function restoreGradeMutation(receipt) {
@@ -5358,6 +5458,7 @@ async function undoLastGrade({ receipt = lastGradeUndo, suppressMessage = false 
   }
 
   if (lastGradeUndo?.historyEntryId === receipt.historyEntryId) lastGradeUndo = null;
+  hideMilestoneCelebration();
   clearPostGradeNote();
   persistColdWorkflowSession();
   render();
@@ -6864,6 +6965,10 @@ function seedNeetcode150() {
   return seedStudyList("neetcode150");
 }
 
+function seedNeetcode250() {
+  return seedStudyList("neetcode250");
+}
+
 async function seedStudyList(listId) {
   if (settingsDataMutationInFlight || blockTrackerMutationWhileSaving()) return;
   const studyList = STUDY_LISTS[listId];
@@ -6891,7 +6996,10 @@ async function seedStudyList(listId) {
   studyList.problems.forEach((planProblem) => {
     const existing = findProblemByPlan(planProblem);
     if (existing) {
-      existing.listMemberships = mergeMemberships(existing.listMemberships, [studyList.membership]);
+      existing.listMemberships = mergeMemberships(
+        existing.listMemberships,
+        getBuiltInMemberships(planProblem.slug || planProblem.titleSlug, planProblem.title),
+      );
       existing.titleSlug = existing.titleSlug || planProblem.slug;
       existing.url = existing.url || planProblem.url || leetcodeUrl(planProblem.slug);
       existing.topic = existing.topic || planProblem.topic;
@@ -6975,7 +7083,10 @@ function planToProblem(planProblem, membership = "blind75") {
     greenStreak: 0,
     complexityKnown: false,
     reviewHistory: [],
-    listMemberships: planProblem.listMemberships || [membership],
+    listMemberships: mergeMemberships(
+      planProblem.listMemberships || [membership],
+      getBuiltInMemberships(planProblem.slug || planProblem.titleSlug, planProblem.title),
+    ),
     source: membership,
   });
 }
@@ -7791,15 +7902,11 @@ function findBuiltInPlan(slug, title) {
 }
 
 function getBuiltInMemberships(slug, title) {
-  const canonical = canonicalSlug(slug);
-  const normalizedTitle = normalizeTitle(title);
-  return Object.values(STUDY_LISTS)
-    .filter((studyList) =>
-      studyList.problems.some(
-        (problem) => (canonical && canonicalSlug(problem.slug) === canonical) || normalizeTitle(problem.title) === normalizedTitle,
-      ),
-    )
-    .map((studyList) => studyList.membership);
+  return BUILT_IN_CATALOG.membershipsFor?.({ titleSlug: slug, title }) || [];
+}
+
+function effectiveMemberships(problem) {
+  return getBuiltInMemberships(problem?.titleSlug || problem?.slug, problem?.title);
 }
 
 function findProblemBySlug(slug) {
@@ -7895,11 +8002,18 @@ function countMasteryEligibleAttempts(problem) {
 }
 
 function getBlindOrder(problem) {
-  return BLIND_75.find((planProblem) => planProblem.slug === problem.titleSlug)?.order || Number.MAX_SAFE_INTEGER;
+  return getCatalogOrder(problem, "blind75");
 }
 
 function getStudyListOrder(problem, studyList) {
-  return studyList.problems.find((planProblem) => planProblem.slug === problem.titleSlug)?.order || Number.MAX_SAFE_INTEGER;
+  return getCatalogOrder(problem, studyList.membership);
+}
+
+function getCatalogOrder(problem, scope = "all") {
+  const canonical = BUILT_IN_CATALOG.match(problem);
+  const membership = scope === "all" ? "neetcode250" : scope;
+  const order = Number(canonical?.listOrders?.[membership]);
+  return Number.isInteger(order) && order > 0 ? order : Number.MAX_SAFE_INTEGER;
 }
 
 function mergeMemberships(a = [], b = []) {

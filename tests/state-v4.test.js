@@ -121,6 +121,10 @@ test("shared Practice V2 queue survives migration without changing the V4 bounda
 
 test("study-list scope preserves explicit values and infers legacy list usage", () => {
   assert.equal(
+    migrateStateToV4({ practicePlan: { studyListScope: "neetcode250" } }).practicePlan.studyListScope,
+    "neetcode250",
+  );
+  assert.equal(
     migrateStateToV4({ practicePlan: { studyListScope: "neetcode150" } }).practicePlan.studyListScope,
     "neetcode150",
   );

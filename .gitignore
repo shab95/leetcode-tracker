@@ -6,6 +6,7 @@ data/qa-tracker-state.json
 data/backups/
 data/qa-backups/
 data/*.sqlite
+data/qa-snapshots/
 data/*.sqlite-*
 *.sqlite
 *.sqlite-*

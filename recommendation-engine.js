@@ -37,7 +37,7 @@
   const V2_MEANINGFUL_GAP_DAYS = 14;
   const V2_DELAYED_RETENTION_DAYS = 45;
   const V2_HARD_MEDIUM_GATE = 2;
-  const STUDY_LIST_SCOPES = Object.freeze(["blind75", "neetcode150", "all"]);
+  const STUDY_LIST_SCOPES = Object.freeze(["blind75", "neetcode150", "neetcode250", "all"]);
 
   // The built-in catalogs predate V2 pattern metadata. Keep this mapping
   // local to the policy layer so existing state and list files stay portable.
@@ -174,7 +174,7 @@
     const scopedProblems = filterProblemsByStudyScope(state.problems, studyListScope);
     const evidence = deriveEvidence({ ...state, problems: scopedProblems }, { today, now, catalog });
     const excluded = buildExcludedSet(input);
-    const candidates = buildCandidates(scopedProblems, catalog)
+    const candidates = buildCandidates(scopedProblems, catalog, studyListScope)
       .filter((candidate) => !excluded.has(candidate.id) && !excluded.has(candidate.slug))
       .map((candidate) => scoreCandidate(candidate, { evidence, profile, today, now, capacityMinutes }))
       .filter((candidate) => candidate.eligible)
@@ -242,7 +242,7 @@
     const evidence = deriveV2Evidence({ ...state, problems: scopedProblems }, { today, now, catalog });
     const excluded = buildExcludedSet(input);
     const includeFamiliarDeferred = Boolean(input.includeFamiliarDeferred);
-    const considered = buildCandidates(scopedProblems, catalog)
+    const considered = buildCandidates(scopedProblems, catalog, studyListScope)
       .filter((candidate) => !excluded.has(String(candidate.id)) && !excluded.has(String(candidate.slug)))
       .map((candidate) => classifyV2Candidate(candidate, {
         evidence,
@@ -738,7 +738,13 @@
     return summary;
   }
 
-  function buildCandidates(problems = [], catalog = []) {
+  function catalogOrderForScope(plan = {}, studyListScope = "all") {
+    const membership = studyListScope === "all" ? "neetcode250" : studyListScope;
+    const rank = Number(plan.listOrders?.[membership] ?? plan.order);
+    return Number.isInteger(rank) && rank > 0 ? rank : 9999;
+  }
+
+  function buildCandidates(problems = [], catalog = [], studyListScope = "all") {
     const bySlug = new Map();
     const byTitle = new Map();
     for (const problem of problems) {
@@ -752,7 +758,7 @@
       const slug = candidateSlug(plan);
       const existing = bySlug.get(slug) || byTitle.get(normalizeTitle(plan.title));
       if (existing) {
-        existing.catalogOrder = Math.min(existing.catalogOrder, positiveNumber(plan.order, 9999));
+        existing.catalogOrder = catalogOrderForScope(plan, studyListScope);
         existing.listMemberships = unique([...(existing.listMemberships || []), ...(plan.listMemberships || [])]);
         if (!existing.topic && plan.topic) existing.topic = plan.topic;
         if (!existing.url && plan.url) existing.url = plan.url;
@@ -775,7 +781,7 @@
         nextReview: "",
         listMemberships: plan.listMemberships || [],
       });
-      candidate.catalogOrder = positiveNumber(plan.order, 9999);
+      candidate.catalogOrder = catalogOrderForScope(plan, studyListScope);
       bySlug.set(slug, candidate);
       byTitle.set(normalizeTitle(candidate.title), candidate);
       catalogCandidates.push(candidate);
@@ -910,7 +916,9 @@
       patternKnown: hasPatternMetadata(problem),
       nextReview: normalizeDate(problem.nextReview),
       stage: clamp(Number(problem.stage || 0), 0, 5),
-      catalogOrder: positiveNumber(problem.order, 9999),
+      // Persisted problems are not inherently curriculum-ranked. A rank is
+      // assigned only when this exact title is matched to the selected catalog.
+      catalogOrder: 9999,
       listMemberships: Array.isArray(problem.listMemberships) ? [...problem.listMemberships] : [],
       problem,
     };
@@ -1439,5 +1447,6 @@
     skillIdFor,
     patternIdFor,
     filterCatalogByStudyScope,
+    catalogOrderForScope,
   });
 });

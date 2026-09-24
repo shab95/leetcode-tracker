@@ -15,9 +15,11 @@ const {
   migrateStateToV4,
 } = require("./state-v4.js");
 const PracticeV2Engine = require("./recommendation-engine.js");
+const { loadStudyCatalog } = require("./study-catalog.js");
 
 const EXPORT_VERSION = STATE_VERSION;
 const EMPTY_STATE = createEmptyState();
+const STUDY_CATALOG = loadStudyCatalog();
 
 const ENV = process.env.TRACKER_ENV === "qa" ? "qa" : "prod";
 const IS_QA = ENV === "qa";
@@ -61,6 +63,9 @@ const PUBLIC_FILES = new Set([
   "/styles.css",
   "/data/blind-75.js",
   "/data/neetcode-150.js",
+  "/data/neetcode-250.js",
+  "/catalog-memberships.js",
+  "/milestone-celebrations.js",
 ]);
 const APP_ROUTES = new Set([
   "/",
@@ -1095,8 +1100,12 @@ async function getQaLeaderboard() {
         totalRealReps: 128,
         blind75Graded: 58,
         neetcode150Graded: 84,
+        neetcode250Graded: 78,
+        otherGraded: 6,
         blind75Evidence: 31,
         neetcode150Evidence: 46,
+        neetcode250Evidence: 78,
+        otherEvidence: 6,
         durablePlus: 44,
         mastered: 19,
         totalGradedAttempts: 128,
@@ -1132,8 +1141,12 @@ async function getQaLeaderboard() {
         totalRealReps: 96,
         blind75Graded: 49,
         neetcode150Graded: 71,
+        neetcode250Graded: 67,
+        otherGraded: 4,
         blind75Evidence: 24,
         neetcode150Evidence: 35,
+        neetcode250Evidence: 67,
+        otherEvidence: 4,
         durablePlus: 31,
         mastered: 11,
         totalGradedAttempts: 96,
@@ -1169,8 +1182,12 @@ async function getQaLeaderboard() {
         totalRealReps: 53,
         blind75Graded: 32,
         neetcode150Graded: 42,
+        neetcode250Graded: 39,
+        otherGraded: 3,
         blind75Evidence: 18,
         neetcode150Evidence: 22,
+        neetcode250Evidence: 39,
+        otherEvidence: 3,
         durablePlus: 17,
         mastered: 6,
         totalGradedAttempts: 53,
@@ -1590,18 +1607,24 @@ function buildLeaderboardStats(state, baselineDueCount, weekStart, weekEnd, toda
       .map((attempt) => attempt.problemId)
       .filter(Boolean),
   );
+  const hasMembership = (problem, membership) => STUDY_CATALOG.membershipsFor(problem).includes(membership);
   const blind75CurrentEvidence = problems.filter(
-    (problem) => currentEvidenceProblemIds.has(problem.id) && (problem.listMemberships || []).includes("blind75"),
+    (problem) => currentEvidenceProblemIds.has(problem.id) && hasMembership(problem, "blind75"),
   ).length;
   const neetcode150CurrentEvidence = problems.filter(
-    (problem) =>
-      currentEvidenceProblemIds.has(problem.id) && (problem.listMemberships || []).includes("neetcode150"),
+    (problem) => currentEvidenceProblemIds.has(problem.id) && hasMembership(problem, "neetcode150"),
   ).length;
   const blind75Graded = problems.filter(
-    (problem) => uniqueGradedProblemIds.has(problem.id) && (problem.listMemberships || []).includes("blind75"),
+    (problem) => uniqueGradedProblemIds.has(problem.id) && hasMembership(problem, "blind75"),
   ).length;
   const neetcode150Graded = problems.filter(
-    (problem) => uniqueGradedProblemIds.has(problem.id) && (problem.listMemberships || []).includes("neetcode150"),
+    (problem) => uniqueGradedProblemIds.has(problem.id) && hasMembership(problem, "neetcode150"),
+  ).length;
+  const neetcode250Graded = problems.filter(
+    (problem) => uniqueGradedProblemIds.has(problem.id) && hasMembership(problem, "neetcode250"),
+  ).length;
+  const otherGraded = problems.filter(
+    (problem) => uniqueGradedProblemIds.has(problem.id) && STUDY_CATALOG.membershipsFor(problem).length === 0,
   ).length;
   const streakAnchor = latestActivityDate(gradedWeekSessions, today);
   const evidence = PracticeV2Engine.deriveEvidence(state, { today });
@@ -1635,9 +1658,13 @@ function buildLeaderboardStats(state, baselineDueCount, weekStart, weekEnd, toda
       totalRealReps: lifetimeAttempts.length,
       blind75Graded,
       neetcode150Graded,
+      neetcode250Graded,
+      otherGraded,
       // Keep the original keys during rollout for clients that still read them.
       blind75Evidence: blind75CurrentEvidence,
       neetcode150Evidence: neetcode150CurrentEvidence,
+      neetcode250Evidence: neetcode250Graded,
+      otherEvidence: otherGraded,
       durablePlus: problems.filter((problem) => isAttempted(problem) && clampStage(problem.stage) >= 4).length,
       mastered: problems.filter((problem) => isMastered(problem, today)).length,
       totalGradedAttempts: lifetimeAttempts.length,

@@ -24,7 +24,7 @@
     studyListScope: "blind75",
   });
 
-  const STUDY_LIST_SCOPES = Object.freeze(["blind75", "neetcode150", "all"]);
+  const STUDY_LIST_SCOPES = Object.freeze(["blind75", "neetcode150", "neetcode250", "all"]);
 
   function migrateStateToV4(input = {}, options = {}) {
     const source = isObject(input) ? cloneValue(input) : {};
@@ -103,6 +103,7 @@
         Array.isArray(problem?.listMemberships) ? problem.listMemberships : []
       )),
     );
+    if (memberships.has("neetcode250")) return "neetcode250";
     if (memberships.has("blind75") && memberships.has("neetcode150")) return "all";
     if (memberships.has("neetcode150")) return "neetcode150";
     return "blind75";

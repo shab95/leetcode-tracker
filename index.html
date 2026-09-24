@@ -78,6 +78,7 @@
           <button class="primary-btn" id="setupImportJsonBtn" type="button">Import JSON backup</button>
           <button class="ghost-btn" id="setupSeedBlindBtn" type="button">Seed Blind 75</button>
           <button class="ghost-btn" id="setupSeedNeetcodeBtn" type="button">Seed NeetCode 150</button>
+          <button class="ghost-btn" id="setupSeedNeetcode250Btn" type="button">Seed NeetCode 250</button>
         </div>
       </section>
 
@@ -98,6 +99,7 @@
                   <select id="newSourceSelect">
                     <option value="blind75">Blind 75</option>
                     <option value="neetcode150">NeetCode 150</option>
+                    <option value="neetcode250">NeetCode 250</option>
                   </select>
                 </label>
                 <button class="ghost-btn" id="skipReviewBtn" type="button">Skip review</button>
@@ -133,6 +135,7 @@
                   <select id="practiceV2Scope">
                     <option value="blind75">Blind 75 only</option>
                     <option value="neetcode150">NeetCode 150 only</option>
+                    <option value="neetcode250">NeetCode 250 only</option>
                     <option value="all">All study lists</option>
                   </select>
                 </label>
@@ -645,6 +648,8 @@
                 <option value="all">All problems</option>
                 <option value="blind75">Blind 75</option>
                 <option value="neetcode150">NeetCode 150</option>
+                <option value="neetcode250">NeetCode 250</option>
+                <option value="other">Other</option>
                 <option value="due">Due reviews</option>
               </select>
             </label>
@@ -733,6 +738,10 @@
           <article class="stat-card">
             <span>NeetCode 150 Graded</span>
             <strong id="neetcodeAttempted">0/150</strong>
+          </article>
+          <article class="stat-card">
+            <span>NeetCode 250 Graded</span>
+            <strong id="neetcode250Attempted">0/250</strong>
           </article>
           <article class="stat-card">
             <span>Checked Recently</span>
@@ -1047,6 +1056,7 @@
                 <input id="csvImportInput" class="visually-hidden" type="file" accept=".csv,text/csv" />
                 <button class="ghost-btn" id="seedBlindBtn" type="button">Seed Blind 75</button>
                 <button class="ghost-btn" id="seedNeetcodeBtn" type="button">Seed NeetCode 150</button>
+                <button class="ghost-btn" id="seedNeetcode250Btn" type="button">Seed NeetCode 250</button>
               </div>
             </article>
 
@@ -1403,8 +1413,24 @@
       </form>
     </dialog>
 
+    <aside class="milestone-celebration" id="milestoneCelebration" data-tier="1" role="status" aria-live="polite" aria-atomic="true" hidden>
+      <div class="milestone-confetti" aria-hidden="true"></div>
+      <button class="milestone-close" id="milestoneCloseBtn" type="button" aria-label="Dismiss milestone celebration">×</button>
+      <div class="milestone-emblem" id="milestoneEmblem" aria-hidden="true">50</div>
+      <div class="milestone-copy">
+        <span class="milestone-kicker">Major milestone</span>
+        <strong id="milestoneTitle">Momentum is real.</strong>
+        <p id="milestoneSummary"></p>
+        <div class="milestone-achievements" id="milestoneAchievements"></div>
+      </div>
+      <div class="milestone-total"><strong id="milestoneTotal">50</strong><span>titles graded</span></div>
+    </aside>
+
     <script src="./data/blind-75.js"></script>
     <script src="./data/neetcode-150.js"></script>
+    <script src="./data/neetcode-250.js"></script>
+    <script src="./catalog-memberships.js"></script>
+    <script src="./milestone-celebrations.js"></script>
     <script src="./state-v4.js"></script>
     <script src="./recommendation-engine.js"></script>
     <script src="./practice-v2-workflow.js"></script>

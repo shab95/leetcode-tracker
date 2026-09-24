@@ -3,6 +3,8 @@ const test = require("node:test");
 
 const {
   calculateFamiliarityTransition,
+  buildCandidates,
+  catalogOrderForScope,
   filterCatalogByStudyScope,
   recommendNextRepV2,
   deriveV2Evidence,
@@ -274,6 +276,50 @@ test("Blind 75 scope excludes NeetCode-only catalog candidates", () => {
     capacityMinutes: 45,
   });
   assert.equal(recommendation.public.title, "Two Sum");
+});
+
+test("shared catalog titles retain their rank for the active study scope", () => {
+  const shared = {
+    title: "Two Sum",
+    slug: "two-sum",
+    topic: "Arrays and Hashing",
+    difficulty: "Easy",
+    listMemberships: ["blind75", "neetcode150", "neetcode250"],
+    listOrders: { blind75: 3, neetcode150: 3, neetcode250: 4 },
+  };
+  assert.equal(catalogOrderForScope(shared, "blind75"), 3);
+  assert.equal(catalogOrderForScope(shared, "neetcode150"), 3);
+  assert.equal(catalogOrderForScope(shared, "neetcode250"), 4);
+  assert.equal(catalogOrderForScope(shared, "all"), 4);
+  assert.equal(buildCandidates([], [shared], "neetcode250")[0].catalogOrder, 4);
+  assert.equal(buildCandidates([], [shared], "all")[0].catalogOrder, 4);
+});
+
+test("All scope uses NC 250 order only when candidates are otherwise comparable", () => {
+  const catalog = [
+    {
+      title: "Early Built-in", slug: "early-built-in", topic: "Arrays and Hashing", difficulty: "Easy",
+      listMemberships: ["neetcode250"], listOrders: { neetcode250: 4 },
+    },
+    {
+      title: "Late Built-in", slug: "late-built-in", topic: "Arrays and Hashing", difficulty: "Easy",
+      listMemberships: ["neetcode250"], listOrders: { neetcode250: 240 },
+    },
+  ];
+  const comparable = recommendNextRepV2({
+    today: TODAY, now: `${TODAY}T12:00:00.000Z`, state: state([], { practicePlan: { studyListScope: "all" } }), catalog, capacityMinutes: 45,
+  });
+  assert.equal(comparable.public.title, "Early Built-in");
+
+  const repair = problem({
+    id: "late-repair", title: "Late Built-in", titleSlug: "late-built-in", difficulty: "Easy",
+    listMemberships: ["neetcode250"], reviewHistory: [grade("2026-08-29", "red")],
+  });
+  const repairWins = recommendNextRepV2({
+    today: TODAY, now: `${TODAY}T12:00:00.000Z`, state: state([repair], { practicePlan: { studyListScope: "all" } }), catalog, capacityMinutes: 45,
+  });
+  assert.equal(repairWins.public.problemId, "late-repair");
+  assert.equal(repairWins.private.taskType, "repair");
 });
 
 test("unseen work in a familiar skill is preferred over a recent exact green repeat", () => {

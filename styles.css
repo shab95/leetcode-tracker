@@ -1147,6 +1147,179 @@ h3 {
   background: linear-gradient(90deg, var(--easy), var(--accent), rgba(34, 106, 95, 0.12));
 }
 
+.milestone-celebration {
+  --milestone-a: #0f766e;
+  --milestone-b: #34d399;
+  --milestone-glow: rgba(15, 118, 110, 0.26);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  position: fixed;
+  z-index: 80;
+  right: 24px;
+  bottom: 24px;
+  align-items: center;
+  gap: 18px;
+  width: min(680px, calc(100vw - 48px));
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--milestone-a) 46%, white);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 8% 0%, color-mix(in srgb, var(--milestone-b) 22%, transparent), transparent 34%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(248, 251, 249, 0.96));
+  padding: 20px 54px 20px 20px;
+  box-shadow: 0 26px 80px rgba(24, 31, 38, 0.24), 0 12px 36px var(--milestone-glow);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(22px) scale(0.97);
+  transition: opacity 220ms ease, transform 340ms cubic-bezier(0.2, 0.9, 0.25, 1.2);
+}
+
+.milestone-celebration[hidden] {
+  display: none;
+}
+
+.milestone-celebration.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.milestone-celebration[data-tier="2"] { --milestone-a: #2563eb; --milestone-b: #60a5fa; --milestone-glow: rgba(37, 99, 235, 0.26); }
+.milestone-celebration[data-tier="3"] { --milestone-a: #7c3aed; --milestone-b: #a78bfa; --milestone-glow: rgba(124, 58, 237, 0.28); }
+.milestone-celebration[data-tier="4"] { --milestone-a: #c2410c; --milestone-b: #fb923c; --milestone-glow: rgba(194, 65, 12, 0.3); }
+.milestone-celebration[data-tier="5"] { --milestone-a: #b45309; --milestone-b: #facc15; --milestone-glow: rgba(180, 83, 9, 0.32); }
+.milestone-celebration[data-tier="6"] { --milestone-a: #9d174d; --milestone-b: #f472b6; --milestone-glow: rgba(157, 23, 77, 0.36); }
+
+.milestone-emblem {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  border: 2px solid color-mix(in srgb, var(--milestone-b) 68%, white);
+  border-radius: 50%;
+  background: linear-gradient(145deg, var(--milestone-a), var(--milestone-b));
+  box-shadow: 0 10px 30px var(--milestone-glow), 0 0 0 7px color-mix(in srgb, var(--milestone-b) 12%, transparent);
+  color: white;
+  font-size: 1.15rem;
+  font-weight: 950;
+  letter-spacing: -0.03em;
+}
+
+.milestone-copy {
+  min-width: 0;
+}
+
+.milestone-kicker {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--milestone-a);
+  font-size: 0.7rem;
+  font-weight: 950;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.milestone-copy > strong {
+  display: block;
+  color: var(--ink);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(1.25rem, 2.8vw, 1.75rem);
+  line-height: 1.08;
+}
+
+.milestone-copy p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+
+.milestone-achievements {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.milestone-achievements span {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--milestone-b) 15%, white);
+  padding: 5px 8px;
+  color: var(--milestone-a);
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.milestone-total {
+  display: grid;
+  min-width: 76px;
+  text-align: center;
+}
+
+.milestone-total strong {
+  color: var(--milestone-a);
+  font-size: 1.65rem;
+  line-height: 1;
+}
+
+.milestone-total span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.63rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.milestone-close {
+  position: absolute;
+  z-index: 2;
+  top: 10px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.25rem;
+  cursor: pointer;
+}
+
+.milestone-close:hover,
+.milestone-close:focus-visible {
+  background: color-mix(in srgb, var(--milestone-b) 14%, white);
+  color: var(--milestone-a);
+}
+
+.milestone-confetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.milestone-confetti i {
+  position: absolute;
+  top: -14px;
+  left: calc(var(--x) * 1%);
+  width: 7px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--milestone-b);
+  opacity: 0;
+  transform: rotate(calc(var(--i) * 29deg));
+  animation: milestone-confetti var(--d) ease-out var(--delay) forwards;
+}
+
+.milestone-confetti i:nth-child(3n) { background: var(--milestone-a); }
+.milestone-confetti i:nth-child(3n + 1) { background: #f6c453; }
+
+@keyframes milestone-confetti {
+  0% { opacity: 0; transform: translateY(-10px) rotate(0); }
+  12% { opacity: 0.95; }
+  100% { opacity: 0; transform: translate(var(--drift), 160px) rotate(420deg); }
+}
+
 .daily-panel .section-head {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -4960,6 +5133,27 @@ html[data-theme="dark"] .leaderboard-sort-field select {
   }
 }
 
+@media (max-width: 680px) {
+  .milestone-celebration {
+    grid-template-columns: auto minmax(0, 1fr);
+    right: 12px;
+    bottom: 12px;
+    gap: 14px;
+    width: calc(100vw - 24px);
+    padding: 17px 44px 17px 16px;
+  }
+
+  .milestone-emblem {
+    width: 58px;
+    height: 58px;
+    font-size: 0.98rem;
+  }
+
+  .milestone-total {
+    display: none;
+  }
+}
+
 @media (max-width: 560px) {
   .leaderboard-profile-controls {
     gap: 14px;
@@ -5003,7 +5197,9 @@ html[data-theme="dark"] .leaderboard-sort-field select {
   .attempt-state::after,
   .daily-panel.is-rep-complete,
   .grade-btn,
-  .recommend-card {
+  .recommend-card,
+  .milestone-celebration,
+  .milestone-confetti i {
     animation: none;
     transition: none;
   }
@@ -5941,6 +6137,20 @@ html[data-theme="dark"] .review-summary {
   background:
     linear-gradient(135deg, rgba(45, 212, 191, 0.06), transparent 38%),
     rgba(17, 25, 24, 0.82);
+}
+
+html[data-theme="dark"] .milestone-celebration {
+  border-color: color-mix(in srgb, var(--milestone-b) 44%, #18211f);
+  background:
+    radial-gradient(circle at 8% 0%, color-mix(in srgb, var(--milestone-b) 20%, transparent), transparent 35%),
+    linear-gradient(135deg, rgba(23, 32, 30, 0.98), rgba(12, 18, 17, 0.98));
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.52), 0 12px 42px var(--milestone-glow);
+}
+
+html[data-theme="dark"] .milestone-achievements span,
+html[data-theme="dark"] .milestone-close:hover,
+html[data-theme="dark"] .milestone-close:focus-visible {
+  background: color-mix(in srgb, var(--milestone-b) 17%, #111917);
 }
 
 html[data-theme="dark"] .grade-reference-card,
